@@ -3,6 +3,19 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-05-09 - NTsocial Gateway README identity rewrite
+- Rewrote root `README.md` only as a Traditional Chinese-first early-fork identity for
+  "NTsocial Meshtastic Gateway for Android", with a short English summary.
+- Removed upstream download badges/release-channel claims and kept upstream attribution,
+  GPL-3.0 license boundary, planned `PRIVATE_APP / port 256`, receive-only legacy `497`,
+  user-consent `rebroadcast_mode = ALL` policy, and `channelId` vs `channelIndex` framing.
+- Bootstrap note: `local.properties` was initialized from `secrets.defaults.properties`
+  and remains git-ignored. Proto submodule update required elevated permissions for `.git/modules`.
+- Verification: stale upstream download URL `rg` check passed; `spotlessCheck detekt` passed.
+  Full `spotlessApply spotlessCheck detekt assembleDebug test allTests` did not pass because
+  `:app:testGoogleDebugUnitTest` hit a Robolectric native ICU runtime failure and Gradle also
+  reported an existing problems-report output collision.
+
 ## 2026-05-02 — CI cost-control PR review fixes
 - Applied PR review feedback: encoding fixes in sort-strings.py, NUL-delimited staged-files loop
   in ai-guardrail.sh, installation instructions added, typo fix in strings.xml, command order
