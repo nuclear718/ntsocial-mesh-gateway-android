@@ -3,6 +3,16 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-05-09 - AGENTS current-state audit
+- Rewrote `AGENTS.md` for the current `NTsocial MeshLink` identity: app id
+  `com.ntsocial.meshlink`, project package boundary `com.ntsocial.meshlink.*`, preserved
+  upstream `org.meshtastic.proto`, NTsocial token skinning, and gateway roadmap status.
+- Clarified that gateway/cache/IPC/RF scheduler/node-policy features are planned unless code exists,
+  and documented port 256, legacy 497 receive-only, channelId/channelIndex, LoRa media exclusion,
+  user-consent `rebroadcast_mode = ALL`, and GPL/open-source boundaries.
+- Synchronized `.github/copilot-instructions.md` with the new naming, validation command including
+  `spotlessCheck`, debug package IDs, branch guidance, and NTsocial UI/gateway boundaries.
+
 ## 2026-05-09 - Rename to NTsocial MeshLink package identity
 - Renamed project-owned Android/KMP source packages and paths from `org.meshtastic.*` /
   `com.geeksville.mesh` to `com.ntsocial.meshlink.*`; preserved upstream protocol boundary
