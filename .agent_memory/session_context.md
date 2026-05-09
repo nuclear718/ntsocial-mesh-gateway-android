@@ -3,6 +3,23 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-05-09 - NTsocial PRIVATE_APP transport MVP
+- Added the first NTsocial Gateway data plane: `NtsocialEnvelopeCodec` validates the MVP
+  `NM + version + 16-byte headerMsgId + payload` envelope, caps raw envelope size at 200 bytes,
+  and keeps outbound payload capacity at 181 bytes.
+- Added `NtsocialGatewayRepository` plus an in-memory cache/dedup implementation. Outbound test
+  payloads are sent only on `PRIVATE_APP / port 256`; legacy port `497` is accepted only by the
+  inbound cache path.
+- Wired `MeshDataHandlerImpl` so incoming private-app-compatible data packets are offered to the
+  NTsocial cache while preserving existing generic Meshtastic broadcast behavior.
+- Added focused tests for envelope parsing, invalid magic/version rejection, size limits, cache
+  deduplication, legacy receive-only handling, outbound port policy, and the MeshDataHandler hook.
+- Verification: `spotlessApply spotlessCheck detekt assembleDebug test allTests --no-configuration-cache`
+  passed with `ANDROID_HOME=C:\Users\USER\AppData\Local\Android\Sdk` and
+  `JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"`. One earlier `:desktop:test` run hit
+  an existing flaky fallback notification assertion; an immediate rerun passed, and the final full
+  baseline passed.
+
 ## 2026-05-09 - AGENTS current-state audit
 - Rewrote `AGENTS.md` for the current `NTsocial MeshLink` identity: app id
   `com.ntsocial.meshlink`, project package boundary `com.ntsocial.meshlink.*`, preserved

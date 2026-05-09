@@ -19,6 +19,7 @@ package com.ntsocial.meshlink.core.data.manager
 import com.ntsocial.meshlink.core.model.ContactSettings
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.MeshDataMapper
 import com.ntsocial.meshlink.core.repository.AdminPacketHandler
 import com.ntsocial.meshlink.core.repository.MeshServiceNotifications
@@ -26,6 +27,7 @@ import com.ntsocial.meshlink.core.repository.MessageFilter
 import com.ntsocial.meshlink.core.repository.NeighborInfoHandler
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.NotificationManager
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketHandler
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
@@ -84,6 +86,7 @@ class MeshDataHandlerTest {
     private val storeForwardHandler: StoreForwardPacketHandler = mock(MockMode.autofill)
     private val telemetryHandler: TelemetryPacketHandler = mock(MockMode.autofill)
     private val adminPacketHandler: AdminPacketHandler = mock(MockMode.autofill)
+    private val ntsocialGatewayRepository: NtsocialGatewayRepository = mock(MockMode.autofill)
 
     private val testDispatcher = StandardTestDispatcher()
     private val testScope = TestScope(testDispatcher)
@@ -108,6 +111,7 @@ class MeshDataHandlerTest {
                 storeForwardHandler = storeForwardHandler,
                 telemetryHandler = telemetryHandler,
                 adminPacketHandler = adminPacketHandler,
+                ntsocialGatewayRepository = ntsocialGatewayRepository,
                 scope = testScope,
             )
 
@@ -117,6 +121,7 @@ class MeshDataHandlerTest {
         every { nodeManager.nodeDBbyID } returns emptyMap()
         every { nodeManager.nodeDBbyNodeNum } returns emptyMap()
         every { radioConfigRepository.channelSetFlow } returns MutableStateFlow(ChannelSet())
+        every { ntsocialGatewayRepository.cacheInbound(any(), any()) } returns false
     }
 
     @Test
@@ -176,6 +181,46 @@ class MeshDataHandlerTest {
 
         handler.handleReceivedData(packet, myNodeNum)
 
+        verify { serviceBroadcasts.broadcastReceivedData(any()) }
+    }
+
+    @Test
+    fun `private app packet is offered to NTsocial gateway cache and still broadcasts`() {
+        val myNodeNum = 123
+        val remoteNum = 456
+        val packet = MeshPacket(from = remoteNum, decoded = Data(portnum = PortNum.PRIVATE_APP))
+        val dataPacket =
+            DataPacket(
+                from = DataPacket.nodeNumToDefaultId(remoteNum),
+                to = DataPacket.ID_BROADCAST,
+                bytes = null,
+                dataType = PortNum.PRIVATE_APP.value,
+            )
+        every { dataMapper.toDataPacket(packet) } returns dataPacket
+
+        handler.handleReceivedData(packet, myNodeNum)
+
+        verify { ntsocialGatewayRepository.cacheInbound(packet, dataPacket) }
+        verify { serviceBroadcasts.broadcastReceivedData(any()) }
+    }
+
+    @Test
+    fun `legacy NTsocial receive-only port is offered to gateway cache when mapped`() {
+        val myNodeNum = 123
+        val remoteNum = 456
+        val packet = MeshPacket(from = remoteNum, decoded = Data(portnum = PortNum.UNKNOWN_APP))
+        val dataPacket =
+            DataPacket(
+                from = DataPacket.nodeNumToDefaultId(remoteNum),
+                to = DataPacket.ID_BROADCAST,
+                bytes = null,
+                dataType = NtsocialTransport.LEGACY_RECEIVE_ONLY_PORT_NUM,
+            )
+        every { dataMapper.toDataPacket(packet) } returns dataPacket
+
+        handler.handleReceivedData(packet, myNodeNum)
+
+        verify { ntsocialGatewayRepository.cacheInbound(packet, dataPacket) }
         verify { serviceBroadcasts.broadcastReceivedData(any()) }
     }
 

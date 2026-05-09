@@ -25,6 +25,7 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Reaction
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.MeshDataMapper
 import com.ntsocial.meshlink.core.model.util.decodeOrNull
 import com.ntsocial.meshlink.core.model.util.toOneLiner
@@ -37,6 +38,7 @@ import com.ntsocial.meshlink.core.repository.NeighborInfoHandler
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.Notification
 import com.ntsocial.meshlink.core.repository.NotificationManager
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketHandler
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
@@ -96,6 +98,7 @@ class MeshDataHandlerImpl(
     private val storeForwardHandler: StoreForwardPacketHandler,
     private val telemetryHandler: TelemetryPacketHandler,
     private val adminPacketHandler: AdminPacketHandler,
+    private val ntsocialGatewayRepository: NtsocialGatewayRepository,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshDataHandler {
 
@@ -162,6 +165,9 @@ class MeshDataHandlerImpl(
     ): Boolean {
         var shouldBroadcast = !fromUs
         val decoded = packet.decoded ?: return shouldBroadcast
+        if (NtsocialTransport.isInboundPort(dataPacket.dataType)) {
+            ntsocialGatewayRepository.cacheInbound(packet, dataPacket)
+        }
         when (decoded.portnum) {
             PortNum.TRACEROUTE_APP -> {
                 tracerouteHandler.handleTraceroute(packet, logUuid, logInsertJob)
