@@ -3,6 +3,16 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-05-09 - NTsocial visual token skinning phase 1
+- Updated core UI theme tokens only: `Color.kt`, `CustomColors.kt`, and `Type.kt`.
+- Non-Dynamic theme now uses NTsocial indigo/emerald/amber with gray surfaces; Dynamic Color,
+  `AppTheme` API, theme picker, prefs, MainActivity, and navigation shell remain unchanged.
+- Verification: bootstrap completed with Android SDK and JDK 21; full
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests` passed when run with
+  `JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"` after clearing the stale Gradle
+  problems report. Without English locale, hardcoded English Compose tests fail against zh-rTW
+  resources.
+
 ## 2026-05-09 - NTsocial Gateway README identity rewrite
 - Rewrote root `README.md` only as a Traditional Chinese-first early-fork identity for
   "NTsocial Meshtastic Gateway for Android", with a short English summary.

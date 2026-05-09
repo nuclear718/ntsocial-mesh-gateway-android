@@ -17,5 +17,25 @@
 package org.meshtastic.core.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.font.FontFamily
 
-val AppTypography = Typography()
+private val baseTypography = Typography()
+
+val AppTypography =
+    Typography(
+        displayLarge = baseTypography.displayLarge,
+        displayMedium = baseTypography.displayMedium,
+        displaySmall = baseTypography.displaySmall,
+        headlineLarge = baseTypography.headlineLarge,
+        headlineMedium = baseTypography.headlineMedium,
+        headlineSmall = baseTypography.headlineSmall,
+        titleLarge = baseTypography.titleLarge,
+        titleMedium = baseTypography.titleMedium,
+        titleSmall = baseTypography.titleSmall.copy(fontFamily = FontFamily.Monospace),
+        bodyLarge = baseTypography.bodyLarge,
+        bodyMedium = baseTypography.bodyMedium,
+        bodySmall = baseTypography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+        labelLarge = baseTypography.labelLarge.copy(fontFamily = FontFamily.Monospace),
+        labelMedium = baseTypography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+        labelSmall = baseTypography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+    )
