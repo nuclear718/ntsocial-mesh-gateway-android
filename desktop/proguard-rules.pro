@@ -33,7 +33,7 @@
 
 # ---- Entry point ------------------------------------------------------------
 # Keep the desktop host shell (thin module — not worth tree-shaking).
--keep class org.meshtastic.desktop.** { *; }
+-keep class com.ntsocial.meshlink.desktop.** { *; }
 
 # ---- JVM runtime suppression ------------------------------------------------
 -dontwarn java.lang.reflect.**

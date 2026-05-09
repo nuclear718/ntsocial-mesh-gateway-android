@@ -15,12 +15,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 plugins {
-    alias(libs.plugins.meshtastic.android.library)
-    id("meshtastic.publishing")
+    alias(libs.plugins.meshlink.android.library)
+    id("com.ntsocial.meshlink.publishing")
 }
 
 configure<com.android.build.api.dsl.LibraryExtension> {
-    namespace = "org.meshtastic.core.api"
+    namespace = "com.ntsocial.meshlink.core.api"
     buildFeatures { aidl = true }
 
     defaultConfig {

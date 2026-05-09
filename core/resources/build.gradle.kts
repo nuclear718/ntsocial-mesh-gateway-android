@@ -16,8 +16,8 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
-    id("meshtastic.kmp.library.compose")
+    alias(libs.plugins.meshlink.kmp.library)
+    id("com.ntsocial.meshlink.kmp.library.compose")
 }
 
 kotlin {
@@ -36,5 +36,5 @@ kotlin {
 
 compose.resources {
     publicResClass = true
-    packageOfResClass = "org.meshtastic.core.resources"
+    packageOfResClass = "com.ntsocial.meshlink.core.resources"
 }

@@ -1,7 +1,7 @@
 # Skill: Project Overview & Codebase Map
 
 ## Description
-Module directory, namespacing conventions, environment setup, and troubleshooting for Meshtastic-Android.
+Module directory, namespacing conventions, environment setup, and troubleshooting for NTsocial MeshLink Android.
 
 - **Build System:** Gradle (Kotlin DSL). JDK 21 REQUIRED. Target SDK: API 36. Min SDK: API 26.
 - **Flavors:** `fdroid` (OSS only) · `google` (Maps + DataDog analytics)
@@ -11,8 +11,8 @@ Module directory, namespacing conventions, environment setup, and troubleshootin
 
 | Directory | Description |
 | :--- | :--- |
-| `app/` | Main application module. Contains `MainActivity`, Koin DI modules, and app-level logic. Uses package `org.meshtastic.app`. |
-| `build-logic/` | Convention plugins for shared build configuration (e.g., `meshtastic.kmp.feature`, `meshtastic.kmp.library`, `meshtastic.kmp.jvm.android`, `meshtastic.koin`). |
+| `app/` | Main application module. Contains `MainActivity`, Koin DI modules, and app-level logic. Uses package `com.ntsocial.meshlink.app`. |
+| `build-logic/` | Convention plugins for shared build configuration (e.g., `com.ntsocial.meshlink.kmp.feature`, `com.ntsocial.meshlink.kmp.library`, `com.ntsocial.meshlink.kmp.jvm.android`, `com.ntsocial.meshlink.koin`). |
 | `config/` | Detekt static analysis rules (`config/detekt/detekt.yml`) and Spotless formatting config (`config/spotless/.editorconfig`). |
 | `docs/` | Architecture docs and agent playbooks. See `docs/kmp-status.md` and `docs/roadmap.md` for current status. |
 | `core/model` | Domain models and common data structures. |
@@ -35,14 +35,15 @@ Module directory, namespacing conventions, environment setup, and troubleshootin
 | `core/ble/` | Bluetooth Low Energy stack using Kable. |
 | `core/resources/` | Centralized string and image resources (Compose Multiplatform). |
 | `core/testing/` | Shared test doubles, fakes, and utilities for `commonTest` across all KMP modules. |
-| `feature/` | Feature modules (e.g., `settings`, `map`, `messaging`, `node`, `intro`, `connections`, `firmware`, `wifi-provision`, `widget`). All are KMP except `widget`. Use `meshtastic.kmp.feature` convention plugin. |
+| `feature/` | Feature modules (e.g., `settings`, `map`, `messaging`, `node`, `intro`, `connections`, `firmware`, `wifi-provision`, `widget`). All are KMP except `widget`. Use `com.ntsocial.meshlink.kmp.feature` convention plugin. |
 | `feature/wifi-provision` | KMP WiFi provisioning via BLE (Nymea protocol). Uses `core:ble` Kable abstractions. |
 | `feature/firmware` | Fully KMP firmware update system: Unified OTA (BLE + WiFi), native Nordic Secure DFU protocol (pure KMP), USB/UF2 updates, and `FirmwareRetriever` with manifest-based resolution. Desktop is a first-class target. |
 | `desktop/` | Compose Desktop application. Thin host shell relying on feature modules for shared UI. Full Koin DI graph, TCP, Serial/USB, and BLE transports. Versioning via `config.properties` + `GitVersionValueSource`. |
 
 ## Namespacing
-- **Standard:** Use the `org.meshtastic.*` namespace for all code.
-- **Legacy:** Maintain the `com.geeksville.mesh` Application ID.
+- **Standard:** Use the `com.ntsocial.meshlink.*` namespace for project-owned code.
+- **Protocol boundary:** Keep generated upstream Meshtastic protobufs under `org.meshtastic.proto`.
+- **Application ID:** Use `com.ntsocial.meshlink`.
 
 ## Environment Setup
 1. **JDK 21 MUST be used** to prevent Gradle sync/build failures.

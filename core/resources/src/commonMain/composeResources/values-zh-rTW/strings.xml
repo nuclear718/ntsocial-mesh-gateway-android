@@ -272,10 +272,10 @@
     <string name="demo_mode">展示模式</string>
     <string name="desc_node_filter_clear">清除節點過濾器</string>
     <string name="description">描述說明</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="desktop_tray_quit">離開</string>
-    <string name="desktop_tray_show">顯示 Meshtastic</string>
-    <string name="desktop_tray_tooltip">Meshtastic Desktop</string>
+    <string name="desktop_tray_show">顯示 NTsocial MeshLink</string>
+    <string name="desktop_tray_tooltip">NTsocial MeshLink Desktop</string>
     <string name="details">詳情</string>
     <string name="detection_sensor">檢測傳感器</string>
     <string name="detection_sensor_config">偵測感測器設定</string>
@@ -650,7 +650,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">警告信息</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">廣播訊息通知</string>
     <string name="meshtastic_low_battery_notifications">低電量通知</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">低電量通知(收藏節點)</string>

@@ -15,11 +15,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-plugins { alias(libs.plugins.meshtastic.kmp.feature) }
+plugins { alias(libs.plugins.meshlink.kmp.feature) }
 
 kotlin {
     android {
-        namespace = "org.meshtastic.feature.messaging"
+        namespace = "com.ntsocial.meshlink.feature.messaging"
         androidResources.enable = false
     }
 

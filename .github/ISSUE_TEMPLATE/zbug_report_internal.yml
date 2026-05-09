@@ -153,7 +153,7 @@ body:
         Logs help us to diagnose and reproduce issues, particularly when they are unique to your setup.
         Depending on the issue, the following logs may be useful:
         - App logs: This will help with most issues. If possible, provide the relevant output of:
-            `adb logcat -d | grep com.geeksville.mesh`
+            `adb logcat -d | grep com.ntsocial.meshlink`
         - Mesh logs:  UI issues, communication issues etc.
           - ` App > Settings > Advanced >  Debug Panel > Export specific / export all `
         - Broader Android logs: Potentially useful if the issue goes beyond the app (connections, network etc.)

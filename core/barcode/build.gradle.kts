@@ -17,13 +17,13 @@
 import com.android.build.api.dsl.LibraryExtension
 
 plugins {
-    alias(libs.plugins.meshtastic.android.library)
-    alias(libs.plugins.meshtastic.android.library.compose)
-    alias(libs.plugins.meshtastic.android.library.flavors)
+    alias(libs.plugins.meshlink.android.library)
+    alias(libs.plugins.meshlink.android.library.compose)
+    alias(libs.plugins.meshlink.android.library.flavors)
 }
 
 configure<LibraryExtension> {
-    namespace = "org.meshtastic.core.barcode"
+    namespace = "com.ntsocial.meshlink.core.barcode"
 
     testOptions { unitTests { isIncludeAndroidResources = true } }
 }

@@ -277,10 +277,10 @@
     <string name="demo_mode">Demo režiim</string>
     <string name="desc_node_filter_clear">eemalda sõlmefilter</string>
     <string name="description">Kirjeldus</string>
-    <string name="desktop_notification_title">Kärgvõrgustik</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="desktop_tray_quit">Sule</string>
-    <string name="desktop_tray_show">Näita Meshtastic</string>
-    <string name="desktop_tray_tooltip">Meshtastic töölaud</string>
+    <string name="desktop_tray_show">Näita NTsocial MeshLink</string>
+    <string name="desktop_tray_tooltip">NTsocial MeshLink töölaud</string>
     <string name="details">Üksikasjad</string>
     <string name="detection_sensor">Tuvastusandur</string>
     <string name="detection_sensor_config">Tuvastusanduri sätted</string>
@@ -671,7 +671,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Kärgvõrgustik</string>
     <string name="meshtastic_alerts_notifications">Märguteated</string>
-    <string name="meshtastic_app_name">Kärgvõrgustik</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">Ringhäälingusõnumi teated</string>
     <string name="meshtastic_low_battery_notifications">Madala akupinge hoiatus</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Madala akupinge teated (lemmik sõlmed)</string>

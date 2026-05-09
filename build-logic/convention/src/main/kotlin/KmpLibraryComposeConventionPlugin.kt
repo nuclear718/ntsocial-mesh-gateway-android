@@ -19,10 +19,10 @@ import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
-import org.meshtastic.buildlogic.configureComposeCompiler
-import org.meshtastic.buildlogic.library
-import org.meshtastic.buildlogic.libs
-import org.meshtastic.buildlogic.plugin
+import com.ntsocial.meshlink.buildlogic.configureComposeCompiler
+import com.ntsocial.meshlink.buildlogic.library
+import com.ntsocial.meshlink.buildlogic.libs
+import com.ntsocial.meshlink.buildlogic.plugin
 
 class KmpLibraryComposeConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {

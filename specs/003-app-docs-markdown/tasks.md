@@ -50,7 +50,7 @@ description: "Task list for feature: App Documentation (Android/KMP)"
 ### Developer Guide pages
 - [ ] T024 [P] [US4] Create `docs/developer/architecture.md` describing layer boundaries (`app`, `desktop`, `feature/*`, `core/*`) and shared KMP responsibilities.
 - [ ] T025 [P] [US4] Create `docs/developer/codebase.md` documenting repository layout, namespacing, and build-logic conventions.
-- [ ] T026 [P] [US4] Create `docs/developer/adding-a-feature-module.md` documenting `meshtastic.kmp.feature`, source sets, DI, resources, and testing expectations.
+- [ ] T026 [P] [US4] Create `docs/developer/adding-a-feature-module.md` documenting `com.ntsocial.meshlink.kmp.feature`, source sets, DI, resources, and testing expectations.
 - [ ] T027 [P] [US4] Create `docs/developer/navigation-and-deep-links.md` documenting `Routes.kt`, `DeepLinkRouter.kt`, and Navigation 3 graph registration patterns.
 - [ ] T028 [P] [US4] Create `docs/developer/transport.md` documenting BLE, TCP, Serial/USB, and host-specific abstractions.
 - [ ] T029 [P] [US4] Create `docs/developer/persistence.md` documenting Room KMP, DataStore/core:prefs, and where docs intentionally do **not** use persistence.
@@ -84,7 +84,7 @@ description: "Task list for feature: App Documentation (Android/KMP)"
 
 **Purpose**: Implement Gradle-native docs generation suitable for KMP.
 
-- [ ] T050 [P] [US1] Create `feature/docs/build.gradle.kts` using `meshtastic.kmp.feature` and dependencies for `core:common`, `core:navigation`, `core:resources`, `core:ui`, `core:di`, and existing markdown renderer libraries.
+- [ ] T050 [P] [US1] Create `feature/docs/build.gradle.kts` using `com.ntsocial.meshlink.kmp.feature` and dependencies for `core:common`, `core:navigation`, `core:resources`, `core:ui`, `core:di`, and existing markdown renderer libraries.
 - [ ] T051 [P] [US1] Add `:feature:docs` to `settings.gradle.kts`.
 - [ ] T052 [P] [US1] Add docs-generation support in `build-logic/convention/src/main/kotlin/org/meshtastic/buildlogic/DocsTasks.kt` (or equivalent) with lazy task registration.
 - [ ] T053 [P] [US1] Implement frontmatter parsing, nav-order extraction, and markdown normalization in build logic or `feature/docs` build task code.

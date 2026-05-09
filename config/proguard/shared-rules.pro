@@ -1,5 +1,5 @@
 # ============================================================================
-# Meshtastic — Shared ProGuard / R8 rules
+# NTsocial MeshLink — Shared ProGuard / R8 rules
 # ============================================================================
 # Cross-platform keep rules applied to BOTH the Android app release (R8) and
 # the Desktop distribution (ProGuard 7.7 invoked by compose-jb).
@@ -29,8 +29,8 @@
 # ComposeStackTraceMode) rather than package-wide wildcards.
 
 # ---- Compose Multiplatform resources ----------------------------------------
--keep class org.meshtastic.core.resources.Res { *; }
--keepclassmembers class org.meshtastic.core.resources.Res$* { *; }
+-keep class com.ntsocial.meshlink.core.resources.Res { *; }
+-keepclassmembers class com.ntsocial.meshlink.core.resources.Res$* { *; }
 
 # ---- Koin Annotations (KSP-generated DI graph) ------------------------------
 -keep @org.koin.core.annotation.Module class * { *; }
@@ -131,5 +131,5 @@
 # ---- Room KMP (room3) -------------------------------------------------------
 -keep class * extends androidx.room3.RoomDatabase { <init>(); }
 -keep class * implements androidx.room3.RoomDatabaseConstructor { *; }
--keep class org.meshtastic.core.database.MeshtasticDatabaseConstructor { *; }
--keep class org.meshtastic.core.database.MeshtasticDatabase { *; }
+-keep class com.ntsocial.meshlink.core.database.MeshtasticDatabaseConstructor { *; }
+-keep class com.ntsocial.meshlink.core.database.MeshtasticDatabase { *; }

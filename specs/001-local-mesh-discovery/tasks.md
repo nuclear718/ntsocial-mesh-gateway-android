@@ -15,8 +15,8 @@
 
 ## Phase 1 — Setup (module creation, navigation routes, DI)
 
-- [ ] **D001** Create `feature/discovery/` with `meshtastic.kmp.feature` + serialization plugin setup, source sets, namespace, and baseline dependencies.
-- [ ] **D002** Add `FeatureDiscoveryModule` with `@Module` + `@ComponentScan("org.meshtastic.feature.discovery")`.
+- [ ] **D001** Create `feature/discovery/` with `com.ntsocial.meshlink.kmp.feature` + serialization plugin setup, source sets, namespace, and baseline dependencies.
+- [ ] **D002** Add `FeatureDiscoveryModule` with `@Module` + `@ComponentScan("com.ntsocial.meshlink.feature.discovery")`.
 - [ ] **D003** Register the module in `settings.gradle.kts` and include it in Android / Desktop Koin roots.
 - [ ] **D004** Add typed discovery routes to `core/navigation/src/commonMain/kotlin/org/meshtastic/core/navigation/Routes.kt`.
 - [ ] **D005** Extend `DeepLinkRouter` and navigation tests for discovery entry paths.

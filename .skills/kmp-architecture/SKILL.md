@@ -6,7 +6,7 @@ Guidelines on managing Kotlin Multiplatform (KMP) source-sets, expected abstract
 ## 1. Source-Set Boundaries
 - **`commonMain`:** All business logic, DB entities, API network logic, ViewModels, and UI rendering. NO `java.*` or `android.*` imports.
 - **`androidMain`:** Android framework integration (`Context`, system services, NFC hardware, BLE Android bindings).
-- **`jvmMain` / `jvmAndroidMain`:** Shared JVM code between Android and Desktop. Uses the `meshtastic.kmp.jvm.android` convention plugin to bridge `jvm` and `android` source sets without manual `dependsOn` hacks.
+- **`jvmMain` / `jvmAndroidMain`:** Shared JVM code between Android and Desktop. Uses the `com.ntsocial.meshlink.kmp.jvm.android` convention plugin to bridge `jvm` and `android` source sets without manual `dependsOn` hacks.
 - **`app` / `desktop`:** Host shells. Responsible for Koin DI root wiring, `MainKoinModule`, host-level UI themes, and running the `MeshtasticNavDisplay`.
 
 ## 2. Bridging Strategies
@@ -16,7 +16,7 @@ Guidelines on managing Kotlin Multiplatform (KMP) source-sets, expected abstract
 - **Shared Helpers:** Do not duplicate pure Kotlin logic between `androidMain` and `jvmMain`. Extract to a `commonMain` helper.
 
 ## 3. Core Libraries & Constraints
-- **Concurrency:** `kotlinx.coroutines`. Use `org.meshtastic.core.common.util.ioDispatcher` over `Dispatchers.IO` directly. Inject `CoroutineDispatchers` from `core:di` into classes that need dispatchers — never reference `Dispatchers.IO`/`Main`/`Default` directly in business logic.
+- **Concurrency:** `kotlinx.coroutines`. Use `com.ntsocial.meshlink.core.common.util.ioDispatcher` over `Dispatchers.IO` directly. Inject `CoroutineDispatchers` from `core:di` into classes that need dispatchers — never reference `Dispatchers.IO`/`Main`/`Default` directly in business logic.
 - **Error Handling:** Use `safeCatching {}` from `core:common` instead of `runCatching {}` in coroutine/suspend contexts. `runCatching` swallows `CancellationException`, breaking structured concurrency. Keep `runCatching` only in cleanup/teardown code (abort, close, eviction loops).
 - **Standard Library Replacements:**
   - `ConcurrentHashMap` -> `atomicfu` or Mutex-guarded `mutableMapOf()`.

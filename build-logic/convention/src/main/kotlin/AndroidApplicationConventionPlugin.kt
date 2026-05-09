@@ -19,21 +19,21 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
-import org.meshtastic.buildlogic.configureGraphTasks
-import org.meshtastic.buildlogic.configureKotlinAndroid
-import org.meshtastic.buildlogic.configureTestOptions
+import com.ntsocial.meshlink.buildlogic.configureGraphTasks
+import com.ntsocial.meshlink.buildlogic.configureKotlinAndroid
+import com.ntsocial.meshlink.buildlogic.configureTestOptions
 
 class AndroidApplicationConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             apply(plugin = "com.android.application")
             apply(plugin = "org.gradle.test-retry")
-            apply(plugin = "meshtastic.android.lint")
-            apply(plugin = "meshtastic.detekt")
-            apply(plugin = "meshtastic.spotless")
-            apply(plugin = "meshtastic.analytics")
-            apply(plugin = "meshtastic.kover")
-            apply(plugin = "meshtastic.dokka")
+            apply(plugin = "com.ntsocial.meshlink.android.lint")
+            apply(plugin = "com.ntsocial.meshlink.detekt")
+            apply(plugin = "com.ntsocial.meshlink.spotless")
+            apply(plugin = "com.ntsocial.meshlink.analytics")
+            apply(plugin = "com.ntsocial.meshlink.kover")
+            apply(plugin = "com.ntsocial.meshlink.dokka")
 
             extensions.configure<ApplicationExtension> {
                 configureKotlinAndroid(this)

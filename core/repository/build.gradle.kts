@@ -16,8 +16,8 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
-    id("meshtastic.koin")
+    alias(libs.plugins.meshlink.kmp.library)
+    id("com.ntsocial.meshlink.koin")
 }
 
 kotlin {

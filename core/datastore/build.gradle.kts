@@ -15,17 +15,17 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
-    alias(libs.plugins.meshtastic.kotlinx.serialization)
+    alias(libs.plugins.meshlink.kmp.library)
+    alias(libs.plugins.meshlink.kotlinx.serialization)
     alias(libs.plugins.kotlin.parcelize)
-    id("meshtastic.koin")
+    id("com.ntsocial.meshlink.koin")
 }
 
 kotlin {
     jvm()
 
     android {
-        namespace = "org.meshtastic.core.datastore"
+        namespace = "com.ntsocial.meshlink.core.datastore"
         androidResources.enable = false
         withHostTest {}
     }

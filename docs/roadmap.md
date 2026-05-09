@@ -77,7 +77,7 @@ These items address structural gaps identified in the March 2026 architecture re
 | Notifications | ✅ Desktop native notifications with system tray icon support |
 | MenuBar | ✅ Removed — replaced with `onPreviewKeyEvent` keyboard shortcuts (⌘Q, ⌘,, ⌘⇧T, ⌘1-4, ⌘/) |
 | About | ✅ Shared `commonMain` screen (AboutLibraries KMP `produceLibraries` + per-platform JSON) |
-| Packaging | ✅ Done — Native distribution pipeline in CI (DMG, MSI, DEB). Windows `upgradeUuid` set; macOS signing/notarization wired behind `SIGN_MACOS` env flag; desktop build attestation in release CI. Flatpak packaging maintained externally at [vidplace7/org.meshtastic.desktop](https://github.com/vidplace7/org.meshtastic.desktop) (includes AppStream metainfo, `.desktop` entry, and JBR bundling); see [PR #4807](https://github.com/meshtastic/Meshtastic-Android/pull/4807) for `flatpakGradleGenerator` integration |
+| Packaging | ✅ Done — Native distribution pipeline in CI (DMG, MSI, DEB). Windows `upgradeUuid` set; macOS signing/notarization wired behind `SIGN_MACOS` env flag; desktop build attestation in release CI. Flatpak packaging maintained externally at [vidplace7/com.ntsocial.meshlink.desktop](https://github.com/vidplace7/com.ntsocial.meshlink.desktop) (includes AppStream metainfo, `.desktop` entry, and JBR bundling); see [PR #4807](https://github.com/meshtastic/Meshtastic-Android/pull/4807) for `flatpakGradleGenerator` integration |
 
 ## Near-Term Priorities (30 days)
 

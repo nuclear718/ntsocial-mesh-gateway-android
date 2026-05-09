@@ -301,21 +301,21 @@ room = { id = "androidx.room3", version.ref = "room" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 test-retry = { id = "org.gradle.test-retry", version.ref = "testRetry" }
 
-# Meshtastic
-meshtastic-android-application = { id = "meshtastic.android.application" }
-meshtastic-android-application-compose = { id = "meshtastic.android.application.compose" }
-meshtastic-android-application-flavors = { id = "meshtastic.android.application.flavors" }
-meshtastic-android-library = { id = "meshtastic.android.library" }
-meshtastic-android-library-compose = { id = "meshtastic.android.library.compose" }
-meshtastic-android-library-flavors = { id = "meshtastic.android.library.flavors" }
-meshtastic-android-room = { id = "meshtastic.android.room" }
-meshtastic-detekt = { id = "meshtastic.detekt" }
-meshtastic-koin = { id = "meshtastic.koin" }
-meshtastic-kotlinx-serialization = { id = "meshtastic.kotlinx.serialization" }
-meshtastic-kmp-feature = { id = "meshtastic.kmp.feature" }
-meshtastic-kmp-library = { id = "meshtastic.kmp.library" }
-meshtastic-kmp-library-compose = { id = "meshtastic.kmp.library.compose" }
-meshtastic-root = { id = "meshtastic.root" }
-meshtastic-spotless = { id = "meshtastic.spotless" }
-meshtastic-publishing = { id = "meshtastic.publishing" }
-meshtastic-aboutlibraries = { id = "meshtastic.aboutlibraries" }
+# NTsocial MeshLink
+meshlink-android-application = { id = "com.ntsocial.meshlink.android.application" }
+meshlink-android-application-compose = { id = "com.ntsocial.meshlink.android.application.compose" }
+meshlink-android-application-flavors = { id = "com.ntsocial.meshlink.android.application.flavors" }
+meshlink-android-library = { id = "com.ntsocial.meshlink.android.library" }
+meshlink-android-library-compose = { id = "com.ntsocial.meshlink.android.library.compose" }
+meshlink-android-library-flavors = { id = "com.ntsocial.meshlink.android.library.flavors" }
+meshlink-android-room = { id = "com.ntsocial.meshlink.android.room" }
+meshlink-detekt = { id = "com.ntsocial.meshlink.detekt" }
+meshlink-koin = { id = "com.ntsocial.meshlink.koin" }
+meshlink-kotlinx-serialization = { id = "com.ntsocial.meshlink.kotlinx.serialization" }
+meshlink-kmp-feature = { id = "com.ntsocial.meshlink.kmp.feature" }
+meshlink-kmp-library = { id = "com.ntsocial.meshlink.kmp.library" }
+meshlink-kmp-library-compose = { id = "com.ntsocial.meshlink.kmp.library.compose" }
+meshlink-root = { id = "com.ntsocial.meshlink.root" }
+meshlink-spotless = { id = "com.ntsocial.meshlink.spotless" }
+meshlink-publishing = { id = "com.ntsocial.meshlink.publishing" }
+meshlink-aboutlibraries = { id = "com.ntsocial.meshlink.aboutlibraries" }

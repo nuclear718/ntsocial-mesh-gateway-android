@@ -19,25 +19,25 @@ Say yes and also click the checkbox to always allow your PC access.
 * Long press on the meshtastic app and choose "force stop", to ensure that we are starting from scratch for this log (it will make it easier to understand it)
 * If you have a Mac or Linux type:
 ```
-adb shell 'logcat --pid=$(pidof -s com.geeksville.mesh)' | tee newlogfile.txt
+adb shell 'logcat --pid=$(pidof -s com.ntsocial.meshlink)' | tee newlogfile.txt
 ```
 
 * If you have a PC type:
 ```
-adb shell "logcat --pid=$(pidof -s com.geeksville.mesh)" >newlogfile.txt (I don't know the equivalent of TEE for windows?)
+adb shell "logcat --pid=$(pidof -s com.ntsocial.meshlink)" >newlogfile.txt (I don't know the equivalent of TEE for windows?)
 ```
 
 This will capture a bunch of logging information as you use the app.  Please go through the app to the part that was giving you troubles (No device listed on the settings screen etc).  And then press
 ctrl-c in the adb window to stop logging.  Please open a github [issue](https://github.com/meshtastic/Meshtastic-Android/issues) describing the problem and attach the log file.  We'll get back to you with what we find (possibly with some extra questions).
 
 ```
-kevinh@kevin-server:~/development$ adb shell 'logcat --pid=$(pidof -s com.geeksville.mesh)' | 
+kevinh@kevin-server:~/development$ adb shell 'logcat --pid=$(pidof -s com.ntsocial.meshlink)' |
 --------- beginning of main
 03-07 17:10:05.669 13452 13452 W ActivityThread: handleWindowVisibility: no activity for token android.os.BinderProxy@fbf5fa0
-03-07 17:10:05.927 13452 13452 D com.geeksville.mesh.MainActivity: Checking permissions
+03-07 17:10:05.927 13452 13452 D com.ntsocial.meshlink.MainActivity: Checking permissions
 03-07 17:10:06.033 13452 13452 W geeksville.mes: Accessing hidden method Landroid/view/View;->computeFitSystemWindows(Landroid/graphics/Rect;Landroid/graphics/Rect;)Z (greylist, reflection, allowed)
 03-07 17:10:06.034 13452 13452 W geeksville.mes: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (greylist, reflection, allowed)
-03-07 17:10:06.179 13452 13452 D com.geeksville.mesh.MainActivity: Binding to mesh service!
+03-07 17:10:06.179 13452 13452 D com.ntsocial.meshlink.MainActivity: Binding to mesh service!
 03-07 17:10:06.267 13452 13484 I geeksville.mes: Background concurrent copying GC freed 18374(1149KB) AllocSpace objects, 5(164KB) LOS objects, 49% free, 2384KB/4769KB, paused 329us total 124.902ms
 03-07 17:10:06.267 13452 13484 W geeksville.mes: Reducing the number of considered missed Gc histogram windows from 1692 to 100
 03-07 17:10:06.288 13452 24599 I FA      : Tag Manager is not found and thus will not be used
@@ -53,9 +53,9 @@ kevinh@kevin-server:~/development$ adb shell 'logcat --pid=$(pidof -s com.geeksv
 03-07 17:10:06.546 13452 24593 W Gralloc3: mapper 3.x is not supported
 03-07 17:10:06.548 13452 24593 E libc    : Access denied finding property "vendor.gralloc.disable_ahardware_buffer"
 03-07 17:10:06.544 13452 13452 W RenderThread: type=1400 audit(0.0:7134): avc: denied { read } for name="u:object_r:vendor_default_prop:s0" dev="tmpfs" ino=24620 scontext=u:r:untrusted_app:s0:c157,c257,c512,c768 tcontext=u:object_r:vendor_default_prop:s0 tclass=file permissive=0
-03-07 17:10:06.607 13452 13452 I com.geeksville.mesh.service.MeshService: in isConnected=false
-03-07 17:10:06.608 13452 13452 D com.geeksville.mesh.MainActivity: connchange false
-03-07 17:10:06.608 13452 13452 D com.geeksville.mesh.MainActivity$mesh$1: connected to mesh service, isConnected=false
-03-07 17:10:06.609 13452 13452 D com.geeksville.mesh.ui.AnalyticsLog: logging screen view messages
+03-07 17:10:06.607 13452 13452 I com.ntsocial.meshlink.service.MeshService: in isConnected=false
+03-07 17:10:06.608 13452 13452 D com.ntsocial.meshlink.MainActivity: connchange false
+03-07 17:10:06.608 13452 13452 D com.ntsocial.meshlink.MainActivity$mesh$1: connected to mesh service, isConnected=false
+03-07 17:10:06.609 13452 13452 D com.ntsocial.meshlink.ui.AnalyticsLog: logging screen view messages
 
 ```

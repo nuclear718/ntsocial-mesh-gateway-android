@@ -274,10 +274,10 @@
     <string name="demo_mode">Mode Démo</string>
     <string name="desc_node_filter_clear">Effacer le filtre de nœud</string>
     <string name="description">Description</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="desktop_tray_quit">Quitter</string>
-    <string name="desktop_tray_show">Afficher Meshtastic</string>
-    <string name="desktop_tray_tooltip">Meshtastic application de bureau</string>
+    <string name="desktop_tray_show">Afficher NTsocial MeshLink</string>
+    <string name="desktop_tray_tooltip">NTsocial MeshLink application de bureau</string>
     <string name="details">Détails</string>
     <string name="detection_sensor">Capteur de détection</string>
     <string name="detection_sensor_config">Configuration du capteur de détection</string>
@@ -664,7 +664,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">Notifications d'alerte</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">Diffuser les notifications de message</string>
     <string name="meshtastic_low_battery_notifications">Notifications de batterie faible</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Notifications de batterie faible (nœuds favoris)</string>

@@ -16,13 +16,13 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.kmp.feature)
-    alias(libs.plugins.meshtastic.kotlinx.serialization)
+    alias(libs.plugins.meshlink.kmp.feature)
+    alias(libs.plugins.meshlink.kotlinx.serialization)
 }
 
 kotlin {
     android {
-        namespace = "org.meshtastic.feature.node"
+        namespace = "com.ntsocial.meshlink.feature.node"
         androidResources.enable = false
         withHostTest { isIncludeAndroidResources = true }
     }

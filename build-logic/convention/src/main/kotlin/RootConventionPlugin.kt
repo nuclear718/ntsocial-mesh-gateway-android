@@ -17,11 +17,11 @@
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
-import org.meshtastic.buildlogic.configureDokkaAggregation
-import org.meshtastic.buildlogic.configureGraphTasks
-import org.meshtastic.buildlogic.configureKover
-import org.meshtastic.buildlogic.configureKoverAggregation
-import org.meshtastic.buildlogic.isDesktopOnly
+import com.ntsocial.meshlink.buildlogic.configureDokkaAggregation
+import com.ntsocial.meshlink.buildlogic.configureGraphTasks
+import com.ntsocial.meshlink.buildlogic.configureKover
+import com.ntsocial.meshlink.buildlogic.configureKoverAggregation
+import com.ntsocial.meshlink.buildlogic.isDesktopOnly
 
 /**
  * Root convention plugin applied to the top-level project.

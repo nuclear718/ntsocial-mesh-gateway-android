@@ -116,7 +116,7 @@
     <string name="delivery_confirmed">Doručenie potvrdené</string>
     <string name="desc_node_filter_clear">vymazať filter uzlov</string>
     <string name="description">Popis</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="details">Detaily</string>
     <string name="detection_sensor">Detekčný senzor</string>
     <!-- DEVICE -->
@@ -247,7 +247,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">Notifikácie upozornení</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_low_battery_notifications">Upozornenia o slabej batérii</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Upozornenia o slabej batérii (obľúbene uzle)</string>
     <string name="meshtastic_new_nodes_notifications">Notifikácie nových uzlov</string>

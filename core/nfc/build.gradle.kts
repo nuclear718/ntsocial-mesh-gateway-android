@@ -16,13 +16,13 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
-    alias(libs.plugins.meshtastic.kmp.library.compose)
+    alias(libs.plugins.meshlink.kmp.library)
+    alias(libs.plugins.meshlink.kmp.library.compose)
 }
 
 kotlin {
     android {
-        namespace = "org.meshtastic.core.nfc"
+        namespace = "com.ntsocial.meshlink.core.nfc"
         androidResources.enable = false
     }
 

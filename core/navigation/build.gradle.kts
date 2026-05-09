@@ -16,13 +16,13 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
-    alias(libs.plugins.meshtastic.kmp.library.compose)
-    alias(libs.plugins.meshtastic.kotlinx.serialization)
+    alias(libs.plugins.meshlink.kmp.library)
+    alias(libs.plugins.meshlink.kmp.library.compose)
+    alias(libs.plugins.meshlink.kotlinx.serialization)
 }
 
 kotlin {
-    android { namespace = "org.meshtastic.core.navigation" }
+    android { namespace = "com.ntsocial.meshlink.core.navigation" }
 
     sourceSets {
         commonMain.dependencies {

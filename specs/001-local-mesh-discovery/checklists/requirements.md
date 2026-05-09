@@ -23,7 +23,7 @@ Use this checklist to review the discovery specification before implementation s
 - [ ] The spec uses Navigation 3 typed routes / `NavKey` patterns.
 - [ ] The spec keeps business logic in `commonMain`.
 - [ ] Platform-specific work is limited to Android/Desktop map, export, and AI integrations.
-- [ ] The feature module location is `feature/discovery/` and follows the `meshtastic.kmp.feature` convention.
+- [ ] The feature module location is `feature/discovery/` and follows the `com.ntsocial.meshlink.kmp.feature` convention.
 - [ ] Koin module and ViewModel wiring expectations are documented.
 
 ## Persistence and Data Modeling

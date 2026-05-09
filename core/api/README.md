@@ -40,7 +40,7 @@ dependencies {
 Use the `IMeshService` interface to bind to the Meshtastic service.
 
 ```kotlin
-val intent = Intent("com.geeksville.mesh.Service")
+val intent = Intent("com.ntsocial.meshlink.Service")
 // ... query package manager and bind
 ```
 

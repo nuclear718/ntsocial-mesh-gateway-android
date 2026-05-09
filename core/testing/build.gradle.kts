@@ -15,11 +15,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-plugins { alias(libs.plugins.meshtastic.kmp.library) }
+plugins { alias(libs.plugins.meshlink.kmp.library) }
 
 kotlin {
     android {
-        namespace = "org.meshtastic.core.testing"
+        namespace = "com.ntsocial.meshlink.core.testing"
         androidResources.enable = false
         withHostTest {}
     }

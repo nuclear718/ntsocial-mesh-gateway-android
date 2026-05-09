@@ -5,7 +5,7 @@ The `:core:ui` module contains shared Jetpack Compose components, themes, and ut
 
 ## Key Components
 
-### 1. Alert Dialogs (`org.meshtastic.core.ui.component.AlertDialogs.kt`)
+### 1. Alert Dialogs (`com.ntsocial.meshlink.core.ui.component.AlertDialogs.kt`)
 - **`MeshtasticDialog`**: The base dialog component for all alerts.
 - **`MeshtasticResourceDialog`**: Optimized for dialogs with resource-only content.
 - **`MeshtasticTextDialog`**: Optimized for dialogs with mixed resource and raw text content.
@@ -32,9 +32,9 @@ Standardized Material 3 preference components for settings screens:
 Most components are designed to be used with the **Compose Multiplatform Resource** library for strings.
 
 ```kotlin
-import org.meshtastic.core.ui.component.MeshtasticResourceDialog
-import org.meshtastic.core.resources.Res
-import org.meshtastic.core.resources.ok
+import com.ntsocial.meshlink.core.ui.component.MeshtasticResourceDialog
+import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.ok
 
 MeshtasticResourceDialog(
     title = Res.string.your_title,

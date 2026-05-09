@@ -214,7 +214,7 @@
     <string name="delivery_confirmed">Envío confirmado</string>
     <string name="desc_node_filter_clear">quitar filtro de nodo</string>
     <string name="description">Descripción</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="details">Detalles</string>
     <string name="detection_sensor">Sensor de Presencia</string>
     <string name="detection_sensor_config">Configuración del sensor detector</string>
@@ -467,7 +467,7 @@ Estos datos de ubicación pueden ser utilizados para fines como aparecer en un m
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">Notificaciones de alerta</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">Notificaciones de mensaje de difusión</string>
     <string name="meshtastic_low_battery_notifications">Notificaciones de batería baja</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Notificaciones de batería baja (nodos favoritos)</string>

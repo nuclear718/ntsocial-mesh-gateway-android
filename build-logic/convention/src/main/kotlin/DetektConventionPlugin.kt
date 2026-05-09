@@ -18,9 +18,9 @@ import dev.detekt.gradle.extensions.DetektExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
-import org.meshtastic.buildlogic.configureDetekt
-import org.meshtastic.buildlogic.libs
-import org.meshtastic.buildlogic.plugin
+import com.ntsocial.meshlink.buildlogic.configureDetekt
+import com.ntsocial.meshlink.buildlogic.libs
+import com.ntsocial.meshlink.buildlogic.plugin
 
 class DetektConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {

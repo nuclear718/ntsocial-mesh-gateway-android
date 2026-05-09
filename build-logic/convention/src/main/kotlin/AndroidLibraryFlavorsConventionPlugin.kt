@@ -18,7 +18,7 @@ import com.android.build.api.dsl.LibraryExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
-import org.meshtastic.buildlogic.configureFlavors
+import com.ntsocial.meshlink.buildlogic.configureFlavors
 
 /**
  * Flavor configuration for Android libraries.

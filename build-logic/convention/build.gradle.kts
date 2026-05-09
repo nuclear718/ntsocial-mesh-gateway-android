@@ -23,7 +23,7 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
-group = "org.meshtastic.buildlogic"
+group = "com.ntsocial.meshlink.buildlogic"
 
 // Configure the build-logic plugins to target JDK 21
 // This improves compatibility for developers building the project or consuming its libraries.
@@ -99,101 +99,101 @@ detekt {
 gradlePlugin {
     plugins {
         register("androidApplication") {
-            id = "meshtastic.android.application"
+            id = "com.ntsocial.meshlink.android.application"
             implementationClass = "AndroidApplicationConventionPlugin"
         }
         register("androidApplicationFlavors") {
-            id = "meshtastic.android.application.flavors"
+            id = "com.ntsocial.meshlink.android.application.flavors"
             implementationClass = "AndroidApplicationFlavorsConventionPlugin"
         }
         register("androidLibrary") {
-            id = "meshtastic.android.library"
+            id = "com.ntsocial.meshlink.android.library"
             implementationClass = "AndroidLibraryConventionPlugin"
         }
         register("androidLibraryFlavors") {
-            id = "meshtastic.android.library.flavors"
+            id = "com.ntsocial.meshlink.android.library.flavors"
             implementationClass = "AndroidLibraryFlavorsConventionPlugin"
         }
         register("androidLint") {
-            id = "meshtastic.android.lint"
+            id = "com.ntsocial.meshlink.android.lint"
             implementationClass = "AndroidLintConventionPlugin"
         }
         register("androidLibraryCompose") {
-            id = "meshtastic.android.library.compose"
+            id = "com.ntsocial.meshlink.android.library.compose"
             implementationClass = "AndroidLibraryComposeConventionPlugin"
         }
         register("androidApplicationCompose") {
-            id = "meshtastic.android.application.compose"
+            id = "com.ntsocial.meshlink.android.application.compose"
             implementationClass = "AndroidApplicationComposeConventionPlugin"
         }
         register("kotlinXSerialization") {
-            id = "meshtastic.kotlinx.serialization"
+            id = "com.ntsocial.meshlink.kotlinx.serialization"
             implementationClass = "KotlinXSerializationConventionPlugin"
         }
-        register("meshtasticAnalytics") {
-            id = "meshtastic.analytics"
+        register("meshlinkAnalytics") {
+            id = "com.ntsocial.meshlink.analytics"
             implementationClass = "AnalyticsConventionPlugin"
         }
-        register("meshtasticKoin") {
-            id = "meshtastic.koin"
+        register("meshlinkKoin") {
+            id = "com.ntsocial.meshlink.koin"
             implementationClass = "KoinConventionPlugin"
         }
-        register("meshtasticDetekt") {
-            id = "meshtastic.detekt"
+        register("meshlinkDetekt") {
+            id = "com.ntsocial.meshlink.detekt"
             implementationClass = "DetektConventionPlugin"
         }
         register("androidRoom") {
-            id = "meshtastic.android.room"
+            id = "com.ntsocial.meshlink.android.room"
             implementationClass = "AndroidRoomConventionPlugin"
         }
 
-        register("meshtasticSpotless") {
-            id = "meshtastic.spotless"
+        register("meshlinkSpotless") {
+            id = "com.ntsocial.meshlink.spotless"
             implementationClass = "SpotlessConventionPlugin"
         }
 
         register("kmpLibrary") {
-            id = "meshtastic.kmp.library"
+            id = "com.ntsocial.meshlink.kmp.library"
             implementationClass = "KmpLibraryConventionPlugin"
         }
 
         register("kmpJvmAndroid") {
-            id = "meshtastic.kmp.jvm.android"
+            id = "com.ntsocial.meshlink.kmp.jvm.android"
             implementationClass = "KmpJvmAndroidConventionPlugin"
         }
 
         register("kmpLibraryCompose") {
-            id = "meshtastic.kmp.library.compose"
+            id = "com.ntsocial.meshlink.kmp.library.compose"
             implementationClass = "KmpLibraryComposeConventionPlugin"
         }
 
         register("kmpFeature") {
-            id = "meshtastic.kmp.feature"
+            id = "com.ntsocial.meshlink.kmp.feature"
             implementationClass = "KmpFeatureConventionPlugin"
         }
 
         register("dokka") {
-            id = "meshtastic.dokka"
+            id = "com.ntsocial.meshlink.dokka"
             implementationClass = "DokkaConventionPlugin"
         }
 
         register("kover") {
-            id = "meshtastic.kover"
+            id = "com.ntsocial.meshlink.kover"
             implementationClass = "KoverConventionPlugin"
         }
 
         register("root") {
-            id = "meshtastic.root"
+            id = "com.ntsocial.meshlink.root"
             implementationClass = "RootConventionPlugin"
         }
 
         register("publishing") {
-            id = "meshtastic.publishing"
+            id = "com.ntsocial.meshlink.publishing"
             implementationClass = "PublishingConventionPlugin"
         }
 
         register("aboutLibraries") {
-            id = "meshtastic.aboutlibraries"
+            id = "com.ntsocial.meshlink.aboutlibraries"
             implementationClass = "AboutLibrariesConventionPlugin"
         }
     }

@@ -38,7 +38,7 @@ plugins {
     alias(libs.plugins.spotless) apply false
     alias(libs.plugins.dokka)
     alias(libs.plugins.test.retry) apply false
-    alias(libs.plugins.meshtastic.root)
+    alias(libs.plugins.meshlink.root)
 }
 
 dependencies {

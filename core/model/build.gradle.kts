@@ -16,11 +16,11 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
-    alias(libs.plugins.meshtastic.kotlinx.serialization)
+    alias(libs.plugins.meshlink.kmp.library)
+    alias(libs.plugins.meshlink.kotlinx.serialization)
     alias(libs.plugins.kotlin.parcelize)
-    id("meshtastic.kmp.jvm.android")
-    id("meshtastic.publishing")
+    id("com.ntsocial.meshlink.kmp.jvm.android")
+    id("com.ntsocial.meshlink.publishing")
 }
 
 kotlin {

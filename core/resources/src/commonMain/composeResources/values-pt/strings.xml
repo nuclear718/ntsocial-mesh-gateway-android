@@ -129,7 +129,7 @@
     <string name="delivery_confirmed">Entrega confirmada</string>
     <string name="desc_node_filter_clear">limpar filtro de nodes</string>
     <string name="description">Descrição</string>
-    <string name="desktop_notification_title">Nome do nó de alternativo</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="details">Detalhes</string>
     <string name="detection_sensor">Sensor de deteção</string>
     <string name="detection_sensor_config">Configuração do Sensor de Deteção</string>
@@ -283,7 +283,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Nome do nó de alternativo</string>
     <string name="meshtastic_alerts_notifications">Notificações de alerta</string>
-    <string name="meshtastic_app_name">Nome do nó de alternativo</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_low_battery_notifications">Notificação de bateria fraca</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Notificações de bateria fraca (nodes favoritos)</string>
     <string name="meshtastic_new_nodes_notifications">Notificações de novos nodes</string>

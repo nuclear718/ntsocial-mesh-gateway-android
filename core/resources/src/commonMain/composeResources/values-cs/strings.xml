@@ -247,7 +247,7 @@
     <string name="demo_mode">Demo režim</string>
     <string name="desc_node_filter_clear">vyčistit filtr uzlů</string>
     <string name="description">Popis</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="details">Podrobnosti</string>
     <string name="detection_sensor">Detekční senzor</string>
     <string name="detection_sensor_config">Konfigurace detekčního senzoru</string>
@@ -568,7 +568,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">Upozornění na varování</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">Upozornění na hromadné zprávy</string>
     <string name="meshtastic_low_battery_notifications">Upozornění na nízký stav baterie</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Upozornění na nízký stav baterie (oblíbené uzly)</string>

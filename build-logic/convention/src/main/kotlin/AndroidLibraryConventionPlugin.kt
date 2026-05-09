@@ -20,21 +20,21 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
-import org.meshtastic.buildlogic.configureGraphTasks
-import org.meshtastic.buildlogic.configureKotlinAndroid
-import org.meshtastic.buildlogic.configureTestOptions
-import org.meshtastic.buildlogic.disableUnnecessaryAndroidTests
+import com.ntsocial.meshlink.buildlogic.configureGraphTasks
+import com.ntsocial.meshlink.buildlogic.configureKotlinAndroid
+import com.ntsocial.meshlink.buildlogic.configureTestOptions
+import com.ntsocial.meshlink.buildlogic.disableUnnecessaryAndroidTests
 
 class AndroidLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             apply(plugin = "com.android.library")
             apply(plugin = "org.gradle.test-retry")
-            apply(plugin = "meshtastic.android.lint")
-            apply(plugin = "meshtastic.detekt")
-            apply(plugin = "meshtastic.spotless")
-            apply(plugin = "meshtastic.dokka")
-            apply(plugin = "meshtastic.kover")
+            apply(plugin = "com.ntsocial.meshlink.android.lint")
+            apply(plugin = "com.ntsocial.meshlink.detekt")
+            apply(plugin = "com.ntsocial.meshlink.spotless")
+            apply(plugin = "com.ntsocial.meshlink.dokka")
+            apply(plugin = "com.ntsocial.meshlink.kover")
 
             extensions.configure<LibraryExtension> {
                 configureKotlinAndroid(this)

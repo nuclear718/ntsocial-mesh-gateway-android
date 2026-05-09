@@ -58,7 +58,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MeshtasticAndroid"
+rootProject.name = "NTsocialMeshLinkAndroid"
 
 // https://docs.gradle.org/current/userguide/declaring_dependencies.html#sec:type-safe-project-accessors
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")

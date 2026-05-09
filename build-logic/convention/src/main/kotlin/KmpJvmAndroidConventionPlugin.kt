@@ -16,7 +16,7 @@
  */
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.meshtastic.buildlogic.configureJvmAndroidMainHierarchy
+import com.ntsocial.meshlink.buildlogic.configureJvmAndroidMainHierarchy
 
 /**
  * Opt-in convention for KMP modules that intentionally share a `jvmAndroidMain` source set between the desktop JVM

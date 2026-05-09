@@ -41,7 +41,7 @@ Choose the right tool for the job:
 
 - **Workflow to Add a String:**
   1. Add to `core/resources/src/commonMain/composeResources/values/strings.xml`.
-  2. Use the generated `org.meshtastic.core.resources.<key>` symbol.
+  2. Use the generated `com.ntsocial.meshlink.core.resources.<key>` symbol.
   3. Validate UI presentation.
 
 ## 3. Tooling & Capabilities

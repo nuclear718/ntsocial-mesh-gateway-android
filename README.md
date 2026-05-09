@@ -1,4 +1,4 @@
-# NTsocial Meshtastic Gateway for Android
+# NTsocial MeshLink
 
 > [!IMPORTANT]
 > This repository is an early fork of
@@ -9,7 +9,7 @@
 
 ## 專案使命
 
-`NTsocial Meshtastic Gateway for Android` 的目標，是把官方 Meshtastic Android App 的
+`NTsocial MeshLink` 的目標，是把官方 Meshtastic Android App 的
 radio controller、service、database、settings 與 KMP 架構保留下來，並在其上打造一個
 開源的 NTsocial LoRa 傳輸底座。
 
@@ -38,7 +38,7 @@ radio controller、service、database、settings 與 KMP 架構保留下來，�
 
 ## 架構方向：雙 App、單一傳輸平台
 
-計畫中的產品形態是「NTsocial App + NTsocial Meshtastic Gateway App」：
+計畫中的產品形態是「NTsocial App + NTsocial MeshLink App」：
 
 ```text
 NTsocial App
@@ -49,7 +49,7 @@ NTsocial App
         |
         | protected Gateway IPC
         v
-NTsocial Meshtastic Gateway for Android
+NTsocial MeshLink
   - Meshtastic radio controller
   - PRIVATE_APP / port 256 transport
   - cache, matching, chunk, receipt, retry
@@ -173,7 +173,7 @@ On Unix-like shells, use `./gradlew` instead of `.\gradlew.bat`.
 
 ## English summary
 
-`NTsocial Meshtastic Gateway for Android` is an early GPL-3.0 fork of
+`NTsocial MeshLink` is an early GPL-3.0 fork of
 [Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android). Its goal is to become an
 open-source transport gateway between the NTsocial App and Meshtastic radios.
 

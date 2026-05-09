@@ -85,7 +85,7 @@
     <ID>ParameterNaming:PlatformUtils.kt:onGranted: () -> Unit</ID>
     <ID>ParameterNaming:PlatformUtils.kt:onUriReceived: (CommonUri) -> Unit</ID>
     <ID>ParameterNaming:PlatformUtils.kt:onUriReceived: (CommonUri?) -> Unit</ID>
-    <ID>ParameterNaming:PlatformUtils.kt:onUriReceived: (org.meshtastic.core.common.util.CommonUri) -> Unit</ID>
+    <ID>ParameterNaming:PlatformUtils.kt:onUriReceived: (com.ntsocial.meshlink.core.common.util.CommonUri) -> Unit</ID>
     <ID>ParameterNaming:PositionPrecisionPreference.kt:onValueChanged: (Int) -> Unit</ID>
     <ID>ParameterNaming:PreferenceFooter.kt:onNegativeClicked: () -> Unit = {}</ID>
     <ID>ParameterNaming:PreferenceFooter.kt:onPositiveClicked: () -> Unit = {}</ID>

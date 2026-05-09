@@ -277,10 +277,10 @@
     <string name="demo_mode">Esittelytila</string>
     <string name="desc_node_filter_clear">tyhjennä suodatukset</string>
     <string name="description">Kuvaus</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="desktop_tray_quit">Lopeta</string>
-    <string name="desktop_tray_show">Näytä Meshtastic</string>
-    <string name="desktop_tray_tooltip">Meshtastic työpöytä</string>
+    <string name="desktop_tray_show">Näytä NTsocial MeshLink</string>
+    <string name="desktop_tray_tooltip">NTsocial MeshLink työpöytä</string>
     <string name="details">Tiedot</string>
     <string name="detection_sensor">Havaitsemisanturi</string>
     <string name="detection_sensor_config">Tunnistinsensorin asetukset</string>
@@ -672,7 +672,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">Hälytysilmoitukset</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">Yleislähetysviestien ilmoitukset</string>
     <string name="meshtastic_low_battery_notifications">Akun vähäisen varauksen ilmoitukset</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Akun vähäisen varauksen ilmoitukset (suosikkilaitteet)</string>

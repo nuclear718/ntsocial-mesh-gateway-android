@@ -154,7 +154,7 @@ jobs:
           echo "✅ aboutlibraries.json is deterministic"
 
           echo "── Step 2: Build fdroid release APK ──"
-          ./gradlew :app:assembleFdroidRelease -Pci=true -Pmeshtastic.disableAbiSplits=true --no-configuration-cache
+          ./gradlew :app:assembleFdroidRelease -Pci=true -Pmeshlink.disableAbiSplits=true --no-configuration-cache
 
           APK=$(find app/build/outputs/apk/fdroid/release -name "*.apk" | head -1)
           if [ -z "$APK" ]; then

@@ -1,0 +1,208 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package com.ntsocial.meshlink.core.network.repository
+
+import com.ntsocial.meshlink.core.model.MqttJsonPayload
+import kotlinx.serialization.json.Json
+import org.meshtastic.mqtt.MqttEndpoint
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+class MQTTRepositoryImplTest {
+
+    // region resolveEndpoint — every behavioral branch of address parsing.
+
+    @Test
+    fun `bare host without scheme is wrapped as plain Tcp on the standard MQTT port`() {
+        val endpoint = resolveEndpoint(rawAddress = "broker.example.com", tlsEnabled = false)
+
+        val tcp = assertIs<MqttEndpoint.Tcp>(endpoint)
+        assertEquals("broker.example.com", tcp.host)
+        assertEquals(1883, tcp.port)
+        assertEquals(false, tcp.tls)
+    }
+
+    @Test
+    fun `bare host with TLS enabled is wrapped as Tcp on the secure MQTT port`() {
+        val endpoint = resolveEndpoint(rawAddress = "broker.example.com", tlsEnabled = true)
+
+        val tcp = assertIs<MqttEndpoint.Tcp>(endpoint)
+        assertEquals("broker.example.com", tcp.host)
+        assertEquals(8883, tcp.port)
+        assertEquals(true, tcp.tls)
+    }
+
+    @Test
+    fun `host with explicit port is preserved when wrapped as Tcp`() {
+        val endpoint = resolveEndpoint(rawAddress = "broker.example.com:9001", tlsEnabled = false)
+
+        val tcp = assertIs<MqttEndpoint.Tcp>(endpoint)
+        assertEquals("broker.example.com", tcp.host)
+        assertEquals(9001, tcp.port)
+        assertEquals(false, tcp.tls)
+    }
+
+    @Test
+    fun `address with ws scheme is parsed as-is and tls flag is ignored`() {
+        // tlsEnabled is intentionally true here — when the user supplies a full URL we
+        // must honor whatever scheme they provided, not silently upgrade it.
+        val endpoint = resolveEndpoint(rawAddress = "ws://broker.example.com:8080/custom-path", tlsEnabled = true)
+
+        val ws = assertIs<MqttEndpoint.WebSocket>(endpoint)
+        assertEquals("ws://broker.example.com:8080/custom-path", ws.url)
+    }
+
+    @Test
+    fun `address with wss scheme is parsed as-is`() {
+        val endpoint = resolveEndpoint(rawAddress = "wss://broker.example.com/secure-mqtt", tlsEnabled = false)
+
+        val ws = assertIs<MqttEndpoint.WebSocket>(endpoint)
+        assertEquals("wss://broker.example.com/secure-mqtt", ws.url)
+    }
+
+    @Test
+    fun `address with mqtt tcp scheme is parsed as Tcp endpoint`() {
+        val endpoint = resolveEndpoint(rawAddress = "mqtt://broker.example.com:1883", tlsEnabled = false)
+
+        val tcp = assertIs<MqttEndpoint.Tcp>(endpoint)
+        assertEquals("broker.example.com", tcp.host)
+        assertEquals(1883, tcp.port)
+        assertEquals(false, tcp.tls)
+    }
+
+    @Test
+    fun `address with mqtts tcp scheme is parsed as Tcp endpoint with tls true`() {
+        val endpoint = resolveEndpoint(rawAddress = "mqtts://broker.example.com:8883", tlsEnabled = false)
+
+        val tcp = assertIs<MqttEndpoint.Tcp>(endpoint)
+        assertEquals("broker.example.com", tcp.host)
+        assertEquals(8883, tcp.port)
+        assertEquals(true, tcp.tls)
+    }
+
+    // endregion
+
+    // region effectiveTlsEnabled — TLS enforcement policy for the public server.
+
+    @Test
+    fun `default server forces TLS even when tlsEnabled is false`() {
+        assertEquals(true, effectiveTlsEnabled("mqtt.meshtastic.org", tlsEnabled = false))
+    }
+
+    @Test
+    fun `default server case-insensitive match forces TLS`() {
+        assertEquals(true, effectiveTlsEnabled("MQTT.MESHTASTIC.ORG", tlsEnabled = false))
+    }
+
+    @Test
+    fun `default server with explicit port still forces TLS`() {
+        assertEquals(true, effectiveTlsEnabled("mqtt.meshtastic.org:1883", tlsEnabled = false))
+    }
+
+    @Test
+    fun `default server with tcp scheme still forces TLS`() {
+        assertEquals(true, effectiveTlsEnabled("tcp://mqtt.meshtastic.org:1883", tlsEnabled = false))
+    }
+
+    @Test
+    fun `default server with ssl scheme still forces TLS`() {
+        assertEquals(true, effectiveTlsEnabled("ssl://mqtt.meshtastic.org", tlsEnabled = false))
+    }
+
+    @Test
+    fun `custom server respects tlsEnabled false`() {
+        assertEquals(false, effectiveTlsEnabled("mqtt.myserver.pt", tlsEnabled = false))
+    }
+
+    @Test
+    fun `custom server respects tlsEnabled true`() {
+        assertEquals(true, effectiveTlsEnabled("mqtt.myserver.pt", tlsEnabled = true))
+    }
+
+    // endregion
+
+    // region extractHost — address canonicalization tests.
+
+    @Test
+    fun `extractHost bare hostname`() {
+        assertEquals("mqtt.meshtastic.org", extractHost("mqtt.meshtastic.org"))
+    }
+
+    @Test
+    fun `extractHost with port`() {
+        assertEquals("mqtt.meshtastic.org", extractHost("mqtt.meshtastic.org:8883"))
+    }
+
+    @Test
+    fun `extractHost with tcp scheme and port`() {
+        assertEquals("mqtt.meshtastic.org", extractHost("tcp://mqtt.meshtastic.org:1883"))
+    }
+
+    @Test
+    fun `extractHost with ssl scheme no port`() {
+        assertEquals("mqtt.meshtastic.org", extractHost("ssl://mqtt.meshtastic.org"))
+    }
+
+    @Test
+    fun `extractHost with path`() {
+        assertEquals("broker.example.com", extractHost("ws://broker.example.com:8080/mqtt"))
+    }
+
+    // endregion
+
+    // region MqttJsonPayload — keep the existing JSON contract tests.
+
+    @Test
+    fun `test json payload parsing`() {
+        val jsonStr =
+            """{"type":"text","from":12345678,"to":4294967295,"payload":"Hello World","hop_limit":3,"id":123,"time":1600000000}"""
+        val json = Json { ignoreUnknownKeys = true }
+        val payload = json.decodeFromString<MqttJsonPayload>(jsonStr)
+
+        assertEquals("text", payload.type)
+        assertEquals(12345678L, payload.from)
+        assertEquals(4294967295L, payload.to)
+        assertEquals("Hello World", payload.payload)
+        assertEquals(3, payload.hopLimit)
+        assertEquals(123L, payload.id)
+        assertEquals(1600000000L, payload.time)
+    }
+
+    @Test
+    fun `test json payload serialization`() {
+        val payload =
+            MqttJsonPayload(
+                type = "text",
+                from = 12345678,
+                to = 4294967295,
+                payload = "Hello World",
+                hopLimit = 3,
+                id = 123,
+                time = 1600000000,
+            )
+        val json = Json { ignoreUnknownKeys = true }
+        val jsonStr = json.encodeToString(MqttJsonPayload.serializer(), payload)
+
+        assertTrue(jsonStr.contains("\"type\":\"text\""))
+        assertTrue(jsonStr.contains("\"from\":12345678"))
+        assertTrue(jsonStr.contains("\"payload\":\"Hello World\""))
+    }
+
+    // endregion
+}

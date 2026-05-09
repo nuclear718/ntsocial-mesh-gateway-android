@@ -16,17 +16,17 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
-    alias(libs.plugins.meshtastic.kotlinx.serialization)
-    id("meshtastic.kmp.jvm.android")
-    id("meshtastic.koin")
+    alias(libs.plugins.meshlink.kmp.library)
+    alias(libs.plugins.meshlink.kotlinx.serialization)
+    id("com.ntsocial.meshlink.kmp.jvm.android")
+    id("com.ntsocial.meshlink.koin")
 }
 
 kotlin {
     jvm()
 
     android {
-        namespace = "org.meshtastic.core.data"
+        namespace = "com.ntsocial.meshlink.core.data"
         androidResources.enable = false
         withHostTest { isIncludeAndroidResources = true }
     }

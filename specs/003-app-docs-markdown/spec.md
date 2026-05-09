@@ -179,7 +179,7 @@ When documentation-relevant UI or workflow changes merge to `main`, GitHub Actio
 
 ### Session 2026-05-07
 
-- Q: Where should the feature live in the codebase? → A: In a new KMP feature module at `feature/docs/` using the `meshtastic.kmp.feature` plugin.
+- Q: Where should the feature live in the codebase? → A: In a new KMP feature module at `feature/docs/` using the `com.ntsocial.meshlink.kmp.feature` plugin.
 - Q: Where does the in-app entry point belong? → A: Inside the existing settings flow, routed as a typed Navigation 3 destination under `SettingsRoute` and `SettingsGraph`.
 - Q: How should in-app docs render across targets? → A: Android uses `WebView` with bundled HTML; Desktop and iOS use a shared embedded browser abstraction or Compose markdown renderer over the same bundled content.
 - Q: What converts markdown to bundled HTML? → A: A Gradle task using `flexmark-java` (preferred) or `commonmark-java`.

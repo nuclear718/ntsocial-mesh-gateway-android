@@ -18,9 +18,9 @@ import com.diffplug.gradle.spotless.SpotlessExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
-import org.meshtastic.buildlogic.configureSpotless
-import org.meshtastic.buildlogic.libs
-import org.meshtastic.buildlogic.plugin
+import com.ntsocial.meshlink.buildlogic.configureSpotless
+import com.ntsocial.meshlink.buildlogic.libs
+import com.ntsocial.meshlink.buildlogic.plugin
 
 class SpotlessConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {

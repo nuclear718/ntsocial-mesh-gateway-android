@@ -7,4 +7,4 @@ applyTo: "build-logic/**/*.kt"
 - Prefer lazy Gradle configuration (`configureEach`, `withPlugin`, provider APIs).
 - Avoid `afterEvaluate` unless there is no viable lazy alternative.
 - Check `gradle/libs.versions.toml` for version catalog aliases before adding new ones.
-- Convention plugins: `meshtastic.kmp.feature`, `meshtastic.kmp.library`, `meshtastic.kmp.jvm.android`, `meshtastic.koin`.
+- Convention plugins: `com.ntsocial.meshlink.kmp.feature`, `com.ntsocial.meshlink.kmp.library`, `com.ntsocial.meshlink.kmp.jvm.android`, `com.ntsocial.meshlink.koin`.

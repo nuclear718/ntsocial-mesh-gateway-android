@@ -18,14 +18,14 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.kotlin.dsl.configure
-import org.meshtastic.buildlogic.configProperties
+import com.ntsocial.meshlink.buildlogic.configProperties
 
 class PublishingConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             pluginManager.apply("maven-publish")
 
-            group = "org.meshtastic"
+            group = "com.ntsocial.meshlink"
 
             if (version == "unspecified") {
                 version =
@@ -43,7 +43,9 @@ class PublishingConventionPlugin : Plugin<Project> {
                     repositories {
                         maven {
                             name = "GitHubPackages"
-                            url = uri("https://maven.pkg.github.com/meshtastic/Meshtastic-Android")
+                            val githubRepository =
+                                providers.environmentVariable("GITHUB_REPOSITORY").orElse("NTsocial/ntsocial-meshlink-android")
+                            url = uri("https://maven.pkg.github.com/${githubRepository.get()}")
                             credentials {
                                 username = githubActor.get()
                                 password = githubToken.get()

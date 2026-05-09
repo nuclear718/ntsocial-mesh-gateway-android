@@ -13,8 +13,8 @@ The library provides a standard way to access strings in Jetpack Compose.
 
 ```kotlin
 import org.jetbrains.compose.resources.stringResource
-import org.meshtastic.core.resources.Res
-import org.meshtastic.core.resources.your_string_key
+import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.your_string_key
 
 Text(text = stringResource(Res.string.your_string_key))
 ```

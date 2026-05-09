@@ -226,7 +226,7 @@
     <string name="demo_mode">Демо режим</string>
     <string name="desc_node_filter_clear">изчистване на филтъра за възли</string>
     <string name="description">Описание</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="desktop_tray_quit">Изход</string>
     <string name="details">Подробности</string>
     <!-- DEVICE -->
@@ -533,7 +533,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">Известия за предупреждения</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">Известия за излъчвани съобщения</string>
     <string name="meshtastic_low_battery_notifications">Известия за изтощена батерия</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Известия за изтощена батерия (любими възли)</string>

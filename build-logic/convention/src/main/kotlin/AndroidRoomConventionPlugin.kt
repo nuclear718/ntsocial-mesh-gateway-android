@@ -22,9 +22,9 @@ import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
-import org.meshtastic.buildlogic.isDesktopOnly
-import org.meshtastic.buildlogic.library
-import org.meshtastic.buildlogic.libs
+import com.ntsocial.meshlink.buildlogic.isDesktopOnly
+import com.ntsocial.meshlink.buildlogic.library
+import com.ntsocial.meshlink.buildlogic.libs
 
 class AndroidRoomConventionPlugin : Plugin<Project> {
 

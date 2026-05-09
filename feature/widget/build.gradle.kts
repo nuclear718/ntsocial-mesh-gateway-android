@@ -16,13 +16,13 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.android.library)
-    alias(libs.plugins.meshtastic.android.library.compose)
-    id("meshtastic.koin")
+    alias(libs.plugins.meshlink.android.library)
+    alias(libs.plugins.meshlink.android.library.compose)
+    id("com.ntsocial.meshlink.koin")
 }
 
 android {
-    namespace = "org.meshtastic.feature.widget"
+    namespace = "com.ntsocial.meshlink.feature.widget"
     resourcePrefix = "widget_"
 
     defaultConfig { minSdk = 26 }

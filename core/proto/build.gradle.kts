@@ -16,9 +16,9 @@
  */
 
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
+    alias(libs.plugins.meshlink.kmp.library)
     alias(libs.plugins.wire)
-    id("meshtastic.publishing")
+    id("com.ntsocial.meshlink.publishing")
 }
 
 kotlin {

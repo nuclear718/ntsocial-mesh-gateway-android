@@ -3,6 +3,18 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-05-09 - Rename to NTsocial MeshLink package identity
+- Renamed project-owned Android/KMP source packages and paths from `org.meshtastic.*` /
+  `com.geeksville.mesh` to `com.ntsocial.meshlink.*`; preserved upstream protocol boundary
+  `org.meshtastic.proto`.
+- Updated app display labels to `NTsocial MeshLink`, app id to `com.ntsocial.meshlink`,
+  Gradle convention plugin ids to `com.ntsocial.meshlink.*`, desktop ids to
+  `com.ntsocial.meshlink.desktop`, and Room schema path to the new database package.
+- Verification: bootstrap completed with JDK 21 and Android SDK. Full
+  `spotlessCheck detekt assembleDebug test allTests` passed with
+  `JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"`. DataStore-style prefs tests
+  now use in-memory test stores to avoid Windows atomic rename flakes.
+
 ## 2026-05-09 - NTsocial visual token skinning phase 1
 - Updated core UI theme tokens only: `Color.kt`, `CustomColors.kt`, and `Type.kt`.
 - Non-Dynamic theme now uses NTsocial indigo/emerald/amber with gray surfaces; Dynamic Color,

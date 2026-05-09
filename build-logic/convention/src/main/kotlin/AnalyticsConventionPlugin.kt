@@ -25,8 +25,8 @@ import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.findByType
 import org.gradle.kotlin.dsl.withType
-import org.meshtastic.buildlogic.libs
-import org.meshtastic.buildlogic.plugin
+import com.ntsocial.meshlink.buildlogic.libs
+import com.ntsocial.meshlink.buildlogic.plugin
 import java.io.File
 
 /**

@@ -19,9 +19,9 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
-import org.meshtastic.buildlogic.configureAndroidCompose
-import org.meshtastic.buildlogic.libs
-import org.meshtastic.buildlogic.plugin
+import com.ntsocial.meshlink.buildlogic.configureAndroidCompose
+import com.ntsocial.meshlink.buildlogic.libs
+import com.ntsocial.meshlink.buildlogic.plugin
 
 /**
  * Compose configuration for Android applications.

@@ -5,7 +5,7 @@ applyTo: "**/commonMain/**/*.kt"
 # KMP commonMain Rules
 
 - NEVER import `java.*` or `android.*` in `commonMain`.
-- Use `org.meshtastic.core.common.util.ioDispatcher` instead of `Dispatchers.IO`.
+- Use `com.ntsocial.meshlink.core.common.util.ioDispatcher` instead of `Dispatchers.IO`.
 - Use Okio (`BufferedSource`/`BufferedSink`) instead of `java.io.*`.
 - Use `kotlinx.coroutines.sync.Mutex` instead of `java.util.concurrent.locks.*`.
 - Use `atomicfu` or Mutex-guarded `mutableMapOf()` instead of `ConcurrentHashMap`.

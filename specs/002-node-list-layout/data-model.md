@@ -21,7 +21,7 @@ erDiagram
 ## Density Enum
 
 ```kotlin
-package org.meshtastic.feature.node.model
+package com.ntsocial.meshlink.feature.node.model
 
 enum class NodeListDensity {
     COMPLETE,
@@ -35,7 +35,7 @@ enum class NodeListDensity {
 ## Preference Keys
 
 ```kotlin
-package org.meshtastic.core.prefs.ui
+package com.ntsocial.meshlink.core.prefs.ui
 
 enum class NodeListLayoutPreferences(val key: String, val defaultValue: Boolean) {
     SHOW_POWER("shouldShowPower", true),

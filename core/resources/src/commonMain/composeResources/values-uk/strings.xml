@@ -248,7 +248,7 @@
     <string name="demo_mode">Демо режим</string>
     <string name="desc_node_filter_clear">очистити фільтр вузлів</string>
     <string name="description">Опис</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="details">Подробиці</string>
     <string name="detection_sensor">Датчик виявлення</string>
     <string name="detection_sensor_config">Налаштування датчика виявлення</string>
@@ -594,7 +594,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">Сповіщення про тривоги</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">Сповіщення загального каналу</string>
     <string name="meshtastic_low_battery_notifications">Сповіщення про низький рівень заряду</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Сповіщення про низький рівень заряду акумулятора (улюблені вузли)</string>

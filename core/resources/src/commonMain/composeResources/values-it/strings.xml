@@ -238,7 +238,7 @@
     <string name="demo_mode">Modalità Demo</string>
     <string name="desc_node_filter_clear">elimina filtro nodi</string>
     <string name="description">Descrizione</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <string name="details">Dettagli</string>
     <string name="detection_sensor">Sensore Di Rilevamento</string>
     <string name="detection_sensor_config">Configurazione Sensore Rilevamento</string>
@@ -535,7 +535,7 @@
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
     <string name="meshtastic_alerts_notifications">Notifiche di allarme</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_broadcast_notifications">Notifiche di messaggi broadcast</string>
     <string name="meshtastic_low_battery_notifications">Notifica di batteria scarica</string>
     <string name="meshtastic_low_battery_temporary_remote_notifications">Notifiche batteria scarica (nodi preferiti)</string>

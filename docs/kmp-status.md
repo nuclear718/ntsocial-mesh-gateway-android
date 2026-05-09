@@ -8,7 +8,7 @@ Single source of truth for Kotlin Multiplatform migration progress. For the forw
 
 Meshtastic-Android has completed its **Android-first structural KMP migration** across core logic and feature modules, with **full JVM cross-compilation validated in CI**. The desktop target has a working Navigation 3 shell, TCP transport with full mesh handshake, and multiple features wired with real screens.
 
-Modules that share JVM-specific code between Android and desktop now standardize on the `meshtastic.kmp.jvm.android` convention plugin, which creates `jvmAndroidMain` via Kotlin's hierarchy template API instead of manual `dependsOn(...)` source-set wiring.
+Modules that share JVM-specific code between Android and desktop now standardize on the `com.ntsocial.meshlink.kmp.jvm.android` convention plugin, which creates `jvmAndroidMain` via Kotlin's hierarchy template API instead of manual `dependsOn(...)` source-set wiring.
 
 ## Module Inventory
 

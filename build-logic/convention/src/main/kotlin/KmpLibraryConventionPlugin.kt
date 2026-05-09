@@ -17,14 +17,14 @@
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
-import org.meshtastic.buildlogic.configureAndroidMarketplaceFallback
-import org.meshtastic.buildlogic.configureGraphTasks
-import org.meshtastic.buildlogic.configureKmpTestDependencies
-import org.meshtastic.buildlogic.configureKotlinMultiplatform
-import org.meshtastic.buildlogic.configureTestOptions
-import org.meshtastic.buildlogic.isDesktopOnly
-import org.meshtastic.buildlogic.libs
-import org.meshtastic.buildlogic.plugin
+import com.ntsocial.meshlink.buildlogic.configureAndroidMarketplaceFallback
+import com.ntsocial.meshlink.buildlogic.configureGraphTasks
+import com.ntsocial.meshlink.buildlogic.configureKmpTestDependencies
+import com.ntsocial.meshlink.buildlogic.configureKotlinMultiplatform
+import com.ntsocial.meshlink.buildlogic.configureTestOptions
+import com.ntsocial.meshlink.buildlogic.isDesktopOnly
+import com.ntsocial.meshlink.buildlogic.libs
+import com.ntsocial.meshlink.buildlogic.plugin
 
 class KmpLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
@@ -32,12 +32,12 @@ class KmpLibraryConventionPlugin : Plugin<Project> {
             apply(plugin = libs.plugin("kotlin-multiplatform").get().pluginId)
             if (!isDesktopOnly) {
                 apply(plugin = libs.plugin("android-kotlin-multiplatform-library").get().pluginId)
-                apply(plugin = "meshtastic.android.lint")
+                apply(plugin = "com.ntsocial.meshlink.android.lint")
             }
-            apply(plugin = "meshtastic.detekt")
-            apply(plugin = "meshtastic.spotless")
-            apply(plugin = "meshtastic.dokka")
-            apply(plugin = "meshtastic.kover")
+            apply(plugin = "com.ntsocial.meshlink.detekt")
+            apply(plugin = "com.ntsocial.meshlink.spotless")
+            apply(plugin = "com.ntsocial.meshlink.dokka")
+            apply(plugin = "com.ntsocial.meshlink.kover")
             apply(plugin = "org.gradle.test-retry")
             apply(plugin = libs.plugin("mokkery").get().pluginId)
 

@@ -55,7 +55,7 @@
     <string name="delivery_confirmed">Entrega confirmada</string>
     <string name="desc_node_filter_clear">netejar filtre de node</string>
     <string name="description">Descripció</string>
-    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="desktop_notification_title">NTsocial MeshLink</string>
     <!-- DEVICE -->
     <string name="device_sleeping">Dispositiu hivernant</string>
     <string name="direct_message">Missatge directe</string>
@@ -111,7 +111,7 @@
     <string name="map_tile_source">Font de tessel·la</string>
     <!-- MESHTASTIC -->
     <string name="meshtastic">Meshtastic</string>
-    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_app_name">NTsocial MeshLink</string>
     <string name="meshtastic_service_notifications">Notificacions de servei</string>
     <!-- MESSAGE -->
     <string name="message">Missatge</string>

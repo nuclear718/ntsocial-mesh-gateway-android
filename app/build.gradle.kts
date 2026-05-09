@@ -16,20 +16,20 @@
  */
 
 import com.android.build.api.dsl.ApplicationExtension
-import org.meshtastic.buildlogic.configProperties
-import org.meshtastic.buildlogic.resolveVersionInfo
+import com.ntsocial.meshlink.buildlogic.configProperties
+import com.ntsocial.meshlink.buildlogic.resolveVersionInfo
 import java.util.Properties
 
 val versionInfo = resolveVersionInfo()
 
 plugins {
-    alias(libs.plugins.meshtastic.android.application)
-    alias(libs.plugins.meshtastic.android.application.flavors)
-    alias(libs.plugins.meshtastic.android.application.compose)
-    id("meshtastic.koin")
+    alias(libs.plugins.meshlink.android.application)
+    alias(libs.plugins.meshlink.android.application.flavors)
+    alias(libs.plugins.meshlink.android.application.compose)
+    id("com.ntsocial.meshlink.koin")
     alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.secrets)
-    id("meshtastic.aboutlibraries")
+    id("com.ntsocial.meshlink.aboutlibraries")
     id("dev.mokkery")
 }
 
@@ -41,7 +41,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 configure<ApplicationExtension> {
-    namespace = "org.meshtastic.app"
+    namespace = "com.ntsocial.meshlink.app"
 
     signingConfigs {
         create("release") {
@@ -116,8 +116,8 @@ configure<ApplicationExtension> {
     }
 
     // Disable ABI splits for bundle builds or when explicitly requested via Gradle property.
-    // Usage: ./gradlew :app:bundleGoogleRelease -Pmeshtastic.disableAbiSplits=true
-    val disableSplits = providers.gradleProperty("meshtastic.disableAbiSplits").map { it.toBoolean() }.getOrElse(false)
+    // Usage: ./gradlew :app:bundleGoogleRelease -Pmeshlink.disableAbiSplits=true
+    val disableSplits = providers.gradleProperty("meshlink.disableAbiSplits").map { it.toBoolean() }.getOrElse(false)
 
     // Enable ABI splits to generate smaller APKs per architecture for F-Droid/IzzyOnDroid
     splits {
@@ -179,7 +179,7 @@ secrets {
 
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
-        variant.flavorName?.let { flavor -> variant.applicationId.set("com.geeksville.mesh.$flavor.debug") }
+        variant.flavorName?.let { flavor -> variant.applicationId.set("com.ntsocial.meshlink.$flavor.debug") }
     }
 
     onVariants(selector().withBuildType("release")) { variant ->

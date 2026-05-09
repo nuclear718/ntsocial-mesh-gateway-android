@@ -15,21 +15,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import com.ntsocial.meshlink.buildlogic.configureGraphTasks
+import com.ntsocial.meshlink.buildlogic.resolveVersionInfo
 import dev.detekt.gradle.Detekt
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.meshtastic.buildlogic.configureGraphTasks
-import org.meshtastic.buildlogic.resolveVersionInfo
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.compose.multiplatform)
-    alias(libs.plugins.meshtastic.detekt)
-    alias(libs.plugins.meshtastic.spotless)
-    alias(libs.plugins.meshtastic.koin)
-    id("meshtastic.kover")
-    id("meshtastic.aboutlibraries")
+    alias(libs.plugins.meshlink.detekt)
+    alias(libs.plugins.meshlink.spotless)
+    alias(libs.plugins.meshlink.koin)
+    id("com.ntsocial.meshlink.kover")
+    id("com.ntsocial.meshlink.aboutlibraries")
 }
 
 configureGraphTasks()
@@ -63,7 +63,7 @@ val generateBuildConfig =
     tasks.register<GenerateBuildConfigTask>("generateDesktopBuildConfig") {
         content.set(
             """
-            |package org.meshtastic.desktop
+            |package com.ntsocial.meshlink.desktop
             |
             |/**
             | * Auto-generated build configuration for Meshtastic Desktop.
@@ -73,7 +73,7 @@ val generateBuildConfig =
             |    const val VERSION_CODE: Int = ${versionInfo.versionCode}
             |    const val VERSION_NAME: String = "${versionInfo.versionName}"
             |    const val IS_DEBUG: Boolean = $resolvedIsDebug
-            |    const val APPLICATION_ID: String = "org.meshtastic.desktop"
+            |    const val APPLICATION_ID: String = "com.ntsocial.meshlink.desktop"
             |    const val MIN_FW_VERSION: String = "${versionInfo.minFwVersion}"
             |    const val ABS_MIN_FW_VERSION: String = "${versionInfo.absMinFwVersion}"
             |}
@@ -107,14 +107,14 @@ tasks.withType<Detekt>().configureEach { exclude("**/generated/**") }
 
 compose.desktop {
     application {
-        mainClass = "org.meshtastic.desktop.MainKt"
+        mainClass = "com.ntsocial.meshlink.desktop.MainKt"
 
         val desktopJvmArgs =
             listOf(
                 "-Xmx2G",
                 "-Dapple.awt.application.name=Meshtastic Desktop",
                 "-Dcom.apple.mrj.application.apple.menu.about.name=Meshtastic Desktop",
-                "-Dcom.apple.bundle.identifier=org.meshtastic.desktop",
+                "-Dcom.apple.bundle.identifier=com.ntsocial.meshlink.desktop",
             )
         jvmArgs(*desktopJvmArgs.toTypedArray())
 
@@ -150,7 +150,7 @@ compose.desktop {
             macOS {
                 iconFile.set(project.file("src/main/resources/icon.icns"))
                 minimumSystemVersion = "12.0"
-                bundleID = "org.meshtastic.desktop"
+                bundleID = "com.ntsocial.meshlink.desktop"
                 appCategory = "public.app-category.utilities"
                 entitlementsFile.set(project.file("entitlements.plist"))
                 infoPlist {

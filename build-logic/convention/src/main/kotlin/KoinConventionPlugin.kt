@@ -19,8 +19,8 @@ import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.dependencies
 import org.koin.compiler.plugin.KoinGradleExtension
-import org.meshtastic.buildlogic.libs
-import org.meshtastic.buildlogic.plugin
+import com.ntsocial.meshlink.buildlogic.libs
+import com.ntsocial.meshlink.buildlogic.plugin
 
 class KoinConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {

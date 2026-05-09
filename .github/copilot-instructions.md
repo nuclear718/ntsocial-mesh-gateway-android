@@ -51,7 +51,7 @@ KMP modules have different task names than pure-Android modules. Using the wrong
 | Layer | Modules | Role |
 |-------|---------|------|
 | Host | `app`, `desktop` | Platform shell, Koin root, theme |
-| Feature | `feature/*` | Self-contained screens (KMP, `meshtastic.kmp.feature` plugin) |
+| Feature | `feature/*` | Self-contained screens (KMP, `com.ntsocial.meshlink.kmp.feature` plugin) |
 | Core | `core/*` | Shared logic, data, networking, UI components |
 
 ### Key technologies
@@ -92,12 +92,12 @@ Feature navigation graphs are extension functions on `EntryProviderScope<NavKey>
 
 ### Dispatchers
 
-- Use `org.meshtastic.core.common.util.ioDispatcher` — never `Dispatchers.IO` directly.
+- Use `com.ntsocial.meshlink.core.common.util.ioDispatcher` — never `Dispatchers.IO` directly.
 - Inject `CoroutineDispatchers` from `core:di`.
 
 ### Build-logic
 
-- Convention plugins: `meshtastic.kmp.feature`, `meshtastic.kmp.library`, `meshtastic.kmp.jvm.android`, `meshtastic.koin`
+- Convention plugins: `com.ntsocial.meshlink.kmp.feature`, `com.ntsocial.meshlink.kmp.library`, `com.ntsocial.meshlink.kmp.jvm.android`, `com.ntsocial.meshlink.koin`
 - Use `libs.library("alias-name")` string-based lookups (not type-safe accessors) in convention plugins.
 - Prefer lazy Gradle configuration (`configureEach`, `withPlugin`, provider APIs).
 
@@ -149,7 +149,7 @@ Don't pile unrelated changes onto an existing branch. Squash fixup commits befor
 
 ### Multi-flavor device installs
 
-Two app flavors exist: `com.geeksville.mesh` (fdroid) and `com.geeksville.mesh.google` (google). Only one can be installed at a time (different signing keys). When switching flavors on a device:
+Two app flavors exist: `com.ntsocial.meshlink` (fdroid) and `com.ntsocial.meshlink.google` (google). Only one can be installed at a time (different signing keys). When switching flavors on a device:
 - Uninstall the other flavor first, or the install will fail silently.
 - Be aware that uninstalling loses onboarding state, permissions, and bonded-device data. Ask before uninstalling if the user has an active session.
 

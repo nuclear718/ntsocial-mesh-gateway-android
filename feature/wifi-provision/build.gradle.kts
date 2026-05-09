@@ -15,13 +15,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 plugins {
-    alias(libs.plugins.meshtastic.kmp.feature)
-    alias(libs.plugins.meshtastic.kotlinx.serialization)
+    alias(libs.plugins.meshlink.kmp.feature)
+    alias(libs.plugins.meshlink.kotlinx.serialization)
 }
 
 kotlin {
     android {
-        namespace = "org.meshtastic.feature.wifiprovision"
+        namespace = "com.ntsocial.meshlink.feature.wifiprovision"
         androidResources.enable = false
         withHostTest {}
     }

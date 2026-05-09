@@ -25,7 +25,7 @@ Feature modules depend on this module to define their entry points and navigate 
 ```kotlin
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
-import org.meshtastic.core.navigation.NodesRoute
+import com.ntsocial.meshlink.core.navigation.NodesRoute
 
 fun openNodeDetail(backStack: NavBackStack<NavKey>, destNum: Int) {
     backStack.add(NodesRoute.NodeDetail(destNum))

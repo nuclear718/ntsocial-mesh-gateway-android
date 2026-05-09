@@ -143,7 +143,7 @@ A user must not be allowed to choose 2.4 GHz discovery presets on unsupported ha
 
 ### Scan Configuration and Orchestration
 
-- **FR-001**: The feature shall live in a new KMP module at `feature/discovery/` using the `meshtastic.kmp.feature` convention plugin.
+- **FR-001**: The feature shall live in a new KMP module at `feature/discovery/` using the `com.ntsocial.meshlink.kmp.feature` convention plugin.
 - **FR-002**: The feature shall be reachable from the Settings flow through a typed Navigation 3 route in `SettingsGraph`.
 - **FR-003**: The user shall be able to select **one or more** modem presets for a session; the UI should encourage multiple presets but not require more than one.
 - **FR-004**: The user shall be able to configure a dwell time per preset with a minimum of 15 minutes.

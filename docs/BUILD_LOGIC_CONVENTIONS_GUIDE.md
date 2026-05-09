@@ -67,8 +67,8 @@ If a KMP module needs Java/JVM APIs shared between Android and desktop JVM, appl
 
 ```kotlin
 plugins {
-    alias(libs.plugins.meshtastic.kmp.library)
-    id("meshtastic.kmp.jvm.android")
+    alias(libs.plugins.meshlink.kmp.library)
+    id("com.ntsocial.meshlink.kmp.jvm.android")
 }
 
 kotlin {
@@ -89,19 +89,19 @@ kotlin {
 
 **Current Pattern (GOOD ✅):**
 
-Use `meshtastic.kmp.feature` for any `feature:*` module. It composes `kmp.library` + `kmp.library.compose` + `koin` and provides all the common Compose/Lifecycle/Koin/Android dependencies that every feature needs:
+Use `com.ntsocial.meshlink.kmp.feature` for any `feature:*` module. It composes `kmp.library` + `kmp.library.compose` + `koin` and provides all the common Compose/Lifecycle/Koin/Android dependencies that every feature needs:
 
 ```kotlin
 plugins {
-    alias(libs.plugins.meshtastic.kmp.feature)
+    alias(libs.plugins.meshlink.kmp.feature)
     // Optional: add only if this feature needs serialization
-    alias(libs.plugins.meshtastic.kotlinx.serialization)
+    alias(libs.plugins.meshlink.kotlinx.serialization)
 }
 
 kotlin {
     jvm()
     android {
-        namespace = "org.meshtastic.feature.yourfeature"
+        namespace = "com.ntsocial.meshlink.feature.yourfeature"
         androidResources.enable = false
         withHostTest { isIncludeAndroidResources = true }
     }

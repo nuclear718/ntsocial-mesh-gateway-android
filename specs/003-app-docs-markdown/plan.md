@@ -12,7 +12,7 @@ Build a complete documentation system for Meshtastic-Android that includes:
 3. keyword search across the bundled docs corpus, and
 4. an Android-only on-device AI assistant powered by Gemini Nano on supported devices, with graceful fallback elsewhere.
 
-The implementation centers on a new `feature/docs/` KMP module using the `meshtastic.kmp.feature` plugin. Shared state, models, search, and most UI live in `commonMain`. Android-specific HTML rendering and Gemini integration live behind platform or flavor abstractions. Build-time markdown conversion is handled by Gradle using `flexmark-java`, and bundled output is packaged through generated resources/assets.
+The implementation centers on a new `feature/docs/` KMP module using the `com.ntsocial.meshlink.kmp.feature` plugin. Shared state, models, search, and most UI live in `commonMain`. Android-specific HTML rendering and Gemini integration live behind platform or flavor abstractions. Build-time markdown conversion is handled by Gradle using `flexmark-java`, and bundled output is packaged through generated resources/assets.
 
 ## Technical Context
 
