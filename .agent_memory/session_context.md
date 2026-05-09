@@ -3,6 +3,23 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-05-09 - Built-in NTsocial channel provisioning
+- Added `NtsocialDefaultChannel` in `core:model` as the canonical built-in public NTsocial
+  Meshtastic channel. The decoded channel is `NTsocial`, has a 32-byte PSK, uplink/downlink enabled,
+  and includes LoRa config. The decodable QR payload uses `...GPoBIAQoBTg...`; the visually similar
+  `...GPoBIASoBTg...` transcription fails protobuf decoding.
+- Added `NtsocialChannelProvisioner` in `core:data`. It checks post-handshake channel state, treats
+  same name or same PSK as NTsocial, updates non-canonical NTsocial slots, adds a free secondary
+  slot, replaces the last secondary when full, and replaces primary only on one-channel radios.
+- LoRa/RF config from the QR is only applied when the current local LoRa config is missing or
+  `region == UNSET`; configured radios keep their existing region/frequency/preset.
+- Wired provisioning from `MeshConnectionManagerImpl.onNodeDbReady()` after owner/session seeding,
+  using the existing local admin session refresh flow before `set_channel` / `set_config` writes.
+- Added decode and provisioner tests, plus manager wiring coverage. Verification passed:
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests --no-configuration-cache` with
+  `ANDROID_HOME=C:\Users\USER\AppData\Local\Android\Sdk`,
+  `JAVA_HOME=C:\Users\USER\.jdks\openjdk-21`, and English `JAVA_TOOL_OPTIONS`.
+
 ## 2026-05-09 - NTsocial protected Gateway IPC MVP
 - Added project-owned protected NTsocial Gateway IPC in `core:api`: `INtsocialGatewayService`,
   `INtsocialEnvelopeCallback`, `NtsocialEnvelopeData`, `NtsocialGatewayStatus`, and

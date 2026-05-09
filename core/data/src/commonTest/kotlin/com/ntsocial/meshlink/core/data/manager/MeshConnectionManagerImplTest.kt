@@ -16,6 +16,8 @@
  */
 package com.ntsocial.meshlink.core.data.manager
 
+import com.ntsocial.meshlink.core.data.ntsocial.NtsocialChannelProvisionResult
+import com.ntsocial.meshlink.core.data.ntsocial.NtsocialChannelProvisioner
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
@@ -45,6 +47,7 @@ import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.verify
+import dev.mokkery.verifySuspend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -82,6 +85,7 @@ class MeshConnectionManagerImplTest {
     private val packetRepository = mock<PacketRepository>(MockMode.autofill)
     private val workerManager = mock<MeshWorkerManager>(MockMode.autofill)
     private val appWidgetUpdater = mock<AppWidgetUpdater>(MockMode.autofill)
+    private val ntsocialChannelProvisioner = mock<NtsocialChannelProvisioner>(MockMode.autofill)
 
     private val dataPacket = DataPacket(id = 456, time = 0L, to = "0", from = "0", bytes = null, dataType = 0)
 
@@ -111,6 +115,8 @@ class MeshConnectionManagerImplTest {
         every { mqttManager.stop() } returns Unit
         every { nodeManager.nodeDBbyNodeNum } returns emptyMap<Int, Node>()
         every { packetHandler.sendToRadio(any<org.meshtastic.proto.ToRadio>()) } returns Unit
+        everySuspend { ntsocialChannelProvisioner.ensureDefaultChannel(any(), any()) } returns
+            NtsocialChannelProvisionResult.AlreadyPresent
     }
 
     private fun createManager(scope: CoroutineScope): MeshConnectionManagerImpl = MeshConnectionManagerImpl(
@@ -133,6 +139,7 @@ class MeshConnectionManagerImplTest {
         workerManager,
         appWidgetUpdater,
         DataLayerHeartbeatSender(packetHandler),
+        ntsocialChannelProvisioner,
         scope,
     )
 
@@ -302,6 +309,7 @@ class MeshConnectionManagerImplTest {
 
         verify { mqttManager.startProxy(true, true) }
         verify { historyManager.requestHistoryReplay(any(), any(), any(), any()) }
+        verifySuspend { ntsocialChannelProvisioner.ensureDefaultChannel(123, 8) }
     }
 
     @Test

@@ -20,6 +20,7 @@ import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.common.util.nowSeconds
+import com.ntsocial.meshlink.core.data.ntsocial.NtsocialChannelProvisioner
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DeviceType
 import com.ntsocial.meshlink.core.model.TelemetryType
@@ -87,6 +88,7 @@ class MeshConnectionManagerImpl(
     private val workerManager: MeshWorkerManager,
     private val appWidgetUpdater: AppWidgetUpdater,
     private val heartbeatSender: DataLayerHeartbeatSender,
+    private val ntsocialChannelProvisioner: NtsocialChannelProvisioner,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshConnectionManager {
     /**
@@ -335,6 +337,13 @@ class MeshConnectionManagerImpl(
         // that subsequent write operations don't fail with ADMIN_BAD_SESSION_KEY.
         commandSender.sendAdmin(myNodeNum, wantResponse = true) { AdminMessage(get_owner_request = true) }
 
+        scope.handledLaunch {
+            ntsocialChannelProvisioner.ensureDefaultChannel(
+                myNodeNum = myNodeNum,
+                maxChannels = nodeManager.getMyNodeInfo()?.maxChannels ?: DEFAULT_MAX_CHANNELS,
+            )
+        }
+
         // Start MQTT if enabled
         scope.handledLaunch {
             val moduleConfig = radioConfigRepository.moduleConfigFlow.first()
@@ -422,6 +431,8 @@ class MeshConnectionManagerImpl(
         // first want_config_id the retry completes within a few seconds. Waiting another 30s
         // before reconnecting just delays recovery unnecessarily.
         private val HANDSHAKE_RETRY_TIMEOUT = 15.seconds
+
+        private const val DEFAULT_MAX_CHANNELS = 8
 
         private const val EVENT_CONNECTED_SECONDS = "connected_seconds"
         private const val EVENT_MESH_DISCONNECT = "mesh_disconnect"
