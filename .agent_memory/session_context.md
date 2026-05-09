@@ -3,6 +3,14 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-05-09 - AGENTS channel provisioning rule sync
+- Updated `AGENTS.md` architecture boundaries to make built-in NTsocial channel provisioning a
+  durable project rule: bundle the canonical public NTsocial channel, auto-register it after node DB
+  readiness without confirmation, preserve primary when possible, replace the last secondary when
+  full, and apply QR LoRa/RF config only on effectively unconfigured radios.
+- Synchronized `.github/copilot-instructions.md` with the same quick-reference guidance.
+- No Gradle validation was run for this docs-only change; `git diff --check` should remain clean.
+
 ## 2026-05-09 - Built-in NTsocial channel provisioning
 - Added `NtsocialDefaultChannel` in `core:model` as the canonical built-in public NTsocial
   Meshtastic channel. The decoded channel is `NTsocial`, has a 32-byte PSK, uplink/downlink enabled,

@@ -143,6 +143,9 @@ The host shell renders via `MeshtasticNavDisplay`. Use `NavigationBackHandler`, 
 
 - Planned NTsocial overlay transport is `PRIVATE_APP / port 256`; legacy `497` is receive-only.
 - NTsocial `channelId` is the logical route; Meshtastic `channelIndex` is the RF lane.
+- NTsocial MeshLink must bundle and automatically register the canonical public NTsocial Meshtastic
+  channel after node DB readiness. Preserve primary when possible, replace the last secondary when
+  full, and apply QR LoRa/RF config only when the radio is unconfigured or `region == UNSET`.
 - `rebroadcast_mode = ALL` must be applied with user consent and verification.
 - Do not send image, voice, or PTT media bytes over LoRa.
 - Do not describe planned gateway behavior as shipped until implemented.
