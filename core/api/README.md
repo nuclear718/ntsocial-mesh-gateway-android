@@ -13,6 +13,19 @@ The `:core:api` module contains the AIDL interface and dependencies for third-pa
 that currently integrate with the Meshtastic Android app via service binding. New integrations
 should use the Local TAK Server instead (see deprecation notice above).
 
+## NTsocial Gateway IPC
+
+This fork also exposes a project-owned, protected NTsocial Gateway IPC for the NTsocial app:
+
+- Bind action: `com.ntsocial.meshlink.gateway.BIND`
+- Required signature permission: `com.ntsocial.meshlink.permission.BIND_NTSOCIAL_GATEWAY`
+- Contract: `INtsocialGatewayService`
+
+The contract is intentionally small: `sendNtsocialPayload(channelIndex, payload)`,
+`observeNtsocialEnvelope(callback)`, `getGatewayStatus()`, and a cache snapshot getter. It routes
+through the NTsocial Gateway data plane and does not expose the deprecated `IMeshService` surface to
+the NTsocial app.
+
 ## Integration
 
 To communicate with the Meshtastic Android service from your own application, we recommend using **JitPack**.
@@ -52,6 +65,7 @@ Use `MeshtasticIntent` constants for actions. Remember to use `RECEIVER_EXPORTED
 
 ## Key Components
 - **`IMeshService.aidl`**: The primary AIDL interface.
+- **`INtsocialGatewayService.aidl`**: Protected NTsocial Gateway IPC for PRIVATE_APP transport.
 - **`MeshtasticIntent.kt`**: Defines Intent actions for received messages and status changes.
 
 ## Module dependency graph

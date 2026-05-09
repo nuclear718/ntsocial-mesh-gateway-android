@@ -16,6 +16,7 @@
  */
 plugins {
     alias(libs.plugins.meshlink.android.library)
+    alias(libs.plugins.kotlin.parcelize)
     id("com.ntsocial.meshlink.publishing")
 }
 

@@ -28,6 +28,10 @@
         android:name="android.hardware.location.gps"
         android:required="false" />
 
+    <permission
+        android:name="com.ntsocial.meshlink.permission.BIND_NTSOCIAL_GATEWAY"
+        android:protectionLevel="signature" />
+
     <!-- Request legacy Bluetooth permissions on older devices -->
     <uses-permission android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
@@ -173,6 +177,17 @@
             android:exported="true" tools:ignore="ExportedActivity">
             <intent-filter>
                 <action android:name="com.ntsocial.meshlink.Service" />
+            </intent-filter>
+        </service>
+
+        <!-- Protected NTsocial Gateway IPC; external NTsocial clients should bind here, not to IMeshService. -->
+        <service
+            android:name="com.ntsocial.meshlink.core.service.NtsocialGatewayService"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="com.ntsocial.meshlink.permission.BIND_NTSOCIAL_GATEWAY">
+            <intent-filter>
+                <action android:name="com.ntsocial.meshlink.gateway.BIND" />
             </intent-filter>
         </service>
 

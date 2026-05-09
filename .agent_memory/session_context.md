@@ -3,6 +3,26 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-05-09 - NTsocial protected Gateway IPC MVP
+- Added project-owned protected NTsocial Gateway IPC in `core:api`: `INtsocialGatewayService`,
+  `INtsocialEnvelopeCallback`, `NtsocialEnvelopeData`, `NtsocialGatewayStatus`, and
+  `NtsocialGatewayContract`. The contract exposes `sendNtsocialPayload`, envelope observation,
+  cache snapshot, and gateway status without exposing the deprecated `IMeshService` surface.
+- Added `NtsocialGatewayService` in `core:service/androidMain`. It is a separate Binder service
+  that enforces the NTsocial signature permission for cross-process callers, sends through
+  `NtsocialGatewayRepository.sendTestPayload`, streams cached validated envelopes via callbacks,
+  and reports connection/cache/port/payload-limit status.
+- Declared `com.ntsocial.meshlink.permission.BIND_NTSOCIAL_GATEWAY` as a signature permission and
+  exported `com.ntsocial.meshlink.core.service.NtsocialGatewayService` with bind action
+  `com.ntsocial.meshlink.gateway.BIND`. Existing `MeshService` / `IMeshService` behavior was left
+  unchanged.
+- Added Android host contract tests and a fake NTsocial Gateway binder to verify the new IPC
+  contract, mapper surface, constants, PRIVATE_APP port 256, legacy receive-only 497, and payload
+  size status.
+- Verification: `spotlessApply spotlessCheck detekt assembleDebug test allTests --no-configuration-cache`
+  passed with `ANDROID_HOME=C:\Users\USER\AppData\Local\Android\Sdk` and
+  `JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"`.
+
 ## 2026-05-09 - NTsocial PRIVATE_APP transport MVP
 - Added the first NTsocial Gateway data plane: `NtsocialEnvelopeCodec` validates the MVP
   `NM + version + 16-byte headerMsgId + payload` envelope, caps raw envelope size at 200 bytes,
