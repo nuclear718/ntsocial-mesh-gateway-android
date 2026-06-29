@@ -3,6 +3,18 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-06-29 - Upstream firmware/Android divergence audit
+- Confirmed this workspace is an Android/KMP app fork, not a direct `meshtastic/firmware` checkout.
+  `upstream` points to `meshtastic/Meshtastic-Android`; firmware must be compared separately.
+- Local `main` / `origin/main` is `638c04d64`; official Android `upstream/main` is `e634e71ea`;
+  merge-base is `c0d95d6ac`. Local fork is 8 commits ahead and 543 Android upstream commits behind.
+- Local app base is `VERSION_NAME_BASE=2.7.14`; official Android upstream main is `2.8.0`.
+  Local bundled firmware metadata has stable `v2.7.15.567b8ea` and alpha up to
+  `v2.7.22.96dd647`; upstream Android metadata has alpha up to `v2.7.26.54e0d8d`.
+- Local protobuf submodule `core/proto/src/main/proto` is `v2.7.23-7-g1d6f1a7`; official
+  protobufs has `v2.7.26`. The delta is 38 protobuf commits, including newer hardware models,
+  Lockdown auth/status messages, TAK/ATAK schema changes, ITU region split, and KMP publishing.
+
 ## 2026-05-09 - AGENTS channel provisioning rule sync
 - Updated `AGENTS.md` architecture boundaries to make built-in NTsocial channel provisioning a
   durable project rule: bundle the canonical public NTsocial channel, auto-register it after node DB
