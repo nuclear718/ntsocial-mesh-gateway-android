@@ -17,16 +17,21 @@
 package com.ntsocial.meshlink.feature.intro
 
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -47,23 +52,32 @@ internal const val SETTINGS_TAG = "settings_link_tag"
 @Composable
 internal fun FeatureRow(feature: FeatureUIData) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Icon(
-            imageVector = feature.icon,
-            contentDescription = feature.titleRes?.let { stringResource(it) } ?: stringResource(feature.subtitleRes),
-            modifier = Modifier.padding(end = 16.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
+        Box(
+            modifier =
+            Modifier.padding(end = 16.dp)
+                .size(42.dp)
+                .background(NtsocialIntroBlue.copy(alpha = 0.18f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = feature.icon,
+                contentDescription =
+                feature.titleRes?.let { stringResource(it) } ?: stringResource(feature.subtitleRes),
+                tint = NtsocialIntroBlue,
+            )
+        }
         Column {
             feature.titleRes?.let { titleRes ->
                 Text(
                     text = stringResource(titleRes),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = Color.White,
                 )
             }
             Text(
                 text = stringResource(feature.subtitleRes),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color.White.copy(alpha = 0.72f),
             )
         }
     }
@@ -92,7 +106,7 @@ internal fun Context.createClickableAnnotatedString(
         if (startIndex != -1) {
             val endIndex = startIndex + linkText.length
             addStyle(
-                style = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline),
+                style = SpanStyle(color = NtsocialIntroBlue, textDecoration = TextDecoration.Underline),
                 start = startIndex,
                 end = endIndex,
             )

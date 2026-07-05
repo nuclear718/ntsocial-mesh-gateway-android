@@ -3,6 +3,23 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-05 - NTsocial_release visual alignment pass
+- Imported visual assets from `C:\Users\USER\Desktop\GitHub\NTsocial_release`: butterfly intro/wordmark,
+  dark background art, flag images, butterfly logo, Android launcher mipmaps, and play-store icon.
+- Added NTsocial intro visual helpers in `feature:intro`: animated butterfly splash, shared background
+  scaffold, dark scrim, white copy, blue CTA pills, and reused the background across welcome,
+  permission, and critical-alert intro screens.
+- Updated visible shell touchpoints: app bar fallback branding now uses the NTsocial butterfly logo,
+  the no-device connections card uses NTsocial background art, connection action buttons use rounder
+  NTsocial-style shapes, and Android splash uses the imported launcher foreground on black.
+- Stabilized unrelated flaky validation blockers encountered during full baseline:
+  `DesktopNotificationManagerTest` now waits on fallback flow with coroutine timeouts, and
+  `MessageViewModelTest` waits for returned `Job`s from IO-backed `safeLaunch` calls.
+- Verification passed with `ANDROID_HOME=C:\Users\USER\AppData\Local\Android\Sdk`,
+  `JAVA_HOME=C:\Users\USER\.jdks\openjdk-21`, and
+  `JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"`:
+  `.\gradlew.bat spotlessApply spotlessCheck detekt assembleDebug test allTests`.
+
 ## 2026-06-29 - Upstream firmware/Android divergence audit
 - Confirmed this workspace is an Android/KMP app fork, not a direct `meshtastic/firmware` checkout.
   `upstream` points to `meshtastic/Meshtastic-Android`; firmware must be compared separately.

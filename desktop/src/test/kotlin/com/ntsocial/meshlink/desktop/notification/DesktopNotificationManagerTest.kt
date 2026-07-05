@@ -19,11 +19,13 @@ package com.ntsocial.meshlink.desktop.notification
 import com.ntsocial.meshlink.core.repository.Notification
 import com.ntsocial.meshlink.core.repository.NotificationPrefs
 import com.ntsocial.meshlink.desktop.DesktopNotificationManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -104,48 +106,36 @@ class DesktopNotificationManagerTest {
     }
 
     @Test
-    fun `fallback emitted when native sender fails`() {
+    fun `fallback emitted when native sender fails`() = runBlocking {
         val sender = FakeNativeSender(shouldSucceed = false)
         val manager = DesktopNotificationManager(FakeNotificationPrefs(), sender)
-        var fallback: androidx.compose.ui.window.Notification? = null
 
-        // Collect on a real thread since dispatch uses Dispatchers.IO
-        val job =
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
-                fallback = manager.fallbackNotifications.first()
+        val fallback =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeout(FALLBACK_WAIT_MS) { manager.fallbackNotifications.first() }
             }
-
-        // Give the collector coroutine time to subscribe before dispatching
-        Thread.sleep(SUBSCRIBE_WAIT_MS)
         manager.dispatch(Notification(title = "Fallback", message = "Test"))
 
-        // Block the test thread briefly to let the IO dispatcher process
-        Thread.sleep(ASYNC_WAIT_MS)
-        assertNotNull(fallback, "Expected fallback notification to be emitted")
-        assertEquals("Fallback", fallback!!.title)
-        job.cancel()
+        val notification = assertNotNull(fallback.await(), "Expected fallback notification to be emitted")
+        assertEquals("Fallback", notification.title)
     }
 
     @Test
-    fun `no fallback when native sender succeeds`() {
+    fun `no fallback when native sender succeeds`() = runBlocking {
         val sender = FakeNativeSender(shouldSucceed = true)
         val manager = DesktopNotificationManager(FakeNotificationPrefs(), sender)
-        var fallback: androidx.compose.ui.window.Notification? = null
 
-        val job =
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
-                fallback = manager.fallbackNotifications.first()
+        val fallback =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeoutOrNull(FALLBACK_WAIT_MS) { manager.fallbackNotifications.first() }
             }
-
         manager.dispatch(Notification(title = "Success", message = "Test"))
 
-        Thread.sleep(ASYNC_WAIT_MS)
-        assertNull(fallback, "Should not emit fallback when native sender succeeds")
-        job.cancel()
+        assertNull(fallback.await(), "Should not emit fallback when native sender succeeds")
     }
 
     companion object {
         private const val ASYNC_WAIT_MS = 300L
-        private const val SUBSCRIBE_WAIT_MS = 100L
+        private const val FALLBACK_WAIT_MS = 1_000L
     }
 }

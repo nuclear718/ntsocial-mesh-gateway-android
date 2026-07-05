@@ -19,11 +19,15 @@ package com.ntsocial.meshlink.feature.intro
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
@@ -44,13 +48,29 @@ internal fun IntroBottomBar(
     configureButtonText: String,
     showSkipButton: Boolean = true,
 ) {
-    BottomAppBar(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp)) {
+    BottomAppBar(
+        containerColor = Color.Transparent,
+        tonalElevation = 0.dp,
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+    ) {
         if (showSkipButton) {
-            Button(onClick = onSkip) { Text(skipButtonText) }
+            TextButton(
+                onClick = onSkip,
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.84f)),
+            ) {
+                Text(skipButtonText)
+            }
         }
 
         Spacer(modifier = Modifier.fillMaxWidth().weight(1f))
 
-        Button(onClick = onConfigure) { Text(configureButtonText) }
+        Button(
+            onClick = onConfigure,
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(containerColor = NtsocialIntroBlue, contentColor = Color.White),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+        ) {
+            Text(configureButtonText)
+        }
     }
 }

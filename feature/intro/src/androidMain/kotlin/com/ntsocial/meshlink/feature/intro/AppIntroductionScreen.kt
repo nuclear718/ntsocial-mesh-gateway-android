@@ -19,6 +19,10 @@ package com.ntsocial.meshlink.feature.intro
 import android.Manifest
 import android.os.Build
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.navigation3.runtime.rememberNavBackStack
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionState
@@ -35,6 +39,13 @@ import com.ntsocial.meshlink.core.ui.component.MeshtasticNavDisplay
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun AppIntroductionScreen(onDone: () -> Unit, viewModel: IntroViewModel) {
+    var showSplash by remember { mutableStateOf(true) }
+
+    if (showSplash) {
+        NtsocialIntroSplashScreen(onFinish = { showSplash = false })
+        return
+    }
+
     val notificationPermissionState: PermissionState? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             rememberPermissionState(Manifest.permission.POST_NOTIFICATIONS)

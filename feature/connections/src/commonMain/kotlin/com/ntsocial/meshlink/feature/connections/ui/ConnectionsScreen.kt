@@ -21,6 +21,8 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +58,7 @@ import com.ntsocial.meshlink.core.navigation.Route
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.connections
+import com.ntsocial.meshlink.core.resources.img_ntsocial_background_butterfly
 import com.ntsocial.meshlink.core.resources.no_device_selected
 import com.ntsocial.meshlink.core.resources.set_your_region
 import com.ntsocial.meshlink.core.resources.unknown_device
@@ -80,6 +85,7 @@ import com.ntsocial.meshlink.feature.settings.navigation.ConfigRoute
 import com.ntsocial.meshlink.feature.settings.navigation.getNavRouteFrom
 import com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel
 import com.ntsocial.meshlink.feature.settings.radio.component.PacketResponseStateDialog
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.uuid.ExperimentalUuidApi
@@ -90,6 +96,7 @@ import kotlin.uuid.ExperimentalUuidApi
  * transitions. Sized to comfortably fit the CONNECTED state (battery/RSSI row + node row + disconnect button).
  */
 private val CardMinHeight = 100.dp
+private val NtsocialConnectionBlue = Color(0xFF3DA8FF)
 
 /** Composable screen for managing device connections (BLE, TCP, USB). It displays connection status. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalUuidApi::class)
@@ -378,24 +385,33 @@ private fun ConnectingDeviceContent(
 /** Body for the NO_DEVICE state — sits inside the shared outer Card in [ConnectionsScreen]. */
 @Composable
 private fun NoDeviceContent() {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            imageVector = MeshtasticIcons.NoDevice,
+    Box(modifier = Modifier.fillMaxWidth().heightIn(min = CardMinHeight)) {
+        Image(
+            painter = painterResource(Res.drawable.img_ntsocial_background_butterfly),
             contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.outlineVariant,
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.Crop,
         )
-        Text(
-            text = stringResource(Res.string.no_device_selected),
-            modifier = Modifier.padding(top = 16.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.outline,
-        )
+        Box(modifier = Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.42f)))
+        Column(
+            modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = MeshtasticIcons.NoDevice,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = NtsocialConnectionBlue,
+            )
+            Text(
+                text = stringResource(Res.string.no_device_selected),
+                modifier = Modifier.padding(top = 16.dp),
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = Color.White.copy(alpha = 0.86f),
+            )
+        }
     }
 }
 

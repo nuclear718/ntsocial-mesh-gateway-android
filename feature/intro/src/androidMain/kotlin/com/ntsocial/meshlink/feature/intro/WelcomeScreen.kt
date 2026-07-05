@@ -16,19 +16,21 @@
  */
 package com.ntsocial.meshlink.feature.intro
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -38,8 +40,9 @@ import com.ntsocial.meshlink.core.resources.communicate_off_the_grid
 import com.ntsocial.meshlink.core.resources.create_your_own_networks
 import com.ntsocial.meshlink.core.resources.easily_set_up_private_mesh_networks
 import com.ntsocial.meshlink.core.resources.get_started
+import com.ntsocial.meshlink.core.resources.img_ntsocial_butterfly_logo
 import com.ntsocial.meshlink.core.resources.intro_welcome
-import com.ntsocial.meshlink.core.resources.meshtastic
+import com.ntsocial.meshlink.core.resources.meshtastic_app_name
 import com.ntsocial.meshlink.core.resources.share_your_location_in_real_time
 import com.ntsocial.meshlink.core.resources.stay_connected_anywhere
 import com.ntsocial.meshlink.core.resources.track_and_share_locations
@@ -48,6 +51,7 @@ import com.ntsocial.meshlink.core.ui.icon.MeshHub
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.NearMe
 import com.ntsocial.meshlink.core.ui.util.LocalAnalyticsIntroProvider
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -77,7 +81,7 @@ internal fun WelcomeScreen(onGetStarted: () -> Unit) {
             ),
         )
 
-    Scaffold(
+    NtsocialIntroScaffold(
         bottomBar = {
             IntroBottomBar(
                 onSkip = {}, // No skip on welcome
@@ -87,28 +91,31 @@ internal fun WelcomeScreen(onGetStarted: () -> Unit) {
                 showSkipButton = false, // Explicitly hide skip for welcome
             )
         },
-    ) { innerPadding ->
+    ) {
         Column(
-            modifier =
-            Modifier.fillMaxSize().padding(innerPadding).padding(16.dp).verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = ntsocialIntroPanelModifier().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.Start,
         ) {
+            Image(
+                painter = painterResource(Res.drawable.img_ntsocial_butterfly_logo),
+                contentDescription = null,
+                modifier = Modifier.size(72.dp).clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
             Text(
                 text = stringResource(Res.string.intro_welcome),
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = Color.White.copy(alpha = 0.78f),
+                textAlign = TextAlign.Start,
             )
             Text(
-                text = stringResource(Res.string.meshtastic),
+                text = stringResource(Res.string.meshtastic_app_name),
                 style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-                textAlign = TextAlign.Center,
+                color = Color.White,
+                textAlign = TextAlign.Start,
             )
-            Spacer(modifier = Modifier.height(32.dp))
-            features.forEach { feature ->
-                FeatureRow(feature = feature)
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            Spacer(modifier = Modifier.weight(1f))
+            features.forEach { feature -> FeatureRow(feature = feature) }
             analyticsIntro()
         }
     }

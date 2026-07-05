@@ -41,7 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.ic_meshtastic
+import com.ntsocial.meshlink.core.resources.img_ntsocial_butterfly_logo
 import com.ntsocial.meshlink.core.resources.navigate_back
 import com.ntsocial.meshlink.core.ui.icon.ArrowBack
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
@@ -51,7 +51,6 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import org.jetbrains.compose.resources.vectorResource
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
@@ -128,7 +127,12 @@ private fun EventAwareBranding() {
             },
         )
     } else {
-        Icon(imageVector = vectorResource(Res.drawable.ic_meshtastic), contentDescription = null)
+        Image(
+            painter = painterResource(Res.drawable.img_ntsocial_butterfly_logo),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(32.dp).clip(CircleShape),
+        )
     }
 }
 

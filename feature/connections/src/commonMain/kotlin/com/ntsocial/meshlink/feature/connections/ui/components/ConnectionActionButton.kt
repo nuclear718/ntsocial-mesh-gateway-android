@@ -18,6 +18,7 @@ package com.ntsocial.meshlink.feature.connections.ui.components
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -62,6 +63,7 @@ fun ConnectionActionButton(
                 onClick = onClick,
                 modifier = modifier,
                 enabled = enabled,
+                shape = CircleShape,
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
             ) {
                 content()
@@ -72,6 +74,7 @@ fun ConnectionActionButton(
                 onClick = onClick,
                 modifier = modifier,
                 enabled = enabled,
+                shape = CircleShape,
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
             ) {
                 content()
@@ -82,6 +85,7 @@ fun ConnectionActionButton(
                 onClick = onClick,
                 modifier = modifier,
                 enabled = enabled,
+                shape = CircleShape,
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
             ) {
                 content()
@@ -92,6 +96,7 @@ fun ConnectionActionButton(
                 onClick = onClick,
                 modifier = modifier,
                 enabled = enabled,
+                shape = CircleShape,
                 contentPadding = ButtonDefaults.TextButtonWithIconContentPadding,
             ) {
                 content()

@@ -205,9 +205,7 @@ class MessageViewModelTest {
     fun testDeleteMessages() = runTest {
         everySuspend { packetRepository.deleteMessages(any()) } returns Unit
 
-        viewModel.deleteMessages(listOf(1L, 2L))
-
-        advanceUntilIdle()
+        viewModel.deleteMessages(listOf(1L, 2L)).join()
 
         verifySuspend { packetRepository.deleteMessages(listOf(1L, 2L)) }
     }
@@ -238,9 +236,7 @@ class MessageViewModelTest {
         everySuspend { packetRepository.getUnreadCount(contact) } returns 0
         every { notificationManager.cancel(contact.hashCode()) } returns Unit
 
-        viewModel.clearUnreadCount(contact, 1L, 1000L)
-
-        advanceUntilIdle()
+        viewModel.clearUnreadCount(contact, 1L, 1000L).join()
 
         verifySuspend { packetRepository.clearUnreadCount(contact, 1000L) }
         verifySuspend { packetRepository.updateLastReadMessage(contact, 1L, 1000L) }
