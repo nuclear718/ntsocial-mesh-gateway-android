@@ -17,6 +17,7 @@
 package com.ntsocial.meshlink.core.network.service
 
 import com.ntsocial.meshlink.core.model.NetworkDeviceHardware
+import com.ntsocial.meshlink.core.model.NetworkDeviceLinksResponse
 import com.ntsocial.meshlink.core.model.NetworkFirmwareReleases
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -27,6 +28,9 @@ import org.koin.core.annotation.Single
 interface ApiService {
     /** Fetches the device hardware catalog from the Meshtastic API. */
     suspend fun getDeviceHardware(): List<NetworkDeviceHardware>
+
+    /** Fetches the resolved msh.to device links catalog from the Meshtastic API. */
+    suspend fun getDeviceLinks(): NetworkDeviceLinksResponse
 
     /** Fetches the list of available firmware releases from the Meshtastic API. */
     suspend fun getFirmwareReleases(): NetworkFirmwareReleases
@@ -43,6 +47,8 @@ interface ApiService {
 @Single(binds = [])
 class ApiServiceImpl(private val client: HttpClient) : ApiService {
     override suspend fun getDeviceHardware(): List<NetworkDeviceHardware> = client.get("resource/deviceHardware").body()
+
+    override suspend fun getDeviceLinks(): NetworkDeviceLinksResponse = client.get("resource/deviceLinks").body()
 
     override suspend fun getFirmwareReleases(): NetworkFirmwareReleases = client.get("github/firmware/list").body()
 }

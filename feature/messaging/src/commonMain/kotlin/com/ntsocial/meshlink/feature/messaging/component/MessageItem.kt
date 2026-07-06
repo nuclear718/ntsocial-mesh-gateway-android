@@ -23,6 +23,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -63,16 +64,21 @@ import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.a11y_message_from
 import com.ntsocial.meshlink.core.resources.filter_message_label
 import com.ntsocial.meshlink.core.resources.reply
+import com.ntsocial.meshlink.core.resources.security_signed_verified
 import com.ntsocial.meshlink.core.ui.component.AutoLinkText
+import com.ntsocial.meshlink.core.ui.component.HighlightedText
 import com.ntsocial.meshlink.core.ui.component.NodeChip
 import com.ntsocial.meshlink.core.ui.component.Rssi
 import com.ntsocial.meshlink.core.ui.component.Snr
+import com.ntsocial.meshlink.core.ui.component.StatusSurface
 import com.ntsocial.meshlink.core.ui.component.TransportIcon
 import com.ntsocial.meshlink.core.ui.emoji.EmojiPickerDialog
 import com.ntsocial.meshlink.core.ui.icon.FormatQuote
 import com.ntsocial.meshlink.core.ui.icon.HopCount
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
+import com.ntsocial.meshlink.core.ui.icon.ShieldCheck
 import com.ntsocial.meshlink.core.ui.theme.MessageItemColors
+import com.ntsocial.meshlink.core.ui.theme.StatusColors.StatusGreen
 import com.ntsocial.meshlink.core.ui.util.createClipEntry
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -103,6 +109,7 @@ fun MessageItem(
     onStatusClick: () -> Unit = {},
     hasSamePrev: Boolean = false,
     hasSameNext: Boolean = false,
+    searchQuery: String = "",
 ) = Column(
     modifier =
     modifier
@@ -260,10 +267,36 @@ fun MessageItem(
             )
 
             Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
-                AutoLinkText(text = message.text, style = MaterialTheme.typography.bodyLarge, color = contentColor)
+                if (searchQuery.isNotEmpty()) {
+                    HighlightedText(
+                        text = message.text,
+                        query = searchQuery,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = contentColor,
+                    )
+                } else {
+                    AutoLinkText(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = contentColor,
+                    )
+                }
 
                 Row(modifier = Modifier, verticalAlignment = Alignment.CenterVertically) {
                     if (!message.fromLocal) {
+                        if (message.xeddsaSigned) {
+                            StatusSurface(
+                                modifier = Modifier.padding(end = 4.dp),
+                                contentPadding = PaddingValues(3.dp),
+                            ) {
+                                Icon(
+                                    imageVector = MeshtasticIcons.ShieldCheck,
+                                    contentDescription = stringResource(Res.string.security_signed_verified),
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.StatusGreen,
+                                )
+                            }
+                        }
                         if (message.hopsAway == 0 && !message.viaMqtt) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Snr(message.snr)

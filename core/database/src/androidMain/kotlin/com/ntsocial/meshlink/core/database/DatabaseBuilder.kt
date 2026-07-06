@@ -24,6 +24,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room3.Room
 import androidx.room3.RoomDatabase
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.ntsocial.meshlink.core.common.ContextServices
 import com.ntsocial.meshlink.core.database.MeshtasticDatabase.Companion.configureCommon
 import okio.FileSystem
@@ -35,20 +36,18 @@ actual fun getDatabaseBuilder(dbName: String): RoomDatabase.Builder<MeshtasticDa
     val app = ContextServices.app
     val dbFile = app.getDatabasePath(dbName)
     return Room.databaseBuilder<MeshtasticDatabase>(
-        context = app.applicationContext,
         name = dbFile.absolutePath,
         factory = { MeshtasticDatabaseConstructor.initialize() },
     )
-        .configureCommon()
+        .configureCommon(multiConnection = false)
+        .setDriver(BundledSQLiteDriver())
 }
 
 /** Returns a [RoomDatabase.Builder] configured for an in-memory Android database. */
 actual fun getInMemoryDatabaseBuilder(): RoomDatabase.Builder<MeshtasticDatabase> =
-    Room.inMemoryDatabaseBuilder<MeshtasticDatabase>(
-        context = ContextServices.app.applicationContext,
-        factory = { MeshtasticDatabaseConstructor.initialize() },
-    )
-        .configureCommon()
+    Room.inMemoryDatabaseBuilder<MeshtasticDatabase>(factory = { MeshtasticDatabaseConstructor.initialize() })
+        .configureCommon(multiConnection = false)
+        .setDriver(BundledSQLiteDriver())
 
 /** Returns the Android directory where database files are stored. */
 actual fun getDatabaseDirectory(): Path {

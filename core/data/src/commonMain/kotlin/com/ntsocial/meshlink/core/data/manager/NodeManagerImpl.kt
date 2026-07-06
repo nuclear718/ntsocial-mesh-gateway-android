@@ -267,6 +267,7 @@ class NodeManagerImpl(
             telemetry.device_metrics?.let { nextNode = nextNode.copy(deviceMetrics = it) }
             telemetry.environment_metrics?.let { nextNode = nextNode.copy(environmentMetrics = it) }
             telemetry.power_metrics?.let { nextNode = nextNode.copy(powerMetrics = it) }
+            telemetry.air_quality_metrics?.let { nextNode = nextNode.copy(airQualityMetrics = it) }
             val telemetryTime = if (telemetry.time != 0) telemetry.time else node.lastHeard
             val newLastHeard = maxOf(node.lastHeard, telemetryTime)
             nextNode.copy(lastHeard = newLastHeard)
@@ -315,6 +316,7 @@ class NodeManagerImpl(
                     isFavorite = info.is_favorite,
                     isIgnored = info.is_ignored,
                     isMuted = info.is_muted,
+                    signsPackets = info.has_xeddsa_signed,
                 )
             next
         }

@@ -23,9 +23,11 @@ package com.ntsocial.meshlink.desktop.di
 // Generated Koin module extensions from core KMP modules
 import com.ntsocial.meshlink.core.data.datasource.BootloaderOtaQuirksJsonDataSource
 import com.ntsocial.meshlink.core.data.datasource.DeviceHardwareJsonDataSource
+import com.ntsocial.meshlink.core.data.datasource.DeviceLinksJsonDataSource
 import com.ntsocial.meshlink.core.data.datasource.FirmwareReleaseJsonDataSource
 import com.ntsocial.meshlink.core.model.BootloaderOtaQuirk
 import com.ntsocial.meshlink.core.model.NetworkDeviceHardware
+import com.ntsocial.meshlink.core.model.NetworkDeviceLinksResponse
 import com.ntsocial.meshlink.core.model.NetworkFirmwareReleases
 import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.network.HttpClientDefaults
@@ -227,6 +229,11 @@ private fun desktopPlatformStubsModule() = module {
     single<DeviceHardwareJsonDataSource> {
         object : DeviceHardwareJsonDataSource {
             override fun loadDeviceHardwareFromJsonAsset(): List<NetworkDeviceHardware> = emptyList()
+        }
+    }
+    single<DeviceLinksJsonDataSource> {
+        object : DeviceLinksJsonDataSource {
+            override fun loadDeviceLinksFromJsonAsset(): NetworkDeviceLinksResponse = NetworkDeviceLinksResponse()
         }
     }
     single<BootloaderOtaQuirksJsonDataSource> {

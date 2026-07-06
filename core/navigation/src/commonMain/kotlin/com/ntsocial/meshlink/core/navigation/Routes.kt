@@ -82,6 +82,8 @@ sealed interface NodeDetailRoute : Route {
 
     @Serializable data class PowerMetrics(val destNum: Int) : NodeDetailRoute
 
+    @Serializable data class AirQualityMetrics(val destNum: Int) : NodeDetailRoute
+
     @Serializable data class TracerouteLog(val destNum: Int) : NodeDetailRoute
 
     @Serializable
@@ -173,6 +175,8 @@ sealed interface SettingsRoute : Route {
     @Serializable data object CleanNodeDb : SettingsRoute
 
     @Serializable data object DebugPanel : SettingsRoute
+
+    @Serializable data object DeviceLinks : SettingsRoute
 
     @Serializable data object About : SettingsRoute
 

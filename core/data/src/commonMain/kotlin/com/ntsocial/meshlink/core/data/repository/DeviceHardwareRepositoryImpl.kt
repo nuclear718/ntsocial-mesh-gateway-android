@@ -30,6 +30,7 @@ import com.ntsocial.meshlink.core.model.DeviceHardware
 import com.ntsocial.meshlink.core.model.util.TimeConstants
 import com.ntsocial.meshlink.core.network.DeviceHardwareRemoteDataSource
 import com.ntsocial.meshlink.core.repository.DeviceHardwareRepository
+import com.ntsocial.meshlink.core.repository.DeviceLinkRepository
 import kotlinx.coroutines.withContext
 import org.koin.core.annotation.Single
 
@@ -40,6 +41,7 @@ class DeviceHardwareRepositoryImpl(
     private val localDataSource: DeviceHardwareLocalDataSource,
     private val jsonDataSource: DeviceHardwareJsonDataSource,
     private val bootloaderOtaQuirksJsonDataSource: BootloaderOtaQuirksJsonDataSource,
+    private val deviceLinkRepository: DeviceLinkRepository,
     private val dispatchers: CoroutineDispatchers,
 ) : DeviceHardwareRepository {
 
@@ -107,6 +109,7 @@ class DeviceHardwareRepositoryImpl(
             }
 
             localDataSource.insertAllDeviceHardware(remoteHardware)
+            deviceLinkRepository.reconcile()
             var fromDb = localDataSource.getByHwModel(hwModel)
 
             // Fallback to target lookup after remote fetch

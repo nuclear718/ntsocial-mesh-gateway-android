@@ -440,6 +440,7 @@ private fun NodeItemHeader(
             isFavorite = isFavorite,
             isMuted = isMuted,
             isUnmessageable = isUnmessageable,
+            signsPackets = thatNode.signsPackets,
             connectionState = connectionState,
             deviceType = deviceType,
             contentColor = contentColor,

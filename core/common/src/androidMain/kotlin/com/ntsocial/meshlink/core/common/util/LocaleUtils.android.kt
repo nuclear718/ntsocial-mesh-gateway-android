@@ -61,3 +61,5 @@ actual fun getSystemMeasurementSystem(): MeasurementSystem {
         }
     }
 }
+
+actual fun currentRegionCode(): String = Locale.getDefault().country

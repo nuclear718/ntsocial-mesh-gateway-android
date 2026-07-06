@@ -44,6 +44,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ntsocial.meshlink.core.database.entity.QuickChatAction
@@ -62,6 +65,7 @@ import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.alert_bell_text
 import com.ntsocial.meshlink.core.resources.cancel_reply
+import com.ntsocial.meshlink.core.resources.clear
 import com.ntsocial.meshlink.core.resources.clear_selection
 import com.ntsocial.meshlink.core.resources.copy
 import com.ntsocial.meshlink.core.resources.delete
@@ -81,6 +85,7 @@ import com.ntsocial.meshlink.core.resources.quick_chat_show
 import com.ntsocial.meshlink.core.resources.reply
 import com.ntsocial.meshlink.core.resources.replying_to
 import com.ntsocial.meshlink.core.resources.scroll_to_bottom
+import com.ntsocial.meshlink.core.resources.search_messages
 import com.ntsocial.meshlink.core.resources.select_all
 import com.ntsocial.meshlink.core.resources.unknown
 import com.ntsocial.meshlink.core.ui.component.MeshtasticTextDialog
@@ -94,10 +99,13 @@ import com.ntsocial.meshlink.core.ui.icon.Copy
 import com.ntsocial.meshlink.core.ui.icon.Delete
 import com.ntsocial.meshlink.core.ui.icon.FilterList
 import com.ntsocial.meshlink.core.ui.icon.FilterListOff
+import com.ntsocial.meshlink.core.ui.icon.KeyboardArrowDown
+import com.ntsocial.meshlink.core.ui.icon.KeyboardArrowUp
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.More
 import com.ntsocial.meshlink.core.ui.icon.Muted
 import com.ntsocial.meshlink.core.ui.icon.Reply
+import com.ntsocial.meshlink.core.ui.icon.Search
 import com.ntsocial.meshlink.core.ui.icon.SelectAll
 import com.ntsocial.meshlink.core.ui.icon.Settings
 import com.ntsocial.meshlink.core.ui.icon.Unmuted
@@ -299,6 +307,7 @@ fun MessageTopBar(
     showFiltered: Boolean = false,
     onToggleShowFiltered: () -> Unit = {},
     onNavigateToFilterSettings: () -> Unit = {},
+    onSearchClick: () -> Unit = {},
 ) = TopAppBar(
     title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -319,6 +328,12 @@ fun MessageTopBar(
         }
     },
     actions = {
+        IconButton(onClick = onSearchClick) {
+            Icon(
+                imageVector = MeshtasticIcons.Search,
+                contentDescription = stringResource(Res.string.search_messages),
+            )
+        }
         MessageTopBarActions(
             showQuickChat = showQuickChat,
             onToggleQuickChat = onToggleQuickChat,
@@ -639,6 +654,82 @@ fun String.limitBytes(maxBytes: Int): String {
         validCharCount++
     }
     return this.substring(0, validCharCount)
+}
+
+// endregion
+
+// region MessageSearchBar
+
+/** Contextual search bar for finding text within the current message thread. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MessageSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+    resultCount: Int,
+    currentIndex: Int = 0,
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    TopAppBar(
+        modifier = modifier,
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(
+                    imageVector = MeshtasticIcons.ArrowBack,
+                    contentDescription = stringResource(Res.string.navigate_back),
+                )
+            }
+        },
+        title = {
+            TextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(text = stringResource(Res.string.search_messages), style = MaterialTheme.typography.bodyLarge)
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge,
+                colors =
+                TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                ),
+            )
+        },
+        actions = {
+            if (query.isNotEmpty() && resultCount > 0) {
+                Text(
+                    text = "${currentIndex + 1} / $resultCount",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 4.dp),
+                )
+                IconButton(onClick = onPrevious) {
+                    Icon(
+                        imageVector = MeshtasticIcons.KeyboardArrowUp,
+                        contentDescription = stringResource(Res.string.search_messages),
+                    )
+                }
+                IconButton(onClick = onNext) {
+                    Icon(
+                        imageVector = MeshtasticIcons.KeyboardArrowDown,
+                        contentDescription = stringResource(Res.string.search_messages),
+                    )
+                }
+            }
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(imageVector = MeshtasticIcons.Close, contentDescription = stringResource(Res.string.clear))
+                }
+            }
+        },
+    )
 }
 
 // endregion

@@ -38,6 +38,7 @@ import com.ntsocial.meshlink.core.resources.loading
 import com.ntsocial.meshlink.feature.node.component.AdministrationSection
 import com.ntsocial.meshlink.feature.node.component.DeviceActions
 import com.ntsocial.meshlink.feature.node.component.DeviceDetailsSection
+import com.ntsocial.meshlink.feature.node.component.DeviceLinksSection
 import com.ntsocial.meshlink.feature.node.component.NodeDetailsSection
 import com.ntsocial.meshlink.feature.node.component.NotesSection
 import com.ntsocial.meshlink.feature.node.model.NodeDetailAction
@@ -116,6 +117,9 @@ fun NodeDetailList(
         }
         if (uiState.metricsState.deviceHardware != null) {
             item { DeviceDetailsSection(uiState.metricsState) }
+        }
+        if (uiState.metricsState.deviceLinks.isNotEmpty()) {
+            item { DeviceLinksSection(links = uiState.metricsState.deviceLinks) }
         }
         item { NotesSection(node = node, onSaveNotes = onSaveNotes) }
         if (!uiState.metricsState.isManaged) {

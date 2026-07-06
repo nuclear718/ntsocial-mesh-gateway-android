@@ -211,6 +211,18 @@ class DeepLinkRouterTest {
     }
 
     @Test
+    fun `nodes with destNum and air-quality sub-route`() {
+        assertEquals(
+            listOf(
+                NodesRoute.NodesGraph,
+                NodesRoute.NodeDetailGraph(destNum = 100),
+                NodeDetailRoute.AirQualityMetrics(destNum = 100),
+            ),
+            route("/nodes/100/air-quality"),
+        )
+    }
+
+    @Test
     fun `nodes with destNum and traceroute sub-route`() {
         assertEquals(
             listOf(

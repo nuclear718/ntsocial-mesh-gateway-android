@@ -31,6 +31,8 @@ import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.feature.settings.AboutScreen
 import com.ntsocial.meshlink.feature.settings.AdministrationScreen
 import com.ntsocial.meshlink.feature.settings.DeviceConfigurationScreen
+import com.ntsocial.meshlink.feature.settings.DeviceLinkDirectoryScreen
+import com.ntsocial.meshlink.feature.settings.DeviceLinkDirectoryViewModel
 import com.ntsocial.meshlink.feature.settings.ModuleConfigurationScreen
 import com.ntsocial.meshlink.feature.settings.SettingsViewModel
 import com.ntsocial.meshlink.feature.settings.debugging.DebugScreen
@@ -236,6 +238,14 @@ fun EntryProviderScope<NavKey>.settingsGraph(backStack: NavBackStack<NavKey>) {
     entry<SettingsRoute.DebugPanel> {
         val viewModel: DebugViewModel = koinViewModel()
         DebugScreen(viewModel = viewModel, onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() })
+    }
+
+    entry<SettingsRoute.DeviceLinks> {
+        val viewModel: DeviceLinkDirectoryViewModel = koinViewModel()
+        DeviceLinkDirectoryScreen(
+            viewModel = viewModel,
+            onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
+        )
     }
 
     entry<SettingsRoute.About> {

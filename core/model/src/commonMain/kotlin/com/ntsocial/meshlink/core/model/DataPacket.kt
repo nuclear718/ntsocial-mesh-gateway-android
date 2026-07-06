@@ -75,6 +75,8 @@ data class DataPacket(
     var sfppHash: ByteString? = null,
     /** The transport mechanism this packet arrived over (see [MeshPacket.TransportMechanism]). */
     var transportMechanism: Int = 0,
+    /** True when the radio verified this packet's XEdDSA signature. */
+    var xeddsaSigned: Boolean = false,
 ) : CommonParcelable {
 
     fun readFromParcel(parcel: CommonParcel) {
@@ -114,6 +116,7 @@ data class DataPacket(
         emoji = parcel.readInt()
         sfppHash = ByteStringParceler.create(parcel)
         transportMechanism = parcel.readInt()
+        xeddsaSigned = parcel.readInt() != 0
     }
 
     /** If there was an error with this message, this string describes what was wrong. */

@@ -44,6 +44,7 @@ import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.core.navigation.WifiProvisionRoute
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.bottom_nav_settings
+import com.ntsocial.meshlink.core.resources.device_links
 import com.ntsocial.meshlink.core.resources.export_configuration
 import com.ntsocial.meshlink.core.resources.filter_settings
 import com.ntsocial.meshlink.core.resources.import_configuration
@@ -53,6 +54,7 @@ import com.ntsocial.meshlink.core.resources.wifi_devices
 import com.ntsocial.meshlink.core.ui.component.ListItem
 import com.ntsocial.meshlink.core.ui.component.MainAppBar
 import com.ntsocial.meshlink.core.ui.component.MeshtasticDialog
+import com.ntsocial.meshlink.core.ui.icon.Device
 import com.ntsocial.meshlink.core.ui.icon.FilterList
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.Wifi
@@ -250,6 +252,12 @@ fun SettingsScreen(
                         leadingIcon = MeshtasticIcons.FilterList,
                     ) {
                         onNavigate(SettingsRoute.FilterSettings)
+                    }
+                }
+
+                ExpressiveSection(title = stringResource(Res.string.device_links)) {
+                    ListItem(text = stringResource(Res.string.device_links), leadingIcon = MeshtasticIcons.Device) {
+                        onNavigate(SettingsRoute.DeviceLinks)
                     }
                 }
 

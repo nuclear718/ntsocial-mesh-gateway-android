@@ -45,6 +45,7 @@ import com.ntsocial.meshlink.core.resources.app_version
 import com.ntsocial.meshlink.core.resources.bottom_nav_settings
 import com.ntsocial.meshlink.core.resources.device_db_cache_limit
 import com.ntsocial.meshlink.core.resources.device_db_cache_limit_summary
+import com.ntsocial.meshlink.core.resources.device_links
 import com.ntsocial.meshlink.core.resources.info
 import com.ntsocial.meshlink.core.resources.modules_already_unlocked
 import com.ntsocial.meshlink.core.resources.modules_unlocked
@@ -57,6 +58,7 @@ import com.ntsocial.meshlink.core.ui.component.ListItem
 import com.ntsocial.meshlink.core.ui.component.MainAppBar
 import com.ntsocial.meshlink.core.ui.component.MeshtasticDialog
 import com.ntsocial.meshlink.core.ui.icon.ChevronRight
+import com.ntsocial.meshlink.core.ui.icon.Device
 import com.ntsocial.meshlink.core.ui.icon.FormatPaint
 import com.ntsocial.meshlink.core.ui.icon.Info
 import com.ntsocial.meshlink.core.ui.icon.Language
@@ -214,6 +216,12 @@ fun DesktopSettingsScreen(
                     lowBatteryEnabled = settingsViewModel.lowBatteryEnabled.collectAsStateWithLifecycle().value,
                     onToggleLowBattery = { settingsViewModel.setLowBatteryEnabled(it) },
                 )
+
+                ExpressiveSection(title = stringResource(Res.string.device_links)) {
+                    ListItem(text = stringResource(Res.string.device_links), leadingIcon = MeshtasticIcons.Device) {
+                        onNavigate(SettingsRoute.DeviceLinks)
+                    }
+                }
 
                 DesktopAppInfoSection(
                     appVersionName = settingsViewModel.appVersionName,

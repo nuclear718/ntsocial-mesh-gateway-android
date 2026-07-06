@@ -26,6 +26,7 @@ import dev.mokkery.mock
 import kotlinx.coroutines.test.TestScope
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.AirQualityMetrics
 import org.meshtastic.proto.DeviceMetrics
 import org.meshtastic.proto.EnvironmentMetrics
 import org.meshtastic.proto.HardwareModel
@@ -187,6 +188,20 @@ class NodeManagerImplTest {
     }
 
     @Test
+    fun `handleReceivedTelemetry updates air quality metrics`() {
+        val nodeNum = 1234
+        val telemetry =
+            Telemetry(air_quality_metrics = AirQualityMetrics(pm10_standard = 1, pm25_standard = 2, co2 = 615))
+
+        nodeManager.handleReceivedTelemetry(nodeNum, telemetry)
+
+        val result = nodeManager.nodeDBbyNodeNum[nodeNum]
+        assertEquals(1, result!!.airQualityMetrics.pm10_standard)
+        assertEquals(2, result.airQualityMetrics.pm25_standard)
+        assertEquals(615, result.airQualityMetrics.co2)
+    }
+
+    @Test
     fun `clear resets internal state`() {
         nodeManager.updateNode(1234) { it.copy(user = it.user.copy(long_name = "Test")) }
         nodeManager.clear()
@@ -329,5 +344,18 @@ class NodeManagerImplTest {
         val result = nodeManager.nodeDBbyNodeNum[nodeNum]!!
         assertEquals(ByteString.EMPTY, result.publicKey)
         assertEquals(ByteString.EMPTY, result.user.public_key)
+    }
+
+    @Test
+    fun `installNodeInfo records XEdDSA signing support`() {
+        val nodeNum = 5678
+        val user =
+            User(id = "!abcd1234", long_name = "Signed Node", short_name = "SN", hw_model = HardwareModel.HELTEC_V3)
+        val info = ProtoNodeInfo(num = nodeNum, user = user, last_heard = 1000, channel = 0, has_xeddsa_signed = true)
+
+        nodeManager.installNodeInfo(info)
+
+        val result = nodeManager.nodeDBbyNodeNum[nodeNum]!!
+        assertTrue(result.signsPackets)
     }
 }

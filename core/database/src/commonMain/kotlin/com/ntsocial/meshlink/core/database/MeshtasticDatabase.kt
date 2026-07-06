@@ -25,6 +25,7 @@ import androidx.room3.TypeConverters
 import androidx.room3.migration.AutoMigrationSpec
 import com.ntsocial.meshlink.core.common.util.ioDispatcher
 import com.ntsocial.meshlink.core.database.dao.DeviceHardwareDao
+import com.ntsocial.meshlink.core.database.dao.DeviceLinkDao
 import com.ntsocial.meshlink.core.database.dao.FirmwareReleaseDao
 import com.ntsocial.meshlink.core.database.dao.MeshLogDao
 import com.ntsocial.meshlink.core.database.dao.NodeInfoDao
@@ -33,12 +34,14 @@ import com.ntsocial.meshlink.core.database.dao.QuickChatActionDao
 import com.ntsocial.meshlink.core.database.dao.TracerouteNodePositionDao
 import com.ntsocial.meshlink.core.database.entity.ContactSettings
 import com.ntsocial.meshlink.core.database.entity.DeviceHardwareEntity
+import com.ntsocial.meshlink.core.database.entity.DeviceLinkEntity
 import com.ntsocial.meshlink.core.database.entity.FirmwareReleaseEntity
 import com.ntsocial.meshlink.core.database.entity.MeshLog
 import com.ntsocial.meshlink.core.database.entity.MetadataEntity
 import com.ntsocial.meshlink.core.database.entity.MyNodeEntity
 import com.ntsocial.meshlink.core.database.entity.NodeEntity
 import com.ntsocial.meshlink.core.database.entity.Packet
+import com.ntsocial.meshlink.core.database.entity.PacketFts
 import com.ntsocial.meshlink.core.database.entity.QuickChatAction
 import com.ntsocial.meshlink.core.database.entity.ReactionEntity
 import com.ntsocial.meshlink.core.database.entity.TracerouteNodePositionEntity
@@ -49,12 +52,14 @@ import com.ntsocial.meshlink.core.database.entity.TracerouteNodePositionEntity
         MyNodeEntity::class,
         NodeEntity::class,
         Packet::class,
+        PacketFts::class,
         ContactSettings::class,
         MeshLog::class,
         QuickChatAction::class,
         ReactionEntity::class,
         MetadataEntity::class,
         DeviceHardwareEntity::class,
+        DeviceLinkEntity::class,
         FirmwareReleaseEntity::class,
         TracerouteNodePositionEntity::class,
     ],
@@ -95,8 +100,11 @@ import com.ntsocial.meshlink.core.database.entity.TracerouteNodePositionEntity
         AutoMigration(from = 35, to = 36),
         AutoMigration(from = 36, to = 37),
         AutoMigration(from = 37, to = 38),
+        AutoMigration(from = 38, to = 39),
+        AutoMigration(from = 39, to = 40),
+        AutoMigration(from = 40, to = 41),
     ],
-    version = 38,
+    version = 41,
     exportSchema = true,
 )
 @androidx.room3.ConstructedBy(MeshtasticDatabaseConstructor::class)
@@ -113,14 +121,31 @@ abstract class MeshtasticDatabase : RoomDatabase() {
 
     abstract fun deviceHardwareDao(): DeviceHardwareDao
 
+    abstract fun deviceLinkDao(): DeviceLinkDao
+
     abstract fun firmwareReleaseDao(): FirmwareReleaseDao
 
     abstract fun tracerouteNodePositionDao(): TracerouteNodePositionDao
 
     companion object {
         /** Configures a [RoomDatabase.Builder] with standard settings for this project. */
-        fun <T : RoomDatabase> RoomDatabase.Builder<T>.configureCommon(): RoomDatabase.Builder<T> =
-            this.fallbackToDestructiveMigration(dropAllTables = false).setQueryCoroutineContext(ioDispatcher)
+        fun <T : RoomDatabase> RoomDatabase.Builder<T>.configureCommon(
+            multiConnection: Boolean = true,
+        ): RoomDatabase.Builder<T> = this.fallbackToDestructiveMigration(dropAllTables = false)
+            .apply {
+                if (multiConnection) {
+                    setMultipleConnectionPool(maxNumOfReaders = 4, maxNumOfWriters = 1)
+                } else {
+                    setSingleConnectionPool()
+                }
+            }
+            .setQueryCoroutineContext(
+                if (multiConnection) {
+                    ioDispatcher
+                } else {
+                    ioDispatcher.limitedParallelism(1)
+                },
+            )
     }
 }
 

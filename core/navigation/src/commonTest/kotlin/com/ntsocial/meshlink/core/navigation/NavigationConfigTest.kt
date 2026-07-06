@@ -66,6 +66,7 @@ class NavigationConfigTest {
             NodeDetailRoute.EnvironmentMetrics(destNum = 100),
             NodeDetailRoute.SignalMetrics(destNum = 100),
             NodeDetailRoute.PowerMetrics(destNum = 100),
+            NodeDetailRoute.AirQualityMetrics(destNum = 100),
             NodeDetailRoute.TracerouteLog(destNum = 100),
             NodeDetailRoute.TracerouteMap(destNum = 100, requestId = 200, logUuid = "uuid-123"),
             NodeDetailRoute.TracerouteMap(destNum = 100, requestId = 200),
@@ -108,6 +109,7 @@ class NavigationConfigTest {
             SettingsRoute.TAK,
             SettingsRoute.CleanNodeDb,
             SettingsRoute.DebugPanel,
+            SettingsRoute.DeviceLinks,
             SettingsRoute.About,
             SettingsRoute.FilterSettings,
             // FirmwareRoute

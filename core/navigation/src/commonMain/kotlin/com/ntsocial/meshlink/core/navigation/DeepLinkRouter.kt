@@ -211,6 +211,7 @@ object DeepLinkRouter {
             "tak" to SettingsRoute.TAK,
             "clean-node-db" to SettingsRoute.CleanNodeDb,
             "debug-panel" to SettingsRoute.DebugPanel,
+            "device-links" to SettingsRoute.DeviceLinks,
             "about" to SettingsRoute.About,
             "filter-settings" to SettingsRoute.FilterSettings,
         )
@@ -223,6 +224,7 @@ object DeepLinkRouter {
             "environment" to { destNum -> NodeDetailRoute.EnvironmentMetrics(destNum) },
             "signal" to { destNum -> NodeDetailRoute.SignalMetrics(destNum) },
             "power" to { destNum -> NodeDetailRoute.PowerMetrics(destNum) },
+            "air-quality" to { destNum -> NodeDetailRoute.AirQualityMetrics(destNum) },
             "traceroute" to { destNum -> NodeDetailRoute.TracerouteLog(destNum) },
             "host-metrics" to { destNum -> NodeDetailRoute.HostMetricsLog(destNum) },
             "pax" to { destNum -> NodeDetailRoute.PaxMetrics(destNum) },

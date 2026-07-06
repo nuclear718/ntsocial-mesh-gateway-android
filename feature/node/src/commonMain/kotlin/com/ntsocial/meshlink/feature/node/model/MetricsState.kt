@@ -18,6 +18,7 @@ package com.ntsocial.meshlink.feature.node.model
 
 import com.ntsocial.meshlink.core.database.entity.FirmwareRelease
 import com.ntsocial.meshlink.core.model.DeviceHardware
+import com.ntsocial.meshlink.core.model.DeviceLink
 import com.ntsocial.meshlink.core.model.MeshLog
 import com.ntsocial.meshlink.core.model.Node
 import org.meshtastic.proto.Config
@@ -35,6 +36,7 @@ data class MetricsState(
     val deviceMetrics: List<Telemetry> = emptyList(),
     val signalMetrics: List<MeshPacket> = emptyList(),
     val powerMetrics: List<Telemetry> = emptyList(),
+    val airQualityMetrics: List<Telemetry> = emptyList(),
     val hostMetrics: List<Telemetry> = emptyList(),
     val tracerouteRequests: List<MeshLog> = emptyList(),
     val tracerouteResults: List<MeshLog> = emptyList(),
@@ -42,6 +44,7 @@ data class MetricsState(
     val neighborInfoResults: List<MeshLog> = emptyList(),
     val positionLogs: List<Position> = emptyList(),
     val deviceHardware: DeviceHardware? = null,
+    val deviceLinks: List<DeviceLink> = emptyList(),
     val firmwareEdition: FirmwareEdition? = null,
     val latestStableFirmware: FirmwareRelease = FirmwareRelease(),
     val latestAlphaFirmware: FirmwareRelease = FirmwareRelease(),
@@ -54,6 +57,8 @@ data class MetricsState(
     fun hasSignalMetrics() = signalMetrics.isNotEmpty()
 
     fun hasPowerMetrics() = powerMetrics.isNotEmpty()
+
+    fun hasAirQualityMetrics() = airQualityMetrics.isNotEmpty()
 
     fun hasTracerouteLogs() = tracerouteRequests.isNotEmpty()
 
@@ -68,7 +73,7 @@ data class MetricsState(
     /** Finds the oldest timestamp (in seconds) among all collected metric types. */
     @Suppress("MagicNumber")
     fun oldestTimestampSeconds(): Long? {
-        val telemetryTimes = (deviceMetrics + powerMetrics + hostMetrics).map { it.time.toLong() }
+        val telemetryTimes = (deviceMetrics + powerMetrics + airQualityMetrics + hostMetrics).map { it.time.toLong() }
         val signalTimes = signalMetrics.map { it.rx_time.toLong() }
         val logTimes =
             (tracerouteRequests + tracerouteResults + neighborInfoRequests + neighborInfoResults + paxMetrics).map {

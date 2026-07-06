@@ -28,8 +28,11 @@ import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +46,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
+import kotlin.concurrent.Volatile
 import com.ntsocial.meshlink.core.common.database.DatabaseManager as SharedDatabaseManager
 
 /** Manages per-device Room database instances for node data, with LRU eviction. */
@@ -62,6 +66,10 @@ open class DatabaseManager(
     private val legacyCleanedKey = booleanPreferencesKey(DatabaseConstants.LEGACY_DB_CLEANED_KEY)
 
     private fun lastUsedKey(dbName: String) = longPreferencesKey("db_last_used:$dbName")
+
+    private var backfillJob: Job? = null
+
+    @Volatile private var hasDelayedFirstDeviceBackfill = false
 
     override val cacheLimit: StateFlow<Int> =
         datastore.data
@@ -149,6 +157,11 @@ open class DatabaseManager(
         // One-time cleanup: remove legacy DB if present and not active
         managerScope.launch(dispatchers.io) { cleanupLegacyDbIfNeeded(activeDbName = dbName) }
 
+        // Backfill FTS search index for any text messages missing messageText.
+        val shouldDelayBackfill = dbName != DatabaseConstants.DEFAULT_DB_NAME && !hasDelayedFirstDeviceBackfill
+        if (shouldDelayBackfill) hasDelayedFirstDeviceBackfill = true
+        scheduleSearchIndexBackfill(dbName = dbName, db = db, shouldDelayBackfill = shouldDelayBackfill)
+
         Logger.i { "Switched active DB to ${anonymizeDbName(dbName)} for address ${anonymizeAddress(address)}" }
     }
 
@@ -169,7 +182,7 @@ open class DatabaseManager(
 
     private val limitedIo = dispatchers.io.limitedParallelism(4)
 
-    /** Execute [block] with the current DB instance. */
+    /** Execute [block] with the current DB instance. Retries once if the pool closes during a DB switch. */
     @Suppress("TooGenericExceptionCaught")
     override suspend fun <T> withDb(block: suspend (MeshtasticDatabase) -> T): T? = withContext(limitedIo) {
         val db = _currentDb.value ?: return@withContext null
@@ -180,16 +193,30 @@ open class DatabaseManager(
         } catch (e: CancellationException) {
             throw e // Preserve structured concurrency cancellation propagation.
         } catch (e: Exception) {
-            // If the connection pool was closed between capturing `db` and executing the query
-            // (e.g., during a database switch), retry once with the current DB instance.
-            if (e.message?.contains("Connection pool is closed") == true) {
-                Logger.w { "withDb: connection pool closed, retrying with current DB" }
-                val retryDb = _currentDb.value ?: return@withContext null
-                block(retryDb)
+            val retryDb = _currentDb.value
+            if (retryDb != null && retryDb !== db && isDbClosedException(e)) {
+                Logger.w { "withDb: database closed during switch (${e.message}), retrying with current DB" }
+                try {
+                    block(retryDb)
+                } catch (retryEx: Exception) {
+                    retryEx.addSuppressed(e)
+                    throw retryEx
+                }
             } else {
                 throw e
             }
         }
+    }
+
+    private fun isDbClosedException(e: Exception): Boolean = generateSequence<Throwable>(e) { it.cause }
+        .any { throwable ->
+            val msg = throwable.message?.lowercase() ?: return@any false
+            "closed" in msg && DB_TERMS.any { it in msg }
+        }
+
+    private companion object {
+        private const val BACKFILL_COLD_START_DELAY_MS = 2_000L
+        val DB_TERMS = listOf("pool", "database", "connection", "sqlite")
     }
 
     /**
@@ -290,8 +317,45 @@ open class DatabaseManager(
         datastore.edit { it[legacyCleanedKey] = true }
     }
 
+    @Suppress("TooGenericExceptionCaught")
+    private fun scheduleSearchIndexBackfill(dbName: String, db: MeshtasticDatabase, shouldDelayBackfill: Boolean) {
+        backfillJob?.cancel()
+        backfillJob =
+            managerScope.launch(dispatchers.io) {
+                try {
+                    if (shouldDelayBackfill) delay(BACKFILL_COLD_START_DELAY_MS)
+                    if (_currentDb.value !== db) return@launch
+                    backfillSearchIndexIfNeeded(db)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Logger.w(e) { "Failed to backfill search index for ${anonymizeDbName(dbName)}" }
+                }
+            }
+    }
+
+    /**
+     * Backfills Packet.messageText for existing text-message packets that predate the FTS5 schema, then rebuilds the
+     * FTS index so search covers historical messages.
+     */
+    private suspend fun backfillSearchIndexIfNeeded(db: MeshtasticDatabase) {
+        val needsBackfill = db.packetDao().countPacketsNeedingBackfill() > 0
+        if (!needsBackfill) return
+
+        withContext(NonCancellable) {
+            val count = db.packetDao().backfillMessageTexts()
+            if (count > 0) {
+                Logger.i { "Backfilled $count messages for FTS search index" }
+                db.packetDao().rebuildFtsIndex()
+                Logger.i { "FTS search index rebuild complete" }
+            }
+        }
+    }
+
     /** Closes all open databases and cancels background work. */
     fun close() {
+        backfillJob?.cancel()
+        backfillJob = null
         managerScope.cancel()
         dbCache.values.forEach { it.close() }
         dbCache.clear()

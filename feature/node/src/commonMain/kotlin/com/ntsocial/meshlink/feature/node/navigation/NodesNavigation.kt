@@ -28,9 +28,11 @@ import com.ntsocial.meshlink.core.navigation.NodeDetailRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.Route
 import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.air_quality
 import com.ntsocial.meshlink.core.resources.device
 import com.ntsocial.meshlink.core.resources.environment
 import com.ntsocial.meshlink.core.resources.host
+import com.ntsocial.meshlink.core.resources.ic_air
 import com.ntsocial.meshlink.core.resources.ic_cell_tower
 import com.ntsocial.meshlink.core.resources.ic_group
 import com.ntsocial.meshlink.core.resources.ic_groups
@@ -50,6 +52,7 @@ import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
 import com.ntsocial.meshlink.feature.node.compass.CompassViewModel
 import com.ntsocial.meshlink.feature.node.detail.NodeDetailScreen
 import com.ntsocial.meshlink.feature.node.detail.NodeDetailViewModel
+import com.ntsocial.meshlink.feature.node.metrics.AirQualityMetricsScreen
 import com.ntsocial.meshlink.feature.node.metrics.DeviceMetricsScreen
 import com.ntsocial.meshlink.feature.node.metrics.EnvironmentMetricsScreen
 import com.ntsocial.meshlink.feature.node.metrics.HostMetricsLogScreen
@@ -169,6 +172,9 @@ fun EntryProviderScope<NavKey>.nodeDetailGraph(
             NodeDetailRoute.PowerMetrics::class ->
                 addNodeDetailScreenComposable<NodeDetailRoute.PowerMetrics>(backStack, routeInfo) { it.destNum }
 
+            NodeDetailRoute.AirQualityMetrics::class ->
+                addNodeDetailScreenComposable<NodeDetailRoute.AirQualityMetrics>(backStack, routeInfo) { it.destNum }
+
             NodeDetailRoute.HostMetricsLog::class ->
                 addNodeDetailScreenComposable<NodeDetailRoute.HostMetricsLog>(backStack, routeInfo) { it.destNum }
 
@@ -248,6 +254,12 @@ enum class NodeDetailScreen(
         NodeDetailRoute.PowerMetrics::class,
         Res.drawable.ic_power,
         { metricsVM, onNavigateUp -> PowerMetricsScreen(metricsVM, onNavigateUp) },
+    ),
+    AIR_QUALITY(
+        Res.string.air_quality,
+        NodeDetailRoute.AirQualityMetrics::class,
+        Res.drawable.ic_air,
+        { metricsVM, onNavigateUp -> AirQualityMetricsScreen(metricsVM, onNavigateUp) },
     ),
     HOST(
         Res.string.host,

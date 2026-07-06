@@ -24,6 +24,7 @@ import com.ntsocial.meshlink.core.resources.ic_lock
 import com.ntsocial.meshlink.core.resources.ic_lock_open
 import com.ntsocial.meshlink.core.resources.ic_security
 import com.ntsocial.meshlink.core.resources.ic_verified
+import com.ntsocial.meshlink.core.resources.ic_verified_user
 import org.jetbrains.compose.resources.vectorResource
 
 val MeshtasticIcons.Verified: ImageVector
@@ -36,3 +37,5 @@ val MeshtasticIcons.KeyOff: ImageVector
     @Composable get() = vectorResource(Res.drawable.ic_key_off)
 val MeshtasticIcons.SecurityShield: ImageVector
     @Composable get() = vectorResource(Res.drawable.ic_security)
+val MeshtasticIcons.ShieldCheck: ImageVector
+    @Composable get() = vectorResource(Res.drawable.ic_verified_user)

@@ -24,3 +24,9 @@ enum class MeasurementSystem {
 
 /** returns the system's preferred measurement system. */
 expect fun getSystemMeasurementSystem(): MeasurementSystem
+
+/**
+ * Returns the device's current region as a 2-letter ISO 3166-1 alpha-2 country code (e.g. "US", "DE"), or an empty
+ * string when the region is unknown. Used to region-filter marketplace links.
+ */
+expect fun currentRegionCode(): String

@@ -46,11 +46,9 @@ import androidx.compose.ui.unit.dp
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.TelemetryType
 import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.ic_air
 import com.ntsocial.meshlink.core.resources.ic_person
 import com.ntsocial.meshlink.core.resources.ic_thermostat
 import com.ntsocial.meshlink.core.resources.logs
-import com.ntsocial.meshlink.core.resources.request_air_quality_metrics
 import com.ntsocial.meshlink.core.resources.request_telemetry
 import com.ntsocial.meshlink.core.resources.telemetry
 import com.ntsocial.meshlink.core.resources.userinfo
@@ -176,9 +174,12 @@ private fun rememberTelemetricFeatures(
                 hasContent = { it.hasEnvironmentMetrics },
             ),
             TelemetricFeature(
-                titleRes = Res.string.request_air_quality_metrics,
-                icon = Res.drawable.ic_air,
+                titleRes = LogsType.AIR_QUALITY.titleRes,
+                icon = LogsType.AIR_QUALITY.icon,
                 requestAction = { NodeMenuAction.RequestTelemetry(it, TelemetryType.AIR_QUALITY) },
+                logsType = LogsType.AIR_QUALITY,
+                content = { node, _ -> AirQualityInfoCards(node) },
+                hasContent = { it.hasAirQualityMetrics },
             ),
             TelemetricFeature(
                 titleRes = LogsType.POWER.titleRes,

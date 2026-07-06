@@ -3,6 +3,78 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-06 - Meshtastic 2.8 parity stop report: database slice + interrupted baseline
+- User requested stopping work and reporting at this point. Do not mark the overall 2.8 parity goal complete.
+- Current branch is `codex/meshtastic-2-8-parity`. `gradle.properties` was restored to the original
+  `UseZGC + ZGenerational` JVM args after temporary local Gradle/JBR G1GC runs.
+- Added official 2.8.0 Android database reliability parity:
+  `MeshtasticDatabase.configureCommon(multiConnection)` now supports upstream-style multi vs single
+  connection pools, and Android `DatabaseBuilder` uses `BundledSQLiteDriver` with a single connection
+  pool, matching official 2.8.0 behavior while preserving NTsocial database package/schema.
+- Adjusted FTS tests for Windows/local reliability after bundled SQLite native loading failed in
+  Robolectric host tests. `PacketFtsSearchTest` now has JVM coverage that actually runs all three FTS
+  cases; Android host FTS/migration tests use `BundledSQLiteDriver` and skip on Windows where
+  `sqliteJni` cannot load.
+- Targeted validation passed:
+  `spotlessApply :core:database:jvmTest :core:database:testAndroidHostTest --no-configuration-cache`.
+  JVM FTS tests passed; Android host FTS/migration tests were skipped on Windows by design.
+- Full baseline was started:
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests --no-configuration-cache`.
+  It was interrupted per user request. Before interruption, many core/app/feature tests passed,
+  including NTsocial Gateway, NTsocial channel provisioning, device links, model/navigation/network,
+  and database targeted paths. One known failing item appeared before interruption:
+  `:app:testFdroidDebugUnitTest` `NavigationAssemblyTest > verifyNavigationGraphsAssembleWithoutCrashing`
+  failed with `UnsatisfiedLinkError`. Because the run was stopped, normal XML/HTML test reports were
+  not fully written; only in-progress binary test-result files remained.
+- No Gradle/Java processes from this workspace were left running after cleanup.
+
+## 2026-07-06 - Meshtastic 2.8 parity slice: XEdDSA + air-quality persistence
+- Completed the next targeted parity slice on `codex/meshtastic-2-8-parity` while preserving NTsocial Gateway/private-app
+  behavior and branding. Prior slices in this worktree already include message search, device links, and air-quality UI/logs.
+- Added the missing persistence path for air quality telemetry: `NodeEntity` now has `air_quality_metrics` with Room
+  default `x''`, `NodeRepositoryImpl` writes it, `NodeManagerImpl.handleReceivedTelemetry()` updates it, and Room schema
+  `41.json` includes it.
+- Added XEdDSA signing support:
+  `DataPacket.xeddsaSigned`, `Message.xeddsaSigned`, `MeshDataMapper` propagation from `MeshPacket.xeddsa_signed`,
+  `Node.signsPackets`, `NodeEntity.has_xeddsa_signed`, `NodeManagerImpl.installNodeInfo()` from
+  `NodeInfo.has_xeddsa_signed`, signed message badge, signed node status icon/dialog, node details signed row, and resources.
+- Proto note: bumped `core/proto/src/main/proto` submodule only to protobufs commit
+  `108919393a2a3fdf6ab82e50e10965e74394620f` (`Add initial protobufs for XEdDSA (#753)`). Do not use protobuf
+  `origin/master` blindly here: it introduced later config changes that broke local traffic-management UI fields.
+- Tests/validation passed with temporary local `gradle.properties` ZGC->G1GC switch restored afterward:
+  `:core:database:kspKotlinJvm`, targeted `:core:model:jvmTest :core:database:jvmTest :core:data:jvmTest
+  :core:navigation:jvmTest :feature:node:jvmTest :feature:messaging:jvmTest :feature:settings:jvmTest`,
+  `spotlessApply`, `spotlessCheck detekt`, a final `:feature:node:jvmTest`, and `git diff --check`.
+- Known validation warning only: existing Skiko version mismatch warning in feature node Compose checks and existing
+  deprecation/no-cast warnings; they did not fail validation.
+
+## 2026-07-06 - Official Meshtastic feature completeness audit
+- Audited local `main` against freshly fetched official `meshtastic/Meshtastic-Android` `upstream/main`.
+  Local HEAD is `c77785a023ad0d9ee7ae66d33f0cbf8bbdd6207a`; official latest is
+  `4d07bc6641335cbeaa1d279b755b9e3cd11fccaf` from 2026-07-06; merge-base is
+  `c0d95d6ac4196fcbc705f2d3f174c7d9c46a77b2`. Local is 623 commits behind and 10
+  NTsocial commits ahead.
+- Conclusion: NTsocial MeshLink does **not** currently implement all latest official Meshtastic Android
+  features. Local `VERSION_NAME_BASE=2.7.14`; official `main` is `2.8.0`.
+- Confirmed missing/latest-upstream feature modules: official has `feature:discovery`, `feature:docs`,
+  `feature:car`, `core:konsist`, `baselineprofile`, `screenshot-tests`, and `docs-screenshots`; local
+  lacks those modules. Official README highlights full-text message search, mesh network discovery,
+  Android Auto, air-quality telemetry, device hardware links, and App Functions/system-AI integration.
+- Concrete gaps found in local code: no FTS5 `PacketFts`/`searchMessages`/`MessageSearchBar`; no
+  `feature/discovery`; no in-app docs browser/Chirpy docs assistant; no Car App Library
+  `CarAppService`/templates (only older notification metadata); no App Functions or `AiFunctionProvider`;
+  no `device_links.json`/msh.to link directory; air-quality support is request/config-only and lacks
+  official PM/CO2 persistence, node cards, chart/log, and CSV export path.
+- Additional official changes still unmerged include message translation, Mesh Beacon offers, waypoint
+  geofences, NFC tag writing, firmware lockdown, XEdDSA signing UI, LoRa region-preset/TINY preset
+  support, stale cache fixes, crash/fuzz hardening, and the removal of upstream AIDL/service architecture.
+- Existing local specs corroborate unfinished work: `001-local-mesh-discovery` has 50 unchecked tasks,
+  `002-node-list-layout` has 38 unchecked tasks, and `003-app-docs-markdown` has 90 unchecked tasks.
+  These specs are marked Not Started.
+- Important merge risk: NTsocial-specific code to preserve includes protected Gateway IPC, private-app
+  transport/cache, default NTsocial channel provisioning, branding/assets, app id/package namespace, and
+  the `core:api` transitional IPC surface even though official removed upstream AIDL.
+
 ## 2026-07-05 - NTsocial_release visual alignment pass
 - Imported visual assets from `C:\Users\USER\Desktop\GitHub\NTsocial_release`: butterfly intro/wordmark,
   dark background art, flag images, butterfly logo, Android launcher mipmaps, and play-store icon.

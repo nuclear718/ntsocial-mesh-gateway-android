@@ -46,6 +46,7 @@ import com.ntsocial.meshlink.core.resources.mute_always
 import com.ntsocial.meshlink.core.resources.unmessageable
 import com.ntsocial.meshlink.core.resources.unmonitored_or_infrastructure
 import com.ntsocial.meshlink.core.ui.component.ConnectionsNavIcon
+import com.ntsocial.meshlink.core.ui.component.NodeSignedStatusIcon
 import com.ntsocial.meshlink.core.ui.icon.Favorite
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.Unmessageable
@@ -63,6 +64,7 @@ fun NodeStatusIcons(
     isMuted: Boolean,
     connectionState: ConnectionState,
     modifier: Modifier = Modifier,
+    signsPackets: Boolean = false,
     deviceType: DeviceType? = null,
     contentColor: Color = LocalContentColor.current,
 ) {
@@ -94,6 +96,9 @@ fun NodeStatusIcons(
                 tooltipText = Res.string.favorite,
                 tint = MaterialTheme.colorScheme.StatusYellow,
             )
+        }
+        if (signsPackets) {
+            NodeSignedStatusIcon(modifier = Modifier.size(24.dp))
         }
     }
 }

@@ -156,6 +156,7 @@
     <string name="coding_rate">編碼速率</string>
     <string name="collapse_chart">收起圖表</string>
     <string name="communicate_off_the_grid">無需手機訊號，也能與您的朋友和社群離線通訊。</string>
+    <string name="collapsed">已收合</string>
     <!-- COMPASS -->
     <string name="compass_bearing">方位：%1$s</string>
     <string name="compass_bearing_na">方位：無資料</string>
@@ -306,6 +307,9 @@
     <string name="disconnected">已中斷連線</string>
     <string name="discovered_network_devices">發現的網路裝置</string>
     <string name="disk_free_indexed">硬碟可用空間：%1$d</string>
+    <string name="device_links">裝置連結</string>
+    <string name="device_links_i_want_one">我想要一台</string>
+    <string name="device_links_open_in_browser">在瀏覽器開啟</string>
     <!-- DISPLAY -->
     <string name="display">顯示</string>
     <string name="display_config">裝置列表</string>
@@ -356,6 +360,7 @@
     <string name="exchange_position">交換位置</string>
     <string name="expand_chart">展開圖表</string>
     <string name="expires">到期時間</string>
+    <string name="expanded">已展開</string>
     <!-- EXPORT -->
     <string name="export_configuration">匯出設定</string>
     <string name="export_data_csv">匯出所有封包</string>
@@ -1007,6 +1012,7 @@
     <string name="screen_on_for">螢幕開啟持續時間</string>
     <string name="scroll_to_bottom">移至最底部</string>
     <string name="search_emoji">搜尋表情符號……</string>
+    <string name="search_messages">搜尋訊息…</string>
     <string name="secondary">次要</string>
     <string name="secondary_channel_position_feature">如果在主頻道停用位置功能，系統會改在第一個有開啟位置功能的次要頻道上定期廣播位置。若沒有這樣的次要頻道，就需要手動請求位置資訊。</string>
     <string name="secondary_no_telemetry">停用定期廣播遙測資料</string>
@@ -1027,6 +1033,11 @@
     <string name="security_icon_insecure_precise_only">未加密頻道，精確定位</string>
     <string name="security_icon_secure">安全性</string>
     <string name="security_icon_warning_precise_mqtt">警告：未加密頻道，已啟用精確定位 &amp; MQTT Uplink</string>
+    <string name="security_signed_message_info">已使用傳送者的金鑰驗證。</string>
+    <string name="security_signed_node">簽章節點</string>
+    <string name="security_signed_node_desc">已自動驗證</string>
+    <string name="security_signed_node_help">此節點會使用 XEdDSA 簽署其廣播。你看到來自它的廣播會由無線電使用其身分金鑰驗證。</string>
+    <string name="security_signed_verified">已簽章 / 已驗證</string>
     <string name="select">選擇</string>
     <string name="select_all">選擇全部</string>
     <string name="selected">已選取</string>
@@ -1277,4 +1288,12 @@
     <string name="wind_lull">風停</string>
     <string name="wind_speed">風速</string>
     <string name="you">你</string>
+    <string name="air_quality">空氣品質</string>
+    <string name="air_quality_metrics_log">空氣品質計量記錄</string>
+    <string name="co2">CO₂</string>
+    <string name="micrograms_per_cubic_meter">µg/m³</string>
+    <string name="pm1_0">PM1.0</string>
+    <string name="pm10">PM10</string>
+    <string name="pm2_5">PM2.5</string>
+    <string name="ppm">ppm</string>
 </resources>

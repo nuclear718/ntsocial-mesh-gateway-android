@@ -431,6 +431,19 @@ open class MetricsViewModel(
         }
     }
 
+    fun saveAirQualityMetricsCSV(uri: CommonUri, data: List<Telemetry>) {
+        exportCsv(
+            uri = uri,
+            header = "\"date\",\"time\",\"pm1_0\",\"pm2_5\",\"pm10\",\"co2\"\n",
+            rows = data,
+            epochSeconds = { it.time.toLong() },
+        ) { t ->
+            val aq = t.air_quality_metrics
+            "\"${aq?.pm10_standard ?: ""}\",\"${aq?.pm25_standard ?: ""}\"," +
+                "\"${aq?.pm100_standard ?: ""}\",\"${aq?.co2 ?: ""}\""
+        }
+    }
+
     // endregion
 
     @Suppress("MagicNumber", "CyclomaticComplexMethod", "ReturnCount")

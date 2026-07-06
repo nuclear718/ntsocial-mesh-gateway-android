@@ -34,7 +34,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.Clipboard
@@ -65,6 +69,8 @@ import com.ntsocial.meshlink.core.resources.node_sort_last_heard
 import com.ntsocial.meshlink.core.resources.public_key
 import com.ntsocial.meshlink.core.resources.role
 import com.ntsocial.meshlink.core.resources.rssi
+import com.ntsocial.meshlink.core.resources.security_signed_node
+import com.ntsocial.meshlink.core.resources.security_signed_node_desc
 import com.ntsocial.meshlink.core.resources.short_name
 import com.ntsocial.meshlink.core.resources.snr
 import com.ntsocial.meshlink.core.resources.status_message
@@ -72,6 +78,7 @@ import com.ntsocial.meshlink.core.resources.supported
 import com.ntsocial.meshlink.core.resources.uptime
 import com.ntsocial.meshlink.core.resources.user_id
 import com.ntsocial.meshlink.core.resources.via_mqtt
+import com.ntsocial.meshlink.core.ui.component.SignedNodeDialog
 import com.ntsocial.meshlink.core.ui.icon.ArrowCircleUp
 import com.ntsocial.meshlink.core.ui.icon.DeviceNumbers
 import com.ntsocial.meshlink.core.ui.icon.History
@@ -83,9 +90,11 @@ import com.ntsocial.meshlink.core.ui.icon.MqttConnected
 import com.ntsocial.meshlink.core.ui.icon.Notes
 import com.ntsocial.meshlink.core.ui.icon.Person
 import com.ntsocial.meshlink.core.ui.icon.Rssi
+import com.ntsocial.meshlink.core.ui.icon.ShieldCheck
 import com.ntsocial.meshlink.core.ui.icon.Snr
 import com.ntsocial.meshlink.core.ui.icon.Verified
 import com.ntsocial.meshlink.core.ui.icon.role
+import com.ntsocial.meshlink.core.ui.theme.StatusColors.StatusGreen
 import com.ntsocial.meshlink.core.ui.util.createClipEntry
 import com.ntsocial.meshlink.core.ui.util.formatAgo
 import kotlinx.coroutines.launch
@@ -154,9 +163,13 @@ private fun MainNodeDetails(node: Node) {
             SectionDivider()
             SignalRow(node)
         }
-        if (node.viaMqtt || node.manuallyVerified) {
+        if (node.viaMqtt) {
             SectionDivider()
-            MqttAndVerificationRow(node)
+            MqttRow()
+        }
+        if (node.signsPackets || node.manuallyVerified) {
+            SectionDivider()
+            VerificationRow(node)
         }
         val publicKey = node.publicKey ?: node.user.public_key
         if (publicKey.size > 0) {
@@ -284,15 +297,23 @@ private fun SignalRow(node: Node) {
 }
 
 @Composable
-private fun MqttAndVerificationRow(node: Node) {
+private fun MqttRow() {
     Row(modifier = Modifier.fillMaxWidth()) {
-        if (node.viaMqtt) {
-            InfoItem(
-                label = stringResource(Res.string.via_mqtt),
-                value = "Yes",
-                icon = MeshtasticIcons.MqttConnected,
-                modifier = Modifier.weight(1f),
-            )
+        InfoItem(
+            label = stringResource(Res.string.via_mqtt),
+            value = "Yes",
+            icon = MeshtasticIcons.MqttConnected,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun VerificationRow(node: Node) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        if (node.signsPackets) {
+            SignedNodeItem(Modifier.weight(1f))
         } else {
             Spacer(Modifier.weight(1f))
         }
@@ -307,6 +328,21 @@ private fun MqttAndVerificationRow(node: Node) {
             Spacer(Modifier.weight(1f))
         }
     }
+}
+
+@Composable
+private fun SignedNodeItem(modifier: Modifier = Modifier) {
+    var showDialog by remember { mutableStateOf(false) }
+    if (showDialog) SignedNodeDialog(onDismiss = { showDialog = false })
+    InfoItem(
+        label = stringResource(Res.string.security_signed_node),
+        value = stringResource(Res.string.security_signed_node_desc),
+        icon = MeshtasticIcons.ShieldCheck,
+        modifier = modifier,
+        iconTint = MaterialTheme.colorScheme.StatusGreen,
+        iconSize = 20.dp,
+        onClick = { showDialog = true },
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

@@ -17,6 +17,7 @@
 package com.ntsocial.meshlink.core.database.dao
 
 import androidx.room3.Room
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ntsocial.meshlink.core.common.util.nowMillis
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.toByteString
 import org.junit.After
+import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,12 +62,15 @@ class MigrationTest {
 
     @Before
     fun createDb(): Unit = runTest {
+        assumeFalse("Bundled SQLite host tests cannot load sqliteJni on Windows.", isWindowsHost())
+
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         database =
             Room.inMemoryDatabaseBuilder<MeshtasticDatabase>(
                 context = context,
                 factory = { MeshtasticDatabaseConstructor.initialize() },
             )
+                .setDriver(BundledSQLiteDriver())
                 .build()
         nodeInfoDao = database.nodeInfoDao().apply { setMyNodeInfo(myNodeInfo) }
         packetDao = database.packetDao()
@@ -73,7 +78,9 @@ class MigrationTest {
 
     @After
     fun closeDb() {
-        database.close()
+        if (::database.isInitialized) {
+            database.close()
+        }
     }
 
     @Test
@@ -174,4 +181,9 @@ class MigrationTest {
     private suspend fun getAllPackets() = packetDao.getAllPackets(PortNum.TEXT_MESSAGE_APP.value).first()
 
     private suspend fun getFirstPacket() = getAllPackets().first()
+
+    companion object {
+        private fun isWindowsHost(): Boolean =
+            System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
+    }
 }

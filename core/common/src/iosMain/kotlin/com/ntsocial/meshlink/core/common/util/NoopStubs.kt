@@ -40,6 +40,8 @@ actual object DateFormatter {
 
 actual fun getSystemMeasurementSystem(): MeasurementSystem = MeasurementSystem.METRIC
 
+actual fun currentRegionCode(): String = ""
+
 actual fun String?.isValidAddress(): Boolean = false
 
 actual interface CommonParcelable

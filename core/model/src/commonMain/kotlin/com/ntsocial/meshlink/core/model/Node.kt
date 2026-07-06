@@ -24,6 +24,7 @@ import com.ntsocial.meshlink.core.model.util.onlineTimeThreshold
 import com.ntsocial.meshlink.core.model.util.toDistanceString
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.AirQualityMetrics
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.DeviceMetrics
@@ -58,10 +59,12 @@ data class Node(
     val isMuted: Boolean = false,
     val environmentMetrics: EnvironmentMetrics = EnvironmentMetrics(),
     val powerMetrics: PowerMetrics = PowerMetrics(),
+    val airQualityMetrics: AirQualityMetrics = AirQualityMetrics(),
     val paxcounter: Paxcount = Paxcount(),
     val publicKey: ByteString? = null,
     val notes: String = "",
     val manuallyVerified: Boolean = false,
+    val signsPackets: Boolean = false,
     val nodeStatus: String? = null,
     /** The transport mechanism this node was last heard over (see [MeshPacket.TransportMechanism]). */
     val lastTransport: Int = 0,
@@ -96,6 +99,9 @@ data class Node(
 
     val hasPowerMetrics: Boolean
         get() = powerMetrics != PowerMetrics()
+
+    val hasAirQualityMetrics: Boolean
+        get() = airQualityMetrics != AirQualityMetrics()
 
     val batteryLevel
         get() = deviceMetrics.battery_level

@@ -216,4 +216,17 @@ interface PacketRepository {
 
     /** Updates the SFPP status of packets matching the given commit hash. */
     suspend fun updateSFPPStatusByHash(hash: ByteArray, status: MessageStatus, rxTime: Long)
+
+    /**
+     * Searches message history using full-text search.
+     *
+     * @param query The search text. The implementation sanitizes it for FTS5.
+     * @param contactKey Optional contact key to scope search to one conversation.
+     * @param getNode Function to resolve node info by user ID.
+     */
+    fun searchMessages(
+        query: String,
+        contactKey: String? = null,
+        getNode: suspend (String?) -> Node,
+    ): Flow<List<Message>>
 }

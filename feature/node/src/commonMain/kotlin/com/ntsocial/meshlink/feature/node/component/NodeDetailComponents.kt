@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
@@ -47,6 +48,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.a11y_label_value
@@ -91,6 +93,9 @@ internal fun InfoItem(
     icon: ImageVector,
     modifier: Modifier = Modifier,
     valueStyle: TextStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    iconTint: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+    iconSize: Dp = 14.dp,
+    onClick: () -> Unit = {},
 ) {
     val clipboard: Clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
@@ -105,7 +110,7 @@ internal fun InfoItem(
             .combinedClickable(
                 onLongClick = { coroutineScope.launch { clipboard.setClipEntry(createClipEntry(value, label)) } },
                 onLongClickLabel = copyLabel, // Clear intent for accessibility
-                onClick = {},
+                onClick = onClick,
                 role = Role.Button,
             )
             .padding(horizontal = 20.dp, vertical = 8.dp)
@@ -115,12 +120,7 @@ internal fun InfoItem(
             },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-            )
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(iconSize), tint = iconTint)
             Spacer(Modifier.width(6.dp))
             Text(
                 text = label,

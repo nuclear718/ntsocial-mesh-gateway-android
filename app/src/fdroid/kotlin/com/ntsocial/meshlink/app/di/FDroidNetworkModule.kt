@@ -17,6 +17,7 @@
 package com.ntsocial.meshlink.app.di
 
 import com.ntsocial.meshlink.core.model.NetworkDeviceHardware
+import com.ntsocial.meshlink.core.model.NetworkDeviceLinksResponse
 import com.ntsocial.meshlink.core.model.NetworkFirmwareReleases
 import com.ntsocial.meshlink.core.network.service.ApiService
 import org.koin.core.annotation.Module
@@ -35,6 +36,9 @@ class FDroidNetworkModule {
     fun provideApiService(): ApiService = object : ApiService {
         override suspend fun getDeviceHardware(): List<NetworkDeviceHardware> =
             throw UnsupportedOperationException("getDeviceHardware is not supported on F-Droid builds.")
+
+        override suspend fun getDeviceLinks(): NetworkDeviceLinksResponse =
+            throw UnsupportedOperationException("getDeviceLinks is not supported on F-Droid builds.")
 
         override suspend fun getFirmwareReleases(): NetworkFirmwareReleases =
             throw UnsupportedOperationException("getFirmwareReleases is not supported on F-Droid builds.")

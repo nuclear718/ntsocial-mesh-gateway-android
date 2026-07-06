@@ -31,8 +31,11 @@ import com.ntsocial.meshlink.core.model.Message
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Reaction
+import com.ntsocial.meshlink.core.model.util.getShortDateTime
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.withContext
@@ -139,6 +142,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 rssi = packet.rssi,
                 hopsAway = packet.hopsAway,
                 filtered = filtered,
+                messageText = packet.text.orEmpty(),
             )
         insertRoomPacket(packetToSave)
     }
@@ -278,6 +282,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 rssi = packet.rssi,
                 hopsAway = packet.hopsAway,
                 filtered = filtered,
+                messageText = packet.text.orEmpty(),
             )
         insertRoomPacket(packetToSave)
     }
@@ -509,6 +514,63 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         channel = channel,
         sfpp_hash = sfppHash,
     )
+
+    override fun searchMessages(
+        query: String,
+        contactKey: String?,
+        getNode: suspend (String?) -> Node,
+    ): Flow<List<Message>> {
+        val sanitized = sanitizeFtsQuery(query)
+        if (sanitized.isBlank()) return flowOf(emptyList())
+
+        return dbManager.currentDb.flatMapLatest { db ->
+            flow {
+                val dao = db.packetDao()
+                val packets =
+                    if (contactKey != null) {
+                        dao.searchMessagesInConversation(sanitized, contactKey)
+                    } else {
+                        dao.searchMessages(sanitized)
+                    }
+                val cachedGetNode = memoize(getNode)
+                emit(packets.map { packet -> packet.toSearchMessage(cachedGetNode) })
+            }
+        }
+    }
+
+    private suspend fun RoomPacket.toSearchMessage(getNode: suspend (String?) -> Node): Message {
+        val node = getNode(data.from)
+        val isFromLocal = node.user.id == DataPacket.ID_LOCAL || (myNodeNum != 0 && node.num == myNodeNum)
+        return Message(
+            uuid = uuid,
+            receivedTime = received_time,
+            node = node,
+            text = data.text.orEmpty(),
+            fromLocal = isFromLocal,
+            time = getShortDateTime(data.time),
+            snr = snr,
+            rssi = rssi,
+            hopsAway = hopsAway,
+            read = read,
+            status = data.status,
+            routingError = routingError,
+            packetId = packetId,
+            emojis = emptyList(),
+            replyId = data.replyId,
+            viaMqtt = data.viaMqtt,
+            relayNode = data.relayNode,
+            relays = data.relays,
+            filtered = filtered,
+            transportMechanism = data.transportMechanism,
+        )
+    }
+
+    /**
+     * Sanitizes a user query for FTS5 by wrapping each token in double quotes. This escapes FTS5 special characters
+     * while still allowing multi-word searches as implicit AND queries.
+     */
+    private fun sanitizeFtsQuery(query: String): String =
+        query.split("\\s+".toRegex()).filter { it.isNotBlank() }.joinToString(" ") { "\"${it.replace("\"", "")}\"" }
 
     companion object {
         private const val CONTACTS_PAGE_SIZE = 30

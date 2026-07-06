@@ -23,6 +23,7 @@ import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.util.hasValidEnvironmentMetrics
 import com.ntsocial.meshlink.core.model.util.isDirectSignal
 import com.ntsocial.meshlink.core.repository.DeviceHardwareRepository
+import com.ntsocial.meshlink.core.repository.DeviceLinkRepository
 import com.ntsocial.meshlink.core.repository.FirmwareReleaseRepository
 import com.ntsocial.meshlink.core.repository.MeshLogRepository
 import com.ntsocial.meshlink.core.repository.NodeRepository
@@ -58,6 +59,7 @@ constructor(
     private val meshLogRepository: MeshLogRepository,
     private val radioConfigRepository: RadioConfigRepository,
     private val deviceHardwareRepository: DeviceHardwareRepository,
+    private val deviceLinkRepository: DeviceLinkRepository,
     private val firmwareReleaseRepository: FirmwareReleaseRepository,
     private val nodeRequestActions: NodeRequestActions,
 ) : GetNodeDetailsUseCase {
@@ -150,6 +152,9 @@ constructor(
             val isLocal = node.num == identity.ourNode?.num
             val pioEnv = if (isLocal) identity.myInfo?.pioEnv else null
             val hw = deviceHardwareRepository.getDeviceHardwareByModel(node.user.hw_model.value, pioEnv).getOrNull()
+            val deviceLinks =
+                hw?.platformioTarget?.takeIf { it.isNotBlank() }?.let { deviceLinkRepository.getLinksForTarget(it) }
+                    ?: emptyList()
 
             val moduleConfig = identity.profile.module_config
             val displayUnits = identity.profile.config?.display?.units ?: Config.DisplayConfig.DisplayUnits.METRIC
@@ -159,6 +164,7 @@ constructor(
                     node = node,
                     isLocal = isLocal,
                     deviceHardware = hw,
+                    deviceLinks = deviceLinks,
                     reportedTarget = pioEnv,
                     isManaged = identity.profile.config?.security?.is_managed ?: false,
                     isFahrenheit =
@@ -167,6 +173,7 @@ constructor(
                     displayUnits = displayUnits,
                     deviceMetrics = logs.telemetry.filter { it.device_metrics != null },
                     powerMetrics = logs.telemetry.filter { it.power_metrics != null },
+                    airQualityMetrics = logs.telemetry.filter { it.air_quality_metrics != null },
                     hostMetrics = logs.telemetry.filter { it.host_metrics != null },
                     signalMetrics = logs.packets.filter { it.isDirectSignal() },
                     positionLogs = logs.posPackets.mapNotNull { it.toPosition() },
@@ -191,6 +198,7 @@ constructor(
                 if (environmentState.hasEnvironmentMetrics()) add(LogsType.ENVIRONMENT)
                 if (metricsState.hasSignalMetrics()) add(LogsType.SIGNAL)
                 if (metricsState.hasPowerMetrics()) add(LogsType.POWER)
+                if (metricsState.hasAirQualityMetrics()) add(LogsType.AIR_QUALITY)
                 if (metricsState.hasTracerouteLogs()) add(LogsType.TRACEROUTE)
                 if (metricsState.hasNeighborInfoLogs()) add(LogsType.NEIGHBOR_INFO)
                 if (metricsState.hasHostMetrics()) add(LogsType.HOST)
