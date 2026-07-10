@@ -301,12 +301,17 @@ jobs:
               :core:common:allTests
               :core:data:allTests
               :core:database:allTests
+              :core:datastore:allTests
+              :core:di:allTests
               :core:domain:allTests
               :core:model:allTests
               :core:navigation:allTests
               :core:network:allTests
+              :core:nfc:allTests
               :core:prefs:allTests
+              :core:proto:allTests
               :core:repository:allTests
+              :core:resources:allTests
               :core:service:allTests
               :core:takserver:allTests
               :core:testing:allTests
@@ -316,12 +321,17 @@ jobs:
               :core:common:koverXmlReport
               :core:data:koverXmlReport
               :core:database:koverXmlReport
+              :core:datastore:koverXmlReport
+              :core:di:koverXmlReport
               :core:domain:koverXmlReport
               :core:model:koverXmlReport
               :core:navigation:koverXmlReport
               :core:network:koverXmlReport
+              :core:nfc:koverXmlReport
               :core:prefs:koverXmlReport
+              :core:proto:koverXmlReport
               :core:repository:koverXmlReport
+              :core:resources:koverXmlReport
               :core:service:koverXmlReport
               :core:takserver:koverXmlReport
               :core:testing:koverXmlReport
@@ -335,6 +345,7 @@ jobs:
               :feature:messaging:allTests
               :feature:node:allTests
               :feature:settings:allTests
+              :feature:wifi-provision:allTests
             kover: >-
               :feature:connections:koverXmlReport
               :feature:firmware:koverXmlReport
@@ -343,19 +354,24 @@ jobs:
               :feature:messaging:koverXmlReport
               :feature:node:koverXmlReport
               :feature:settings:koverXmlReport
+              :feature:wifi-provision:koverXmlReport
           - name: shard-app
             tasks: >-
               :app:testFdroidDebugUnitTest
               :app:testGoogleDebugUnitTest
               :desktop:test
+              :core:api:testDebugUnitTest
               :core:barcode:testFdroidDebugUnitTest
               :core:barcode:testGoogleDebugUnitTest
+              :feature:widget:testDebugUnitTest
             kover: >-
               :app:koverXmlReportFdroidDebug
               :app:koverXmlReportGoogleDebug
+              :core:api:koverXmlReportDebug
               :core:barcode:koverXmlReportFdroidDebug
               :core:barcode:koverXmlReportGoogleDebug
               :desktop:koverXmlReport
+              :feature:widget:koverXmlReportDebug
 
     steps:
       - name: Checkout code
@@ -383,7 +399,7 @@ jobs:
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: meshtastic/Meshtastic-Android
+          slug: ${{ github.repository }}
           flags: ${{ matrix.shard.name }}
           fail_ci_if_error: false
           report_type: test_results
@@ -394,7 +410,7 @@ jobs:
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: meshtastic/Meshtastic-Android
+          slug: ${{ github.repository }}
           flags: ${{ matrix.shard.name }}
           fail_ci_if_error: false
           files: "**/build/reports/kover/report*.xml"

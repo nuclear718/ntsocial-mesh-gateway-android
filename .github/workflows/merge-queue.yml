@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   android-check:
-    if: github.repository == 'meshtastic/Meshtastic-Android'
+    if: github.repository == 'nuclear718/ntsocial-mesh-gateway-android'
     uses: ./.github/workflows/reusable-check.yml
     with:
       run_lint: true
