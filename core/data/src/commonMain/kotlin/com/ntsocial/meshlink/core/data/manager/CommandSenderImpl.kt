@@ -194,7 +194,7 @@ class CommandSenderImpl(
     override fun sendPosition(pos: ProtoPosition, destNum: Int?, wantResponse: Boolean) {
         val myNum = nodeManager.myNodeNum.value ?: return
         val idNum = destNum ?: myNum
-        Logger.d { "Sending our position/time to=$idNum $pos" }
+        Logger.d { "Sending position/time update" }
 
         if (localConfig.value.position?.fixed_position != true) {
             nodeManager.handleReceivedPosition(myNum, myNum, pos, nowMillis)

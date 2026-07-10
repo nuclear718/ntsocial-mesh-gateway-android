@@ -285,6 +285,8 @@ dependencies {
     testImplementation(kotlin("test-junit"))
     testImplementation(libs.androidx.work.testing)
     testImplementation(libs.koin.test)
+    // Robolectric runs Android code on the host JVM. This provides sqliteJni.dll on Windows.
+    testRuntimeOnly("androidx.sqlite:sqlite-bundled-jvm:2.6.2")
     testRuntimeOnly(libs.junit.vintage.engine)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)

@@ -28,7 +28,6 @@ import com.ntsocial.meshlink.core.database.entity.Packet
 import com.ntsocial.meshlink.core.model.DataPacket
 import kotlinx.coroutines.test.runTest
 import org.junit.After
-import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -47,8 +46,6 @@ class PacketFtsSearchTest {
 
     @Before
     fun createDb(): Unit = runTest {
-        assumeFalse("Bundled SQLite host tests cannot load sqliteJni on Windows.", isWindowsHost())
-
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         database =
             Room.inMemoryDatabaseBuilder<MeshtasticDatabase>(
@@ -133,8 +130,5 @@ class PacketFtsSearchTest {
     companion object {
         private const val CONTACT = "0!aaaa1111"
         private const val OTHER_CONTACT = "0!bbbb2222"
-
-        private fun isWindowsHost(): Boolean =
-            System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
     }
 }

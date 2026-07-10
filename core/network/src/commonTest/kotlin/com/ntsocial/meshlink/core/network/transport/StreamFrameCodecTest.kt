@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
 class StreamFrameCodecTest {
 
     private val receivedPackets = mutableListOf<ByteArray>()
-    private val codec = StreamFrameCodec(onPacketReceived = { receivedPackets.add(it) }, logTag = "Test")
+    private val codec = StreamFrameCodec(onPacketReceived = { receivedPackets.add(it) })
 
     @Test
     fun `processInputByte delivers a 1-byte packet`() {

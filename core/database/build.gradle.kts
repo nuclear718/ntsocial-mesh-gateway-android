@@ -56,6 +56,7 @@ kotlin {
         val androidHostTest by getting {
             dependencies {
                 implementation(libs.androidx.sqlite.bundled)
+                runtimeOnly("androidx.sqlite:sqlite-bundled-jvm:2.6.2")
                 implementation(libs.androidx.room.testing)
                 implementation(libs.androidx.test.ext.junit)
                 implementation(libs.junit)

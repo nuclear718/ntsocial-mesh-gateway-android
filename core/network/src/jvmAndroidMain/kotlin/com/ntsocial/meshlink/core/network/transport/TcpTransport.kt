@@ -84,7 +84,6 @@ class TcpTransport(
                 packetsReceived++
                 listener.onPacketReceived(it)
             },
-            logTag = logTag,
         )
 
     // TCP socket state

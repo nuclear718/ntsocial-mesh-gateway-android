@@ -128,11 +128,33 @@ class SharedRadioInterfaceService(
      */
     @Volatile private var isStopping = false
 
+    /**
+     * True while an explicit connection lifecycle is active. It is set by [connect] or [setDeviceAddress] and cleared
+     * by [disconnect]. Environmental state listeners and liveness recovery consult this gate so they cannot recreate a
+     * transport after the user has explicitly disconnected.
+     *
+     * Every read and write is guarded by [transportMutex]. The @Volatile annotation keeps diagnostic reads honest.
+     */
+    @Volatile private var connectionRequested = false
+
+    /** Prevents concurrent liveness-induced transport restarts from stacking. */
+    private val isRestarting = atomic(false)
+
     private val listenersInitialized = atomic(false)
     private var heartbeatJob: Job? = null
     private var lastHeartbeatMillis = 0L
 
     @Volatile private var lastDataReceivedMillis = 0L
+
+    /**
+     * Internal test seam for deterministic clock injection. Production uses [nowMillis]; tests override this to a
+     * controllable clock so liveness checks, connection events, and received data all share one time source.
+     */
+    @Volatile
+    @Suppress("MemberVisibilityCanBePrivate")
+    internal var clockMillis: () -> Long = { nowMillis }
+
+    private fun now(): Long = clockMillis()
 
     companion object {
         private const val HEARTBEAT_INTERVAL_MILLIS = 30 * 1000L
@@ -166,7 +188,9 @@ class SharedRadioInterfaceService(
                         transportMutex.withLock {
                             if (_currentDeviceAddressFlow.value != addr) {
                                 _currentDeviceAddressFlow.value = addr
-                                startTransportLocked()
+                                if (connectionRequested) {
+                                    startTransportLocked()
+                                }
                             }
                         }
                     }
@@ -176,7 +200,7 @@ class SharedRadioInterfaceService(
                 bluetoothRepository.state
                     .onEach { state ->
                         transportMutex.withLock {
-                            if (state.enabled) {
+                            if (state.enabled && connectionRequested) {
                                 startTransportLocked()
                             } else if (runningTransportId == InterfaceId.BLUETOOTH) {
                                 stopTransportLocked()
@@ -189,7 +213,7 @@ class SharedRadioInterfaceService(
                 networkRepository.networkAvailable
                     .onEach { state ->
                         transportMutex.withLock {
-                            if (state) {
+                            if (state && connectionRequested) {
                                 startTransportLocked()
                             } else if (runningTransportId == InterfaceId.TCP) {
                                 stopTransportLocked()
@@ -203,12 +227,20 @@ class SharedRadioInterfaceService(
     }
 
     override fun connect() {
-        processLifecycle.coroutineScope.launch { transportMutex.withLock { startTransportLocked() } }
+        processLifecycle.coroutineScope.launch {
+            transportMutex.withLock {
+                connectionRequested = true
+                startTransportLocked()
+            }
+        }
         initStateListeners()
     }
 
     override suspend fun disconnect() {
-        transportMutex.withLock { ignoreExceptionSuspend { stopTransportLocked() } }
+        transportMutex.withLock {
+            connectionRequested = false
+            ignoreExceptionSuspend { stopTransportLocked() }
+        }
     }
 
     override fun isMockTransport(): Boolean = transportFactory.isMockTransport()
@@ -243,8 +275,11 @@ class SharedRadioInterfaceService(
 
         processLifecycle.coroutineScope.launch {
             transportMutex.withLock {
+                connectionRequested = sanitized != null
                 ignoreExceptionSuspend { stopTransportLocked() }
-                startTransportLocked()
+                if (sanitized != null) {
+                    startTransportLocked()
+                }
             }
         }
         return true
@@ -271,8 +306,14 @@ class SharedRadioInterfaceService(
         startHeartbeat()
     }
 
-    /** Must be called under [transportMutex]. */
-    private suspend fun stopTransportLocked() {
+    /**
+     * Must be called under [transportMutex].
+     *
+     * @param notifyPermanent Emits a permanent disconnect when true. Liveness recovery keeps the state transient.
+     * @param sendPoliteDisconnect Sends a firmware disconnect frame when true. A zombie BLE link must not be written
+     *   to.
+     */
+    private suspend fun stopTransportLocked(notifyPermanent: Boolean = true, sendPoliteDisconnect: Boolean = true) {
         val currentTransport = radioTransport
         Logger.i { "Stopping transport $currentTransport" }
         // Best-effort polite goodbye: tell the firmware we're disconnecting on purpose so it can
@@ -284,7 +325,9 @@ class SharedRadioInterfaceService(
         // transport's own scope; the drain delay gives async transports a window to flush before
         // close() cancels their write scope. BLE's retry path backs off 500ms, so this window
         // also covers one retry on flaky GATT links.
-        if (currentTransport != null && _connectionState.value != ConnectionState.Disconnected) {
+        if (
+            sendPoliteDisconnect && currentTransport != null && _connectionState.value != ConnectionState.Disconnected
+        ) {
             isStopping = true
             ignoreExceptionSuspend {
                 currentTransport.handleSendToRadio(ToRadio(disconnect = true).encode())
@@ -300,14 +343,14 @@ class SharedRadioInterfaceService(
         _serviceScope.cancel("stopping transport")
         _serviceScope = CoroutineScope(dispatchers.io + SupervisorJob())
 
-        if (currentTransport != null) {
+        if (notifyPermanent && currentTransport != null) {
             onDisconnect(isPermanent = true)
         }
     }
 
     private fun startHeartbeat() {
         heartbeatJob?.cancel()
-        lastDataReceivedMillis = nowMillis
+        lastDataReceivedMillis = now()
         heartbeatJob =
             serviceScope.launch {
                 while (true) {
@@ -322,22 +365,63 @@ class SharedRadioInterfaceService(
      * Detects zombie connections where the BLE stack didn't report a disconnect.
      *
      * If we believe we're connected but haven't received any data from the radio within [LIVENESS_TIMEOUT_MILLIS], the
-     * connection is likely dead. Signal a non-permanent disconnect so the reconnect machinery can take over.
+     * connection is likely dead. A stale BLE transport is silently recreated; other transports retain their own timeout
+     * contracts and are not restarted merely because they are quiet.
      */
-    private fun checkLiveness() {
+    internal fun checkLiveness() {
         if (_connectionState.value != ConnectionState.Connected) return
 
-        val silenceMs = nowMillis - lastDataReceivedMillis
+        val silenceMs = now() - lastDataReceivedMillis
         if (silenceMs > LIVENESS_TIMEOUT_MILLIS) {
+            if (runningTransportId != InterfaceId.BLUETOOTH) {
+                Logger.d { "Ignoring liveness timeout for non-BLE transport (silence: ${silenceMs}ms)" }
+                return
+            }
+
             Logger.w {
                 "Liveness check failed: no data received for ${silenceMs}ms " +
-                    "(threshold: ${LIVENESS_TIMEOUT_MILLIS}ms). Treating as disconnect."
+                    "(threshold: ${LIVENESS_TIMEOUT_MILLIS}ms). Restarting BLE transport."
             }
-            onDisconnect(isPermanent = false, errorMessage = "Connection timeout — no data received")
+            if (isRestarting.compareAndSet(expect = false, update = true)) {
+                processLifecycle.coroutineScope.launch {
+                    try {
+                        transportMutex.withLock {
+                            // The state may have changed while this restart waited for a user disconnect, a BLE state
+                            // event, or an inbound packet. Revalidate every prerequisite before disrupting the link.
+                            if (!canRestartBleForLiveness()) {
+                                Logger.d { "Skipping stale BLE liveness restart" }
+                                return@withLock
+                            }
+
+                            // This is intentionally silent: we recover the transport ourselves, so users should not
+                            // receive a modal connection-timeout error for a transient condition.
+                            onDisconnect(isPermanent = false)
+                            ignoreExceptionSuspend {
+                                stopTransportLocked(notifyPermanent = false, sendPoliteDisconnect = false)
+                            }
+                            startTransportLocked()
+                        }
+                    } finally {
+                        isRestarting.value = false
+                    }
+                }
+            }
         }
     }
 
-    fun keepAlive(now: Long = nowMillis) {
+    /** Must be called under [transportMutex]. */
+    private fun canRestartBleForLiveness(): Boolean =
+        isBleConnectionRequested() && isConnectedBleTransport() && isLivenessTimeoutElapsed()
+
+    private fun isBleConnectionRequested(): Boolean = connectionRequested && bluetoothRepository.state.value.enabled
+
+    private fun isConnectedBleTransport(): Boolean = runningTransportId == InterfaceId.BLUETOOTH &&
+        radioTransport != null &&
+        _connectionState.value == ConnectionState.Connected
+
+    private fun isLivenessTimeoutElapsed(): Boolean = now() - lastDataReceivedMillis > LIVENESS_TIMEOUT_MILLIS
+
+    fun keepAlive(now: Long = now()) {
         if (now - lastHeartbeatMillis > HEARTBEAT_INTERVAL_MILLIS) {
             radioTransport?.keepAlive()
             lastHeartbeatMillis = now
@@ -369,7 +453,7 @@ class SharedRadioInterfaceService(
     @Suppress("TooGenericExceptionCaught")
     override fun handleFromRadio(bytes: ByteArray) {
         try {
-            lastDataReceivedMillis = nowMillis
+            lastDataReceivedMillis = now()
             // trySend synchronously onto the unbounded Channel so packet order matches arrival
             // order. The previous `launch { emit() }` pattern dispatched each packet onto a
             // fresh coroutine, letting the scheduler reorder them — which broke the firmware
@@ -397,7 +481,7 @@ class SharedRadioInterfaceService(
         // launching a coroutine. The async launch pattern introduced a window where a concurrent
         // onDisconnect launch could execute AFTER an onConnect launch, leaving the service stuck
         // in Connected while the transport was actually disconnected.
-        lastDataReceivedMillis = nowMillis
+        lastDataReceivedMillis = now()
         if (_connectionState.value != ConnectionState.Connected) {
             Logger.d { "Broadcasting connection state change to Connected" }
             _connectionState.value = ConnectionState.Connected

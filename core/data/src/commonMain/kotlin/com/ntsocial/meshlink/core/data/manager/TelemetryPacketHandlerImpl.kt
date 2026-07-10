@@ -21,7 +21,6 @@ import com.ntsocial.meshlink.core.common.util.nowSeconds
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.util.decodeOrNull
-import com.ntsocial.meshlink.core.model.util.toOneLiner
 import com.ntsocial.meshlink.core.repository.MeshConnectionManager
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.Notification
@@ -63,7 +62,7 @@ class TelemetryPacketHandlerImpl(
             (Telemetry.ADAPTER.decodeOrNull(payload, Logger) ?: return).let {
                 if (it.time == 0) it.copy(time = (dataPacket.time.milliseconds.inWholeSeconds).toInt()) else it
             }
-        Logger.d { "Telemetry from ${packet.from}: ${Telemetry.ADAPTER.toOneLiner(t)}" }
+        Logger.d { "Decoded telemetry payload (${payload.size} bytes)" }
         val fromNum = packet.from
         val isRemote = (fromNum != myNodeNum)
         if (!isRemote) {

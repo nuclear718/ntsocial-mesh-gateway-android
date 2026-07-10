@@ -32,8 +32,7 @@ import kotlinx.coroutines.CoroutineScope
 abstract class StreamTransport(protected val callback: RadioTransportCallback, protected val scope: CoroutineScope) :
     RadioTransport {
 
-    private val codec =
-        StreamFrameCodec(onPacketReceived = { callback.handleFromRadio(it) }, logTag = "StreamTransport")
+    private val codec = StreamFrameCodec(onPacketReceived = { callback.handleFromRadio(it) })
 
     override suspend fun close() {
         Logger.d { "Closing stream for good" }

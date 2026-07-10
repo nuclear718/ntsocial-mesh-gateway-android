@@ -32,8 +32,6 @@ import kotlinx.coroutines.sync.withLock
 class StreamFrameCodec(
     /** Called when a complete packet has been decoded from the byte stream. */
     private val onPacketReceived: (ByteArray) -> Unit,
-    /** Optional log tag for debug output. */
-    private val logTag: String = "StreamCodec",
 ) {
     companion object {
         const val START1: Byte = 0x94.toByte()
@@ -56,7 +54,7 @@ class StreamFrameCodec(
     private var lsb = 0
     private var packetLen = 0
     private val rxPacket = ByteArray(MAX_TO_FROM_RADIO_SIZE)
-    private val debugLineBuf = StringBuilder()
+    private var debugLineLength = 0L
 
     /**
      * Process a single incoming byte through the stream framing state machine.
@@ -68,7 +66,7 @@ class StreamFrameCodec(
         var nextPtr = ptr + 1
 
         fun lostSync() {
-            Logger.e { "$logTag: Lost protocol sync" }
+            Logger.e { "Stream codec lost protocol sync" }
             nextPtr = 0
         }
 
@@ -134,20 +132,22 @@ class StreamFrameCodec(
         msb = 0
         lsb = 0
         packetLen = 0
-        debugLineBuf.clear()
+        debugLineLength = 0L
     }
 
-    /** Print device serial debug output to the logger. */
+    /** Records the size of device serial diagnostics without exposing untrusted firmware output. */
     private fun debugOut(b: Byte) {
         when (val c = b.toInt().toChar()) {
             '\r' -> {}
 
             '\n' -> {
-                Logger.d { "$logTag DeviceLog: $debugLineBuf" }
-                debugLineBuf.clear()
+                if (debugLineLength > 0L) {
+                    Logger.d { "Device diagnostic line received ($debugLineLength chars)" }
+                }
+                debugLineLength = 0L
             }
 
-            else -> debugLineBuf.append(c)
+            else -> debugLineLength++
         }
     }
 }

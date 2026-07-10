@@ -28,7 +28,6 @@ import com.ntsocial.meshlink.core.model.Reaction
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.MeshDataMapper
 import com.ntsocial.meshlink.core.model.util.decodeOrNull
-import com.ntsocial.meshlink.core.model.util.toOneLiner
 import com.ntsocial.meshlink.core.repository.AdminPacketHandler
 import com.ntsocial.meshlink.core.repository.DataPair
 import com.ntsocial.meshlink.core.repository.MeshDataHandler
@@ -237,7 +236,7 @@ class MeshDataHandlerImpl(
     private fun handlePosition(packet: MeshPacket, dataPacket: DataPacket, myNodeNum: Int) {
         val payload = packet.decoded?.payload ?: return
         val p = Position.ADAPTER.decodeOrNull(payload, Logger) ?: return
-        Logger.d { "Position from ${packet.from}: ${Position.ADAPTER.toOneLiner(p)}" }
+        Logger.d { "Received position update" }
         nodeManager.handleReceivedPosition(packet.from, myNodeNum, p, dataPacket.time)
     }
 

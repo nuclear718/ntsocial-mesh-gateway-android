@@ -50,10 +50,27 @@ import org.jetbrains.compose.resources.stringResource
 import org.meshtastic.proto.EnvironmentMetrics
 import org.meshtastic.proto.Paxcount
 import org.meshtastic.proto.User
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-private const val RSSI_DELAY = 2
-private const val RSSI_TIMEOUT = 1
+private const val RSSI_POLL_INTERVAL_SECONDS = 5
+private const val RSSI_TIMEOUT_SECONDS = 3
+private const val RSSI_RETRY_INITIAL_SECONDS = 5
+private const val RSSI_RETRY_MAX_SECONDS = 30
+private const val RSSI_MAX_BACKOFF_EXPONENT = 3
+private const val RSSI_LOG_EVERY_FAILURES = 3
+
+/**
+ * Returns the next passive RSSI probe delay. RSSI is presentation-only, so a slow GATT response must not continuously
+ * contend with radio traffic or be treated as a connection failure; transport liveness owns that recovery path.
+ */
+internal fun rssiPollDelay(consecutiveFailures: Int): Duration {
+    if (consecutiveFailures <= 0) return RSSI_POLL_INTERVAL_SECONDS.seconds
+
+    val exponent = (consecutiveFailures - 1).coerceIn(0, RSSI_MAX_BACKOFF_EXPONENT)
+    val retrySeconds = (RSSI_RETRY_INITIAL_SECONDS * (1 shl exponent)).coerceAtMost(RSSI_RETRY_MAX_SECONDS)
+    return retrySeconds.seconds
+}
 
 @Suppress("LoopWithTooManyJumpStatements", "TooGenericExceptionCaught")
 @Composable
@@ -67,17 +84,25 @@ fun CurrentlyConnectedInfo(
     var rssi by remember { mutableIntStateOf(0) }
     LaunchedEffect(bleDevice) {
         if (bleDevice == null) return@LaunchedEffect
+        var consecutiveFailures = 0
         while (bleDevice.device.isConnected) {
             try {
-                rssi = withTimeout(RSSI_TIMEOUT.seconds) { bleDevice.device.readRssi() }
+                rssi = withTimeout(RSSI_TIMEOUT_SECONDS.seconds) { bleDevice.device.readRssi() }
+                consecutiveFailures = 0
             } catch (_: TimeoutCancellationException) {
-                Logger.d { "RSSI read timed out" }
+                consecutiveFailures++
+                if (consecutiveFailures == 1 || consecutiveFailures % RSSI_LOG_EVERY_FAILURES == 0) {
+                    Logger.d { "RSSI read timed out; using a backoff before retrying" }
+                }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                Logger.d(e) { "Failed to read RSSI ${e.message}" }
+            } catch (_: Exception) {
+                consecutiveFailures++
+                if (consecutiveFailures == 1 || consecutiveFailures % RSSI_LOG_EVERY_FAILURES == 0) {
+                    Logger.d { "RSSI read failed; using a backoff before retrying" }
+                }
             }
-            delay(RSSI_DELAY.seconds)
+            delay(rssiPollDelay(consecutiveFailures))
         }
     }
     Column(modifier = modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

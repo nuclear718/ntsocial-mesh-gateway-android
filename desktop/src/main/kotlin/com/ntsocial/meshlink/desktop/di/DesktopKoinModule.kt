@@ -214,7 +214,7 @@ private fun desktopPlatformStubsModule() = module {
             if (DesktopBuildConfig.IS_DEBUG) {
                 install(Logging) {
                     logger = KermitHttpLogger
-                    level = LogLevel.BODY
+                    level = LogLevel.INFO
                 }
             }
         }

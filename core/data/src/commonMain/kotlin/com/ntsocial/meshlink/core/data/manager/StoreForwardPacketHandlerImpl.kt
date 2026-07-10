@@ -65,7 +65,7 @@ class StoreForwardPacketHandlerImpl(
                 Logger.e(e) { "Failed to parse StoreForwardPlusPlus packet" }
                 return
             }
-        Logger.d { "Received StoreForwardPlusPlus packet: $sfpp" }
+        Logger.d { "Received StoreForwardPlusPlus packet type=${sfpp.sfpp_message_type} (${payload.size} bytes)" }
 
         when (sfpp.sfpp_message_type) {
             StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE,

@@ -25,7 +25,6 @@ import com.ntsocial.meshlink.core.model.MeshLog
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.RadioNotConnectedException
 import com.ntsocial.meshlink.core.model.util.toOneLineString
-import com.ntsocial.meshlink.core.model.util.toPIIString
 import com.ntsocial.meshlink.core.repository.MeshLogRepository
 import com.ntsocial.meshlink.core.repository.PacketHandler
 import com.ntsocial.meshlink.core.repository.PacketRepository
@@ -104,8 +103,8 @@ class PacketHandlerImpl(
     }
 
     override fun sendToRadio(p: ToRadio) {
-        Logger.d { "Sending to radio ${p.toPIIString()}" }
         val b = p.encode()
+        Logger.d { "Sending ${b.size} bytes to radio" }
 
         radioInterfaceService.sendToRadio(b)
         p.packet?.id?.let { changeStatus(it, MessageStatus.ENROUTE) }
@@ -285,10 +284,7 @@ class PacketHandlerImpl(
 
     private fun insertMeshLog(packetToSave: MeshLog) {
         scope.handledLaunch {
-            Logger.d {
-                "insert: ${packetToSave.message_type} = " +
-                    "${packetToSave.raw_message.toOneLineString()} from=${packetToSave.fromNum}"
-            }
+            Logger.d { "Inserting ${packetToSave.message_type} mesh log (${packetToSave.raw_message.length} chars)" }
             meshLogRepository.value.insert(packetToSave)
         }
     }

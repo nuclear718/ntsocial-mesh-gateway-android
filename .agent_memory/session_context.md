@@ -3,6 +3,36 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-10 - Physical BLE/logcat diagnostic (no fix applied yet)
+- Real-device debug of the F-Droid Debug app on Android 16 found no `FATAL EXCEPTION` or app crash, but reproduced a live BLE failure: the UI shows `Connection timeout — no data received` after the service liveness guard observes 67,128 ms without a received radio packet (threshold 60,000 ms).
+- The observed connection timeline had successful BLE profile setup and Stage 1/Stage 2 handshakes, an earlier genuine remote BLE disconnect/reconnect, then a later liveness timeout. After the timeout, no new BLE connection attempt/retry appeared for over three minutes.
+- Root cause is an application bug: `SharedRadioInterfaceService.checkLiveness()` calls `onDisconnect(isPermanent = false)`, which only changes the connection state to `DeviceSleep`; it does not close/rebuild `radioTransport`. `BleRadioTransport` only runs its reconnect loop when it observes a real GATT disconnect or exception. Result: a zombie transport can leave the app visibly disconnected without recovery. The app-level `MeshConnectionManagerImpl` maps the state to `Disconnected` when power saving is off but also does not restart the transport.
+- Prior to the timeout, current-connection UI RSSI reads were timing out repeatedly. `CurrentlyConnectedInfo` polls GATT RSSI every two seconds with a one-second timeout, so a stale link produces a timeout/log cycle roughly every three seconds instead of becoming a reconnect signal. A heartbeat may also be sent while BLE `toRadio` is unavailable during reconnect; this creates avoidable warning noise.
+- Performance evidence: while the Connections screen has user-enabled BLE scan active, the indeterminate `LinearProgressIndicator` drives ~120 fps foreground rendering. Android 16 logs `View.setRequestedFrameRate(frameRate=NaN)` twice per frame, filling logcat (~9,904 entries in 41.2 seconds). Frame pacing itself was healthy (0.88% jank, 7 ms median); the concern is battery/log-buffer overhead, not a demonstrated UI stall. Stable background rendering stopped (0 frames over a 10-second settled background interval).
+- Privacy defect: do not reproduce/expose device data, but current debug Logcat contains a full position emitted by `CommandSenderImpl.sendPosition()` and other raw protobuf/position log paths. This violates the project privacy rule and needs removal/sanitisation. Temporary device/local screenshots used for diagnosis were deleted; no PII was retained in this handover.
+- Recommended fix sequence (requires user authorization to implement): add an explicit transient transport-restart path for liveness failure under the transport mutex; gate heartbeats until a transport is actually connected/ready; add regression tests for liveness-restart and repeated RSSI timeouts; remove/sanitize precise-location and raw-packet logging; then retest reconnect on this phone.
+
+## 2026-07-10 - Physical Android deployment verified
+- User connected an ADB-authorized Samsung `SM_S9280` (`R5CWC4KNTRL`) over USB. Confirmed its ABI is `arm64-v8a`.
+- Built `:app:assembleFdroidDebug` successfully with JDK 21 and the local Android SDK. The build emits ABI-split APKs; installed `app/build/outputs/apk/fdroid/debug/app-fdroid-arm64-v8a-debug.apk` (56.37 MiB) through `adb install -r -t`.
+- Install succeeded. The F-Droid debug application ID is `com.ntsocial.meshlink.fdroid.debug` (not the production base ID); verified its package path, running PID, `MainActivity` window, and `topResumedActivity`. The app is currently launched in the foreground on the device.
+- Deployment used the F-Droid flavor intentionally because it is the directly testable open-source build and does not rely on production Google Maps/DataDog credentials. Do not silently uninstall it when updating; use `adb install -r -t` and preserve app data unless the user explicitly requests removal.
+
+## 2026-07-10 - Windows Robolectric SQLite host-runtime repair
+- Fixed the reproducible Windows-only `UnsatisfiedLinkError: no sqliteJni in java.library.path` in Android Robolectric tests. This was a missing host-JVM native SQLite runtime, not a Windows desktop-app target or a production Android SQLite defect.
+- Added the upstream-compatible `androidx.sqlite:sqlite-bundled-jvm:2.6.2` runtime dependency to the app's unit-test classpath and `core:database` Android-host-test runtime classpath. It supplies the host-native `sqliteJni` loader, including `sqliteJni.dll` on Windows.
+- Removed the Windows skip guards from `PacketFtsSearchTest` and `MigrationTest`; those tests now execute on Windows rather than hiding the native-load issue. No production source or protobufs changed.
+- Verified with JDK 21, Android SDK, English locale, and no configuration cache: targeted `:app:testFdroidDebugUnitTest :app:testGoogleDebugUnitTest :core:database:testAndroidHostTest` passed. XML confirms NavigationAssemblyTest passes in both flavors, four migration tests and three FTS tests execute with `skipped=0`, `failures=0`, and `errors=0`.
+- Full required baseline also passed: `spotlessCheck detekt assembleDebug test allTests -Pci=true --continue --no-configuration-cache` (`BUILD SUCCESSFUL`, 1,469 actionable tasks). Existing non-failing KMP host-test/Skiko version warnings remain unrelated to SQLite. Android instrumentation/LoRa hardware acceptance is still a separate emulator/device setup and is not replaced by Robolectric.
+
+## 2026-07-10 - Completion audit and full local verification report
+- User requested a current-completion audit and actual full local test of the NTsocial MeshLink fork. Read-only audit found `main` at `cf52c9fd`, 12 fork-only commits and 701 commits behind `upstream/main` `a3aa9769` (2.8.0 line), while `config.properties` still says `2.7.14`.
+- Local CI-equivalent static matrix passed using JDK 21, Android SDK, English locale: `spotlessCheck`, `detekt`, app F-Droid/Google lint, barcode F-Droid/Google lint, API lint, and `kmpSmokeCompile` (`BUILD SUCCESSFUL in 4m 47s`).
+- Full CI test task matrix was run with all 19 core KMP, 8 feature KMP, and 7 app/desktop/Android task paths. It finished in `12m 46s` with an expected non-zero result: `:app:testFdroidDebugUnitTest` and `:app:testGoogleDebugUnitTest` each fail `NavigationAssemblyTest.verifyNavigationGraphsAssembleWithoutCrashing` after the configured two retries. Test XML records 2,221 executions, 6 retry-attempt failures, 0 errors, 7 skipped. Root cause is reproducible Windows/Robolectric `UnsatisfiedLinkError: no sqliteJni in java.library.path`, triggered when navigation/Koin initialization runs the Room FTS backfill through `BundledSQLiteDriver`; it is not a navigation assertion failure. Four migration and three Android-host FTS tests are intentionally skipped on Windows for the same native SQLite limitation.
+- Packaging passed: `:app:assembleFdroidDebug`, `:app:assembleGoogleDebug`, and `:desktop:createDistributable` all succeeded (`BUILD SUCCESSFUL in 36s`). Worktree remained clean (no product-source changes).
+- Audit conclusion: official modern Meshtastic parity is roughly 55% (+/-5%), NTsocial Gateway goal roughly 30-35%, combined "complete official app + production NTsocial bridge" roughly 45-50%. Existing 2.8 slices include FTS, Device Links, air quality, XEdDSA, protected Gateway IPC/MVP port 256 + receive-only 497, and default NTsocial channel provisioning. Major missing work includes discovery, docs, Android Auto, AI App Functions, translation/geofence/lockdown/TINY preset paths, persistent/reliable Gateway delivery, scheduler/policy/dashboard, cross-app E2E, and hardware acceptance.
+- CI risks discovered: public main has no observable Actions runs/check contexts or branch protection; F-Droid reproducible-build signing-block check in `.github/workflows/reusable-check.yml` has quoted-heredoc and inverted-status logic; tracked Google-map test sources have no matching Gradle test task; API/widget tasks are `NO-SOURCE`; no device/hardware acceptance coverage.
+
 ## 2026-07-06 - Meshtastic 2.8 parity stop report: database slice + interrupted baseline
 - User requested stopping work and reporting at this point. Do not mark the overall 2.8 parity goal complete.
 - Current branch is `codex/meshtastic-2-8-parity`. `gradle.properties` was restored to the original
@@ -221,6 +251,30 @@
 - `AGENTS.md` modularized to ~3KB base; detailed rules moved to `.skills/`.
 - `scripts/ai-guardrail.sh` added to prevent binary/log leaks (installation: see script header).
 - CI Cost Control skill added at `.skills/ci-cost-control/SKILL.md`.
+
+## 2026-07-10 - Android liveness recovery, RSSI resilience, and device validation
+- Restored Windows Robolectric SQLite coverage by adding `sqlite-bundled-jvm` to the relevant app and
+  database host-test runtimes, then re-enabled the migration and FTS tests that had been skipped on Windows.
+- Fixed the BLE zombie-link path in `SharedRadioInterfaceService`: a >60-second liveness timeout now
+  silently closes and recreates the BLE transport under the transport mutex. It is gated by an explicit
+  `connectionRequested` flag, protected from overlapping restarts, avoids writing a polite disconnect frame
+  into the unresponsive transport, and never raises the user-facing connection-timeout alert.
+- Added `SharedRadioInterfaceServiceLivenessTest` coverage for restart/recreate behavior, no permanent
+  disconnect or alert, stale/repeated restart suppression, inbound-data reset, non-BLE no-op, and explicit
+  disconnect behavior. Added `FakeRadioTransport.closeCount` test support.
+- Changed presentation-only RSSI polling from a 2-second/1-second-timeout loop to normal 5-second polling
+  with capped 5/10/20/30-second exponential retry backoff. Added `RssiPollingTest`.
+- Reduced sensitive Logcat exposure: packet/position/telemetry/store-forward/serial-diagnostic logs now
+  retain only safe type/size metadata, HTTP logging is `INFO` instead of `BODY`, and stream-frame logs no
+  longer include endpoint-derived tags. Existing MeshLog database retention remains a separate product
+  decision and was not silently altered.
+- Verification passed in full with JDK 21, Android SDK, and English test locale:
+  `./gradlew.bat spotlessCheck detekt assembleDebug test allTests -Pci=true --continue --no-configuration-cache`
+  (`BUILD SUCCESSFUL`, 9m31s). Targeted service, connection, data, and network suites also passed.
+- Deployed the F-Droid ARM64 debug APK to a USB-connected Android device. A clean launch reached
+  `Connected`; ADB-driven message navigation and the visible Send button successfully produced an outbound
+  radio-frame write, and the user visually confirmed the sent message. The non-mutating Settings/About page
+  also rendered. A 75-second sanitized idle monitor showed no liveness-timeout alert or connection warning.
 
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
