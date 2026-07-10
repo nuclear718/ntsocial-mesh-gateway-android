@@ -67,9 +67,28 @@ class NtsocialGatewayServiceContractTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun `gateway constants expose protected IPC boundary`() {
         assertEquals("com.ntsocial.meshlink.gateway.BIND", NtsocialGatewayContract.ACTION_BIND)
         assertEquals("com.ntsocial.meshlink.permission.BIND_NTSOCIAL_GATEWAY", NtsocialGatewayContract.PERMISSION_BIND)
+    }
+
+    @Test
+    fun `content provider gateway contract is versioned and metadata only`() {
+        val authority = NtsocialGatewayContract.authorityFor("com.ntsocial.meshlink")
+
+        assertEquals("com.ntsocial.meshlink.gateway.COMMAND", NtsocialGatewayContract.ACTION_COMMAND)
+        assertEquals("com.ntsocial.meshlink.gateway.EVENT", NtsocialGatewayContract.ACTION_EVENT)
+        assertEquals(
+            "content://com.ntsocial.meshlink.gateway/v1/status",
+            NtsocialGatewayContract.statusUri(authority).toString(),
+        )
+        assertEquals(
+            "content://com.ntsocial.meshlink.gateway/v1/envelopes",
+            NtsocialGatewayContract.envelopesUri(authority).toString(),
+        )
+        assertEquals(NtsocialGatewayContract.EVENT_ENVELOPE_AVAILABLE, "ENVELOPE_AVAILABLE")
+        assertEquals(NtsocialGatewayContract.COLUMN_RAW_BYTES, "raw_bytes")
     }
 
     @Test

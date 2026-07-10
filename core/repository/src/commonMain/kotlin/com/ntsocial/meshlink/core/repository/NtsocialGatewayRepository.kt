@@ -18,6 +18,7 @@ package com.ntsocial.meshlink.core.repository
 
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannelStatus
 import kotlinx.coroutines.flow.StateFlow
 import okio.ByteString
 import org.meshtastic.proto.MeshPacket
@@ -25,6 +26,9 @@ import org.meshtastic.proto.MeshPacket
 /** NTsocial Gateway MVP data plane for PRIVATE_APP envelopes and cache access. */
 interface NtsocialGatewayRepository {
     val cachedEnvelopes: StateFlow<List<NtsocialCachedEnvelope>>
+
+    /** Latest canonical NTsocial-channel readiness result, populated after node DB readiness. */
+    val defaultChannelStatus: StateFlow<NtsocialDefaultChannelStatus>
 
     /**
      * Validates and caches an inbound NTsocial envelope. Returns true when the packet is a valid NTsocial envelope,
@@ -42,6 +46,23 @@ interface NtsocialGatewayRepository {
         wantAck: Boolean = true,
         headerMsgId: ByteString? = null,
     ): NtsocialCachedEnvelope
+
+    /**
+     * Queues an already encoded NTsocial envelope without wrapping it again.
+     *
+     * The external IPC command boundary uses this path so the parent application's `NM + version + header + payload`
+     * envelope remains byte-for-byte stable. New radio sends are always PRIVATE_APP / port 256.
+     */
+    fun sendRawEnvelope(
+        rawEnvelope: ByteString,
+        to: String? = DataPacket.ID_BROADCAST,
+        channelIndex: Int,
+        hopLimit: Int = 0,
+        wantAck: Boolean = true,
+    ): NtsocialCachedEnvelope
+
+    /** Updates the ephemeral provisioning/readiness snapshot exposed through the Android gateway provider. */
+    fun updateDefaultChannelStatus(status: NtsocialDefaultChannelStatus)
 
     fun clearCache()
 }

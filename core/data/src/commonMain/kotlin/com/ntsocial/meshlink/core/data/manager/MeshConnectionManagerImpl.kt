@@ -21,6 +21,7 @@ import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.common.util.nowSeconds
 import com.ntsocial.meshlink.core.data.ntsocial.NtsocialChannelProvisioner
+import com.ntsocial.meshlink.core.data.ntsocial.toDefaultChannelStatus
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DeviceType
 import com.ntsocial.meshlink.core.model.TelemetryType
@@ -36,6 +37,7 @@ import com.ntsocial.meshlink.core.repository.MeshWorkerManager
 import com.ntsocial.meshlink.core.repository.MqttManager
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.NodeRepository
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketHandler
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
@@ -89,6 +91,7 @@ class MeshConnectionManagerImpl(
     private val appWidgetUpdater: AppWidgetUpdater,
     private val heartbeatSender: DataLayerHeartbeatSender,
     private val ntsocialChannelProvisioner: NtsocialChannelProvisioner,
+    private val ntsocialGatewayRepository: NtsocialGatewayRepository,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshConnectionManager {
     /**
@@ -338,9 +341,13 @@ class MeshConnectionManagerImpl(
         commandSender.sendAdmin(myNodeNum, wantResponse = true) { AdminMessage(get_owner_request = true) }
 
         scope.handledLaunch {
-            ntsocialChannelProvisioner.ensureDefaultChannel(
-                myNodeNum = myNodeNum,
-                maxChannels = nodeManager.getMyNodeInfo()?.maxChannels ?: DEFAULT_MAX_CHANNELS,
+            val result =
+                ntsocialChannelProvisioner.ensureDefaultChannel(
+                    myNodeNum = myNodeNum,
+                    maxChannels = nodeManager.getMyNodeInfo()?.maxChannels ?: DEFAULT_MAX_CHANNELS,
+                )
+            ntsocialGatewayRepository.updateDefaultChannelStatus(
+                result.toDefaultChannelStatus(ntsocialChannelProvisioner.currentDefaultChannelIndex()),
             )
         }
 

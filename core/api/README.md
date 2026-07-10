@@ -15,16 +15,22 @@ should use the Local TAK Server instead (see deprecation notice above).
 
 ## NTsocial Gateway IPC
 
-This fork also exposes a project-owned, protected NTsocial Gateway IPC for the NTsocial app:
+New NTsocial integrations use the versioned Gateway data/event contract rather than binding to a service:
 
-- Bind action: `com.ntsocial.meshlink.gateway.BIND`
-- Required signature permission: `com.ntsocial.meshlink.permission.BIND_NTSOCIAL_GATEWAY`
-- Contract: `INtsocialGatewayService`
+- Provider authority: `${applicationId}.gateway`
+- Snapshot paths: `/v1/status`, `/v1/envelopes`, `/v1/nodes`, and `/v1/channels`
+- Command action: `com.ntsocial.meshlink.gateway.COMMAND`
+- Metadata-only event action: `com.ntsocial.meshlink.gateway.EVENT`
+- Declared permissions: `ACCESS_NTSOCIAL_GATEWAY` and `CONTROL_NTSOCIAL_GATEWAY`
 
-The contract is intentionally small: `sendNtsocialPayload(channelIndex, payload)`,
-`observeNtsocialEnvelope(callback)`, `getGatewayStatus()`, and a cache snapshot getter. It routes
-through the NTsocial Gateway data plane and does not expose the deprecated `IMeshService` surface to
-the NTsocial app.
+The Provider exposes cached raw NTsocial envelopes only to the certificate-pinned NTsocial client; events never carry
+message bytes. New sends provide a complete `NM` envelope and are restricted to `PRIVATE_APP / 256`; legacy `497` is
+receive-only. Clients obtain a short-lived, single-use command capability from the Provider before sending the explicit
+command broadcast. This maintains secure compatibility with API 26-33, which cannot reveal a broadcast sender UID to a
+receiver.
+
+`INtsocialGatewayService` and the `com.ntsocial.meshlink.gateway.BIND` service remain deprecated transitional
+compatibility adapters only. New client code must not bind them.
 
 ## Integration
 

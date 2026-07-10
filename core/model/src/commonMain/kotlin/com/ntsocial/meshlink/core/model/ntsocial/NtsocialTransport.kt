@@ -32,6 +32,12 @@ object NtsocialTransport {
     const val MAX_ENVELOPE_SIZE_BYTES = 200
     const val MAX_PAYLOAD_SIZE_BYTES = MAX_ENVELOPE_SIZE_BYTES - HEADER_SIZE_BYTES
 
+    /** Maximum complete NM envelope accepted from the external NTsocial application command boundary. */
+    const val MAX_CLIENT_ENVELOPE_SIZE_BYTES = 180
+
+    /** In-memory cache capacity. The gateway never writes this cache to Room in the MVP boundary. */
+    const val MAX_CACHED_ENVELOPES = 128
+
     fun isInboundPort(portNum: Int): Boolean =
         portNum == PRIVATE_APP_PORT_NUM || portNum == LEGACY_RECEIVE_ONLY_PORT_NUM
 

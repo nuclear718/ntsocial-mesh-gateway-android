@@ -22,6 +22,8 @@ import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeCodec
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeDirection
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.CommandSender
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
@@ -37,7 +39,7 @@ import kotlin.test.assertTrue
 class NtsocialGatewayRepositoryImplTest {
 
     private val commandSender = RecordingCommandSender()
-    private val repository = NtsocialGatewayRepositoryImpl(commandSender)
+    private val repository = NtsocialGatewayRepositoryImpl(commandSender, CoroutineScope(SupervisorJob()))
 
     @Test
     fun `cacheInbound caches valid PRIVATE_APP NTsocial envelope`() {
@@ -148,6 +150,49 @@ class NtsocialGatewayRepositoryImplTest {
         }
         assertTrue(commandSender.sentData.isEmpty())
         assertTrue(repository.cachedEnvelopes.value.isEmpty())
+    }
+
+    @Test
+    fun `sendRawEnvelope keeps parent NM envelope unchanged on PRIVATE_APP port`() {
+        val raw = NtsocialEnvelopeCodec.encode(testHeaderMsgId(), "parent-payload".encodeToByteArray().toByteString())
+
+        val cached =
+            repository.sendRawEnvelope(
+                rawEnvelope = raw,
+                to = "!0000002a",
+                channelIndex = 2,
+                hopLimit = 3,
+                wantAck = false,
+            )
+
+        val sent = commandSender.sentData.single()
+        assertEquals(raw, sent.bytes)
+        assertEquals(NtsocialTransport.PRIVATE_APP_PORT_NUM, sent.dataType)
+        assertEquals(2, sent.channel)
+        assertEquals(3, sent.hopLimit)
+        assertFalse(sent.wantAck)
+        assertEquals(raw, cached.rawBytes)
+        assertEquals(NtsocialEnvelopeDirection.OUTBOUND, cached.direction)
+    }
+
+    @Test
+    fun `sendRawEnvelope rejects invalid or oversized complete parent envelopes`() {
+        assertFailsWith<IllegalArgumentException> {
+            repository.sendRawEnvelope(
+                rawEnvelope = "not-an-nm-envelope".encodeToByteArray().toByteString(),
+                channelIndex = 0,
+            )
+        }
+
+        val oversizedRaw =
+            NtsocialEnvelopeCodec.encode(
+                headerMsgId = testHeaderMsgId(),
+                payload = ByteArray(NtsocialTransport.MAX_CLIENT_ENVELOPE_SIZE_BYTES).toByteString(),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            repository.sendRawEnvelope(rawEnvelope = oversizedRaw, channelIndex = 0)
+        }
+        assertTrue(commandSender.sentData.isEmpty())
     }
 
     private fun dataPacket(portNum: Int, raw: ByteString) = DataPacket(

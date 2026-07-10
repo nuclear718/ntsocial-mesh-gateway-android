@@ -218,7 +218,7 @@ class AndroidRadioControllerImpl(
         serviceRepository.meshService?.setDeviceAddress(address)
         // Ensure service is running/restarted to handle the new address
         val intent =
-            Intent().apply { setClassName("com.ntsocial.meshlink", "com.ntsocial.meshlink.core.service.MeshService") }
+            Intent().apply { setClassName(context.packageName, "com.ntsocial.meshlink.core.service.MeshService") }
         context.startForegroundService(intent)
     }
 }

@@ -19,6 +19,7 @@ package com.ntsocial.meshlink.core.data.ntsocial
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.model.SessionStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannel
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannelStatus
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.SessionManager
@@ -74,6 +75,16 @@ open class NtsocialChannelProvisioner(
                 else -> applyProvisioning(myNodeNum, defaultLoraConfig, channelPlan)
             }
         }
+    }
+
+    /** Finds the currently configured canonical NTsocial channel without exposing its PSK or other RF settings. */
+    open suspend fun currentDefaultChannelIndex(): Int? {
+        val defaultSettings = NtsocialDefaultChannel.channelSet.settings.firstOrNull() ?: return null
+        return radioConfigRepository.channelSetFlow
+            .first()
+            .settings
+            .indexOfFirst { it.matchesNtsocial(defaultSettings) }
+            .takeIf { it >= 0 }
     }
 
     private fun buildChannelPlan(
@@ -219,3 +230,42 @@ enum class NtsocialChannelChange {
     UPDATED,
     REPLACED,
 }
+
+/** Maps radio-provisioning outcomes to the sanitized status exposed by the external Gateway provider. */
+internal fun NtsocialChannelProvisionResult.toDefaultChannelStatus(channelIndex: Int?): NtsocialDefaultChannelStatus =
+    when (this) {
+        NtsocialChannelProvisionResult.AlreadyPresent ->
+            NtsocialDefaultChannelStatus(
+                ready = channelIndex != null,
+                channelIndex = channelIndex,
+                provisioningState = "ALREADY_PRESENT",
+                provisioningChannelChange = NtsocialChannelChange.NONE.name,
+                provisioningLoraApplied = false,
+            )
+
+        NtsocialChannelProvisionResult.InvalidDefaultChannel ->
+            NtsocialDefaultChannelStatus(provisioningState = "INVALID_DEFAULT_CHANNEL")
+
+        NtsocialChannelProvisionResult.RadioRejected ->
+            NtsocialDefaultChannelStatus(
+                ready = channelIndex != null,
+                channelIndex = channelIndex,
+                provisioningState = "RADIO_REJECTED",
+            )
+
+        NtsocialChannelProvisionResult.SessionTimeout ->
+            NtsocialDefaultChannelStatus(
+                ready = channelIndex != null,
+                channelIndex = channelIndex,
+                provisioningState = "SESSION_TIMEOUT",
+            )
+
+        is NtsocialChannelProvisionResult.Provisioned ->
+            NtsocialDefaultChannelStatus(
+                ready = channelIndex != null,
+                channelIndex = channelIndex,
+                provisioningState = "PROVISIONED",
+                provisioningChannelChange = channelChange.name,
+                provisioningLoraApplied = loraConfigApplied,
+            )
+    }

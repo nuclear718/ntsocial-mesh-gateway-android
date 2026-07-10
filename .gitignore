@@ -17,6 +17,10 @@
 /app/release
 **/debug/**
 **/release/**
+!app/src/debug/
+!app/src/debug/res/
+!app/src/debug/res/values/
+!app/src/debug/res/values/ntsocial_gateway_permissions.xml
 
 # Java KeyStore certificates
 *.jks

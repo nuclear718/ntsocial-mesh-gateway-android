@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds additionally recognise the explicitly allowed NTsocial debug signer. -->
+<resources>
+    <string-array name="ntsocial_gateway_known_signers">
+        <item>29EF6EF5F0BE97EF1B8F2B405CEE99643FECFF11B71AC3B54D637EE01D0AE646</item>
+        <item>B578F8445925AEA570F7E916C335172559773D7B6EC92DB0D76355E0E8F3FF8D</item>
+    </string-array>
+</resources>

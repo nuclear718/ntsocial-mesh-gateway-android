@@ -42,7 +42,11 @@ import kotlinx.coroutines.flow.onEach
 import okio.ByteString.Companion.toByteString
 import org.koin.android.ext.android.inject
 
-/** Protected Binder service for the NTsocial Gateway data plane. */
+/**
+ * @deprecated Transitional Binder compatibility adapter. New NTsocial integrations use [NtsocialGatewayProvider] and
+ *   [NtsocialGatewayCommandReceiver] instead.
+ */
+@Deprecated("Use the ContentProvider and command/event Gateway IPC instead")
 class NtsocialGatewayService : Service() {
     private val ntsocialGatewayRepository: NtsocialGatewayRepository by inject()
 
@@ -145,6 +149,7 @@ class NtsocialGatewayService : Service() {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun enforceGatewayPermission() {
         if (Binder.getCallingUid() != Process.myUid()) {
             enforceCallingPermission(

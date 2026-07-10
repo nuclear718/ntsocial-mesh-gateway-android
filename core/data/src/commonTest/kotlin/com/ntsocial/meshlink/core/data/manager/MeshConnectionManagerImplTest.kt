@@ -29,6 +29,7 @@ import com.ntsocial.meshlink.core.repository.MeshServiceNotifications
 import com.ntsocial.meshlink.core.repository.MeshWorkerManager
 import com.ntsocial.meshlink.core.repository.MqttManager
 import com.ntsocial.meshlink.core.repository.NodeManager
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketHandler
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
@@ -86,6 +87,7 @@ class MeshConnectionManagerImplTest {
     private val workerManager = mock<MeshWorkerManager>(MockMode.autofill)
     private val appWidgetUpdater = mock<AppWidgetUpdater>(MockMode.autofill)
     private val ntsocialChannelProvisioner = mock<NtsocialChannelProvisioner>(MockMode.autofill)
+    private val ntsocialGatewayRepository = mock<NtsocialGatewayRepository>(MockMode.autofill)
 
     private val dataPacket = DataPacket(id = 456, time = 0L, to = "0", from = "0", bytes = null, dataType = 0)
 
@@ -117,6 +119,7 @@ class MeshConnectionManagerImplTest {
         every { packetHandler.sendToRadio(any<org.meshtastic.proto.ToRadio>()) } returns Unit
         everySuspend { ntsocialChannelProvisioner.ensureDefaultChannel(any(), any()) } returns
             NtsocialChannelProvisionResult.AlreadyPresent
+        everySuspend { ntsocialChannelProvisioner.currentDefaultChannelIndex() } returns 0
     }
 
     private fun createManager(scope: CoroutineScope): MeshConnectionManagerImpl = MeshConnectionManagerImpl(
@@ -140,6 +143,7 @@ class MeshConnectionManagerImplTest {
         appWidgetUpdater,
         DataLayerHeartbeatSender(packetHandler),
         ntsocialChannelProvisioner,
+        ntsocialGatewayRepository,
         scope,
     )
 

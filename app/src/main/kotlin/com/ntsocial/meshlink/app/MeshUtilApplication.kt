@@ -30,6 +30,7 @@ import com.ntsocial.meshlink.app.di.AndroidKoinApp
 import com.ntsocial.meshlink.core.common.ContextServices
 import com.ntsocial.meshlink.core.database.DatabaseManager
 import com.ntsocial.meshlink.core.repository.MeshPrefs
+import com.ntsocial.meshlink.core.service.NtsocialGatewayEventPublisher
 import com.ntsocial.meshlink.core.service.worker.MeshLogCleanupWorker
 import com.ntsocial.meshlink.feature.widget.LocalStatsWidgetReceiver
 import kotlinx.coroutines.CoroutineScope
@@ -67,6 +68,10 @@ open class MeshUtilApplication :
             androidContext(this@MeshUtilApplication)
             workManagerFactory()
         }
+
+        // The Provider may be created before Application.onCreate, so Gateway event collection starts only after Koin
+        // is fully initialized. Events contain metadata only; external clients re-query the protected Provider.
+        get<NtsocialGatewayEventPublisher>().start()
 
         // Schedule periodic MeshLog cleanup
         scheduleMeshLogCleanup()

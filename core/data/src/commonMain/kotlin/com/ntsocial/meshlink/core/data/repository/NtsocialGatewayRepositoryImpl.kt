@@ -21,26 +21,40 @@ package com.ntsocial.meshlink.core.data.repository
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannelStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeCodec
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeDirection
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.MeshPacket
 import kotlin.random.Random
 
 @Single(binds = [NtsocialGatewayRepository::class])
-class NtsocialGatewayRepositoryImpl(private val commandSender: CommandSender) : NtsocialGatewayRepository {
+class NtsocialGatewayRepositoryImpl(
+    private val commandSender: CommandSender,
+    @Named("ServiceScope") private val scope: CoroutineScope,
+) : NtsocialGatewayRepository {
     private val _cachedEnvelopes = MutableStateFlow<List<NtsocialCachedEnvelope>>(emptyList())
+    private val _defaultChannelStatus = MutableStateFlow(NtsocialDefaultChannelStatus())
+    private val cacheMutex = Mutex()
     private val seenCacheKeys = mutableSetOf<String>()
 
     override val cachedEnvelopes: StateFlow<List<NtsocialCachedEnvelope>> = _cachedEnvelopes.asStateFlow()
+
+    override val defaultChannelStatus: StateFlow<NtsocialDefaultChannelStatus> = _defaultChannelStatus.asStateFlow()
 
     override fun cacheInbound(packet: MeshPacket, dataPacket: DataPacket): Boolean {
         val record =
@@ -88,9 +102,57 @@ class NtsocialGatewayRepositoryImpl(private val commandSender: CommandSender) : 
         return record
     }
 
+    override fun sendRawEnvelope(
+        rawEnvelope: ByteString,
+        to: String?,
+        channelIndex: Int,
+        hopLimit: Int,
+        wantAck: Boolean,
+    ): NtsocialCachedEnvelope {
+        require(rawEnvelope.size <= NtsocialTransport.MAX_CLIENT_ENVELOPE_SIZE_BYTES) {
+            "NTsocial command envelope exceeds the external gateway limit"
+        }
+        require(channelIndex >= 0) { "channelIndex must not be negative" }
+        require(hopLimit >= 0) { "hopLimit must not be negative" }
+
+        val envelope = requireNotNull(NtsocialEnvelopeCodec.decode(rawEnvelope)) { "Invalid NTsocial command envelope" }
+        val dataPacket =
+            DataPacket(
+                to = to,
+                bytes = rawEnvelope,
+                dataType = NtsocialTransport.PRIVATE_APP_PORT_NUM,
+                id = commandSender.generatePacketId(),
+                channel = channelIndex,
+                hopLimit = hopLimit,
+                wantAck = wantAck,
+            )
+        commandSender.sendData(dataPacket)
+
+        return NtsocialCachedEnvelope(
+            direction = NtsocialEnvelopeDirection.OUTBOUND,
+            envelope = envelope,
+            rawBytes = rawEnvelope,
+            packetId = dataPacket.id,
+            from = dataPacket.from,
+            to = dataPacket.to,
+            channelIndex = dataPacket.channel,
+            portNum = dataPacket.dataType,
+            cachedAtMillis = nowMillis,
+        )
+            .also(::cache)
+    }
+
+    override fun updateDefaultChannelStatus(status: NtsocialDefaultChannelStatus) {
+        _defaultChannelStatus.value = status
+    }
+
     override fun clearCache() {
-        seenCacheKeys.clear()
-        _cachedEnvelopes.value = emptyList()
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            cacheMutex.withLock {
+                seenCacheKeys.clear()
+                _cachedEnvelopes.value = emptyList()
+            }
+        }
     }
 
     private fun toCacheRecord(
@@ -120,14 +182,18 @@ class NtsocialGatewayRepositoryImpl(private val commandSender: CommandSender) : 
     }
 
     private fun cache(record: NtsocialCachedEnvelope) {
-        if (!seenCacheKeys.add(record.cacheKey)) return
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            cacheMutex.withLock {
+                if (!seenCacheKeys.add(record.cacheKey)) return@withLock
 
-        val next = (_cachedEnvelopes.value + record).takeLast(MAX_CACHE_RECORDS)
-        if (next.size == MAX_CACHE_RECORDS) {
-            seenCacheKeys.clear()
-            seenCacheKeys.addAll(next.map { it.cacheKey })
+                val next = (_cachedEnvelopes.value + record).takeLast(NtsocialTransport.MAX_CACHED_ENVELOPES)
+                if (next.size == NtsocialTransport.MAX_CACHED_ENVELOPES) {
+                    seenCacheKeys.clear()
+                    seenCacheKeys.addAll(next.map { it.cacheKey })
+                }
+                _cachedEnvelopes.value = next
+            }
         }
-        _cachedEnvelopes.value = next
     }
 
     private fun randomHeaderMsgId(): ByteString = ByteArray(NtsocialTransport.HEADER_MSG_ID_SIZE_BYTES) {
@@ -136,7 +202,6 @@ class NtsocialGatewayRepositoryImpl(private val commandSender: CommandSender) : 
         .toByteString()
 
     private companion object {
-        const val MAX_CACHE_RECORDS = 128
         const val RANDOM_BYTE_EXCLUSIVE = 256
     }
 }

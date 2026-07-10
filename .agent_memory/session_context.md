@@ -3,6 +3,65 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-10 - Manual per-channel LoRa rule and AGENTS synchronization
+- Updated both repository `AGENTS.md` files to record the implemented Provider/capability/explicit-command/event
+  architecture, port-256-only outbound policy, MeshLink radio ownership, variant pairing, privacy boundary, and the
+  2026-07-10 hardware E2E evidence. Older parent AIDL notes are explicitly historical rather than current guidance.
+- User-confirmed product rule: there is no automatic channel binding. A normal NTsocial channel may use LoRa only after
+  the user manually enables and binds it in that channel UI; an unbound channel remains BLE-only. Removed the parent
+  `MeshtasticGatewayManager` refresh-time logic that wrote the canonical lane into every joined channel and removed the
+  now-invalid contract helper/tests.
+- Added `ChatViewModelMeshtasticTest.sendPost_withUnmappedChannel_keepsLoRaOutOfTransport`. Target validation passed:
+  `:app:assembleDebug`, `MeshLinkGatewayContractTest` (4 tests), and the new unbound-channel test. The parent project
+  has no Spotless task; an attempted `:app:spotlessCheck` therefore did not execute compilation or tests.
+- The updated parent debug APK was built, but the USB device disconnected before `adb install -r`; no device data or
+  installed APK was changed in this follow-up. Reconnect the same device before installing the updated APK if a fresh
+  on-device check is desired.
+
+## 2026-07-10 - Cross-app Android LoRa hardware E2E acceptance
+- Retested both installed debug applications over the connected Android 16 device without clearing data or changing the
+  user's radio configuration. The user-created normal channel `#NTsocialLORA` was already LoRa-enabled and bound; the
+  parent channel UI showed `LoRa enabled` before the send.
+- A 20-second idle baseline for the parent and MeshLink processes had zero error-level log lines. The outbound test was
+  entered through the normal channel `MessageInput` and submitted with its actual accessible Send control (not the
+  Meshtastic test/feed UI). The input cleared and one committed local message appeared in that channel.
+- Parent evidence in the send window: one normal-channel LoRa route preparation, port 256 only, three explicit protected
+  Gateway command broadcasts, one accepted dispatch, and one accepted asynchronous lane completion. No legacy AIDL call
+  or port 497 outbound path was used.
+- MeshLink evidence in the same window: three radio-transport writes, eight observed queue-status events, and three
+  `queueJob ... success true` firmware responses. The parent and MeshLink windows both had zero error-level logs and no
+  reject, timeout, disconnected-radio, inactive-transport, or write-failure signal.
+- This proves normal NTsocial channel -> protected Provider/capability -> explicit COMMAND broadcast -> MeshLink ->
+  connected radio firmware queue delivery. It does not by itself prove RF reception at a remote peer; that requires a
+  second receiving radio or an on-air receiver/return message.
+
+## 2026-07-10 - MeshLink ContentProvider / Intent Gateway boundary (pending parent full validation)
+- Added the Android-only cross-app Gateway boundary: `${applicationId}.gateway` Provider paths `/v1/status`,
+  `/v1/envelopes`, `/v1/nodes`, and `/v1/channels`; an explicit `com.ntsocial.meshlink.gateway.COMMAND` receiver;
+  and explicit, metadata-only `com.ntsocial.meshlink.gateway.EVENT` broadcasts. Events invoke `ContentResolver.notifyChange`
+  and never include message bytes. `NtsocialGatewayEventPublisher` starts after Koin in `MeshUtilApplication`.
+- Provider status includes connection, cache count/limit, ports and limits, canonical default-channel readiness/index,
+  provisioning outcome, local node ID, and sanitized gateway health. Nodes omit positions, keys, notes, and raw protobufs;
+  channels expose only index/name/uplink/downlink, never PSKs or RF config. Envelope bytes remain Provider-only.
+- Security: ACCESS/CONTROL `signature|knownSigner` permissions and release/debug signer resources are declared. The
+  Provider pins caller UID/package/certificate to `com.ntsocial.android`; debug is accepted only for a debuggable
+  MeshLink host and `com.ntsocial.android.debug`. Package visibility queries were added. Android 8-13 commands use a
+  short-lived, single-use Provider-issued capability bound to `request_id`; Android 14+ also verifies sender UID/package/
+  certificate directly.
+- Added raw envelope outbound path: validates an existing `NM` envelope, sends it unchanged only on PRIVATE_APP/256,
+  limits complete external envelopes to 180 bytes, caches it as outbound, and rejects a noncanonical channel index.
+  Legacy 497 remains inbound-only. Cache uses a Mutex; event dedupe state is bounded to current cache keys.
+- Preserved AIDL Gateway service as deprecated compatibility and fixed `AndroidRadioControllerImpl` to use
+  `context.packageName`, not a hard-coded package.
+- Focused tests added for raw envelope behavior, capability one-time/request/UID/expiry behavior, and Provider contract
+  constants. Targeted commands passed before final manifest/event-only polish:
+  `:core:service:compileAndroidMain :app:processFdroidDebugMainManifest`,
+  `:core:service:testAndroidHostTest --tests NtsocialGatewayCommandCapabilityStoreTest`, and
+  `:core:data:jvmTest --tests NtsocialGatewayRepositoryImplTest` (8 tests, zero failures in XML).
+- A broad `spotlessApply` attempt found one max-line-length issue in the new capability test; it was fixed afterward.
+  An overlapping earlier Gradle invocation also produced a Kotlin compiler internal AIOOBE, so the parent should run the
+  normal single baseline after this handoff rather than treat that as a source failure.
+
 ## 2026-07-10 - Physical BLE/logcat diagnostic (no fix applied yet)
 - Real-device debug of the F-Droid Debug app on Android 16 found no `FATAL EXCEPTION` or app crash, but reproduced a live BLE failure: the UI shows `Connection timeout — no data received` after the service liveness guard observes 67,128 ms without a received radio packet (threshold 60,000 ms).
 - The observed connection timeline had successful BLE profile setup and Stage 1/Stage 2 handshakes, an earlier genuine remote BLE disconnect/reconnect, then a later liveness timeout. After the timeout, no new BLE connection attempt/retry appeared for over three minutes.
@@ -275,6 +334,28 @@
   `Connected`; ADB-driven message navigation and the visible Send button successfully produced an outbound
   radio-frame write, and the user visually confirmed the sent message. The non-mutating Settings/About page
   also rendered. A 75-second sanitized idle monitor showed no liveness-timeout alert or connection warning.
+
+## 2026-07-10 - Cross-app ContentProvider Gateway integration and validation
+- Replaced the parent app's LoRa-side Meshtastic AIDL integration with the MeshLink ContentProvider + explicit
+  command/event boundary. The parent package `com.ntsocial.android.debug` targets
+  `com.ntsocial.meshlink.fdroid.debug` in debug builds; the production variant targets `com.ntsocial.meshlink`.
+  BLE/GATT code was not changed.
+- MeshLink now exposes verified `/v1/status`, `/v1/envelopes`, `/v1/nodes`, and `/v1/channels` snapshots. Commands
+  require a short-lived, single-use Provider-issued capability on API 26-33 and sender verification on API 34+.
+  New outbound traffic is raw `NM` traffic on port 256 only, bounded to 180 bytes and the canonical provisioned
+  NTsocial channel; legacy port 497 stays inbound-only.
+- Provider data excludes radio configuration, PSKs, positions, notes, and raw node protobufs. Events are explicit and
+  metadata-only; the parent re-queries the Provider. Parent readiness automatically binds joined logical channels to
+  the canonical RF channel many-to-one.
+- Validation passed: MeshLink's required full baseline
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests --no-configuration-cache` completed with final exit
+  code 0 using a single-worker, reduced-memory local invocation; parent debug assembly plus
+  `MeshLinkGatewayContractTest` completed with exit code 0. Both debug APKs were verified as Android Debug signed
+  with SHA-256 `B578F8445925AEA570F7E916C335172559773D7B6EC92DB0D76355E0E8F3FF8D` and have the expected packages.
+- Device follow-up is still required: the initially connected Android 16 device (`R5CWC4KNTRL`) disappeared from ADB
+  before installation, so neither new APK was installed and no device settings/data were changed. Once the device
+  reconnects, install both APKs with `adb install -r`, query the Provider as the debug parent, verify unauthorized
+  shell denial, launch both apps, and monitor sanitized logs for the cross-app event/re-query path.
 
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
