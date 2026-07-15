@@ -10,6 +10,8 @@ You are an expert Android/KMP engineer working on NTsocial MeshLink, a GPL-3.0 f
 - **Project Goal:** Build an open-source transport bridge between the NTsocial App and Meshtastic radios. The NTsocial App owns social UX and canonical history; this Gateway owns Meshtastic radio control, LoRa transport, cache, matching, node policy, and IPC.
 - **Upstream Base:** This fork is based on `meshtastic/Meshtastic-Android`. Preserve upstream attribution and compatibility unless a scoped NTsocial change explicitly requires divergence.
 - **Tech:** Kotlin 2.3+ with JDK 21, Ktor, Okio, Room KMP, DataStore, Koin 4.2+, Compose Multiplatform, Material 3 Expressive, and Navigation 3.
+- **Local Build Status (2026-07-15):** Android Studio Gradle Sync and the full local baseline `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue --no-configuration-cache` pass with the bundled Android Studio JBR 21 after selecting G1GC. The Google universal debug APK also packages successfully. This verifies local compilation, static checks, tests, and debug packaging; it does not establish Play release readiness.
+- **Play Release Status (2026-07-15):** No Play-uploadable AAB has been validated or added to Git. The local Google release trial reached R8, then the production mapping upload rejected the repository's dummy Firebase configuration. A real upload keystore and the authorized production Google/Firebase/DataDog configuration are required for the unchanged official release workflow. Never present the build-script fallback debug signature as Play-ready or disable production mapping uploads merely to claim release success.
 - **Agent Memory:** Consult `.agent_memory/session_context.md` for the latest task-specific handovers and project state.
 - **Skills Directory (CONSULT THESE FIRST):**
   - `.skills/project-overview/` - Codebase map, namespacing, **Bootstrap Steps**.
@@ -60,6 +62,7 @@ You are an expert Android/KMP engineer working on NTsocial MeshLink, a GPL-3.0 f
 - **Memory Persistence:** Update `.agent_memory/session_context.md` at the end of every session or major task.
 - **Bootstrap First:** Run the mandatory bootstrap steps in `.skills/project-overview/SKILL.md` before any Gradle build.
 - **Validation Environment:** Use JDK 21 and a valid `ANDROID_HOME`. For local validation, set `JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"` when tests depend on English resources.
+- **Gradle JVM Compatibility:** Root `gradle.properties` intentionally uses `-XX:+UseG1GC`. The currently configured Android Studio JBR 21 reports `Option -XX:+UseZGC not supported`; do not restore `UseZGC` or `ZGenerational` unless the exact build JVM has first been verified to support them.
 - **Plan Before Execution:** Use `.agent_plans/` (git-ignored) for complex refactors.
 - **Baseline Verification:** Always run `./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests` for implementation changes. Use `--no-configuration-cache` when cache or stale problems-report issues interfere.
 </process_essentials>

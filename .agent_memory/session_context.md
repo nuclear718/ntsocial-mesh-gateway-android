@@ -3,6 +3,31 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-15 - Build and release status synchronized into agent guidance
+- Updated root `AGENTS.md` with the verified G1GC/JBR compatibility rule, the successful 2026-07-15 full baseline and
+  Google debug packaging evidence, and the explicit boundary between local compile success and Play release readiness.
+- Recorded that no Play-uploadable AAB is validated or Git-tracked, that the Google release trial reached R8 before
+  dummy Firebase configuration caused production mapping upload rejection, and that the official workflow still needs
+  an authorized upload keystore plus production Google/Firebase/DataDog configuration.
+- Synchronized the same day-to-day build and release guidance into `.github/copilot-instructions.md` as required by the
+  repository documentation-sync contract. No source code, signing material, production credentials, or artifacts changed.
+
+## 2026-07-15 - Android Studio Gradle Sync repair and compile verification
+- Fixed Android Studio's `Unable to start the daemon process` failure by replacing unsupported
+  `-XX:+UseZGC -XX:+ZGenerational` with `-XX:+UseG1GC` in root `gradle.properties`. The configured Android Studio
+  JBR is JDK 21 but does not include ZGC; `gradlew help --stacktrace` subsequently completed successfully.
+- Re-ran the required local baseline after the abnormal shutdown with JDK 21, the local Android SDK, and English locale:
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue --no-configuration-cache`. It completed
+  successfully in 3m42s with 1,533 actionable tasks; Gradle discarded and rebuilt the few interrupted local caches.
+- Confirmed a Google universal debug APK at
+  `app/build/outputs/apk/google/debug/app-google-universal-debug.apk` (83,759,469 bytes). This proves compilation,
+  packaging, static checks, and tests work locally; it is not a Google Play release artifact.
+- A Google release AAB trial reached release compilation/R8 but local mapping upload failed because production
+  Firebase/release credentials are absent. Per the user's revised scope, the retry was explicitly stopped and no AAB
+  was copied into Git or prepared for cloud backup. Temporary AAB-specific build-script/Fastlane changes were reverted.
+- Final intended worktree change is only the G1GC compatibility fix plus this mandatory handover entry. A production
+  Play AAB still requires the project's real upload keystore and production service configuration.
+
 ## 2026-07-10 - Manual per-channel LoRa rule and AGENTS synchronization
 - Updated both repository `AGENTS.md` files to record the implemented Provider/capability/explicit-command/event
   architecture, port-256-only outbound policy, MeshLink radio ownership, variant pairing, privacy boundary, and the

@@ -10,6 +10,9 @@ Gateway/cache/IPC/scheduler features are roadmap items unless concrete code exis
 `JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"` for local validation when tests assert
 English resources.
 
+Root `gradle.properties` intentionally uses G1GC because the configured Android Studio JBR 21 does
+not support `UseZGC`/`ZGenerational`. Do not restore those flags without verifying the exact JVM.
+
 ```bash
 # Bootstrap (run once per fresh clone)
 git submodule update --init
@@ -32,6 +35,17 @@ git submodule update --init
 ```
 
 > Both `test` and `allTests` are needed. `allTests` covers KMP modules; `test` covers pure-Android modules.
+
+### Current Build and Release Status
+
+- On 2026-07-15, Gradle Sync and the full local verification command above passed; Google universal
+  debug APK packaging also succeeded.
+- This confirms compilation, lint/static checks, tests, and debug packaging only. It is not proof of
+  Google Play release readiness.
+- No Play-uploadable AAB is currently validated or tracked. The Google release trial reached R8 but
+  production mapping upload rejected the dummy Firebase configuration. The unchanged official
+  release workflow requires the authorized upload keystore and production Google/Firebase/DataDog
+  configuration; a fallback debug signature must never be treated as Play-ready.
 
 ### Gradle Task Naming
 
