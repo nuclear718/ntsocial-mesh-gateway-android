@@ -150,8 +150,10 @@ The host shell renders via `MeshtasticNavDisplay`. Use `NavigationBackHandler`, 
   gray surfaces, and mixed monospace typography for compact metadata.
 - Preserve `AppTheme`, Dynamic Color behavior, Material 3 Expressive, and the existing adaptive
   Navigation 3 shell unless a UI redesign is explicitly requested.
+- Use the established NTsocial butterfly for primary branding. MeshLink launcher, store, splash,
+  and in-app variants keep that silhouette and use Meshtastic green `#67EA94` on black.
 - Use upstream Meshtastic design patterns when preserving existing Meshtastic screens, but do not
-  treat the upstream logo or palette as primary NTsocial branding.
+  treat the upstream mountain logo or palette as primary NTsocial branding.
 
 ### Gateway Roadmap Boundaries
 

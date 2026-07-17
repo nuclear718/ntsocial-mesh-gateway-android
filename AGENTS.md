@@ -52,7 +52,7 @@ You are an expert Android/KMP engineer working on NTsocial MeshLink, a GPL-3.0 f
 - **Current Skin:** Phase 1 NTsocial skinning is design-token based. Non-Dynamic themes use NTsocial indigo primary, emerald secondary, amber status emphasis, gray surfaces, and mixed monospace typography for compact metadata.
 - **Theme Contracts:** Preserve `AppTheme(darkTheme, dynamicColor, content)`, `MaterialExpressiveTheme`, `MODE_DYNAMIC`, Dynamic Color behavior, `ThemePickerDialog`, `UiPrefsImpl`, and existing theme-selection flow.
 - **Navigation Shell:** Keep the current `MeshtasticNavigationSuite`, `MeshtasticNavDisplay`, Navigation 3, and adaptive shell unless the user explicitly asks for a navigation redesign.
-- **Branding Assets:** Do not reuse the upstream Meshtastic logo as primary NTsocial branding. No NTsocial logo asset is currently established in this repo.
+- **Branding Assets:** The established primary mark is the NTsocial butterfly. MeshLink launcher, store, splash, and in-app logo variants keep that silhouette and use Meshtastic's official green `#67EA94` on black. Do not reuse the upstream Meshtastic mountain logo as primary NTsocial branding.
 - **Public Docs:** Public identity docs should be truthful about implementation status. Traditional Chinese-first wording is preferred for project-facing identity docs, with concise English summaries where useful.
 </ui_branding>
 
