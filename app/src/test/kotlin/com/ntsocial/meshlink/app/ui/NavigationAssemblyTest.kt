@@ -16,12 +16,17 @@
  */
 package com.ntsocial.meshlink.app.ui
 
-import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.runtime.rememberNavBackStack
+import com.ntsocial.meshlink.core.navigation.ChannelsRoute
+import com.ntsocial.meshlink.core.navigation.ConnectionsRoute
+import com.ntsocial.meshlink.core.navigation.ContactsRoute
+import com.ntsocial.meshlink.core.navigation.FirmwareRoute
+import com.ntsocial.meshlink.core.navigation.MapRoute
+import com.ntsocial.meshlink.core.navigation.MeshCoreRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
+import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.feature.connections.navigation.connectionsGraph
 import com.ntsocial.meshlink.feature.firmware.navigation.firmwareGraph
 import com.ntsocial.meshlink.feature.map.navigation.mapGraph
@@ -31,20 +36,15 @@ import com.ntsocial.meshlink.feature.node.navigation.nodesGraph
 import com.ntsocial.meshlink.feature.settings.navigation.settingsGraph
 import com.ntsocial.meshlink.feature.settings.radio.channel.channelsGraph
 import kotlinx.coroutines.flow.emptyFlow
+import org.junit.Assert.assertNotNull
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
-@OptIn(ExperimentalTestApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class NavigationAssemblyTest {
 
     @Test
-    fun verifyNavigationGraphsAssembleWithoutCrashing() = runComposeUiTest {
-        setContent {
-            val backStack = rememberNavBackStack(NodesRoute.NodesGraph)
+    fun verifyNavigationGraphsAssembleWithoutCrashing() {
+        val backStack = NavBackStack<NavKey>(NodesRoute.NodesGraph)
+        val provider =
             entryProvider<NavKey> {
                 contactsGraph(backStack, emptyFlow())
                 nodesGraph(backStack = backStack, scrollToTopEvents = emptyFlow())
@@ -55,6 +55,19 @@ class NavigationAssemblyTest {
                 settingsGraph(backStack)
                 firmwareGraph(backStack)
             }
-        }
+
+        val topLevelRoutes =
+            listOf(
+                ContactsRoute.ContactsGraph,
+                NodesRoute.NodesGraph,
+                MapRoute.Map(),
+                MeshCoreRoute.MeshCoreGraph,
+                ChannelsRoute.ChannelsGraph,
+                ConnectionsRoute.ConnectionsGraph,
+                SettingsRoute.SettingsGraph(),
+                FirmwareRoute.FirmwareGraph,
+            )
+
+        topLevelRoutes.forEach { route -> assertNotNull(provider(route)) }
     }
 }

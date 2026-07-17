@@ -64,12 +64,20 @@ internal class NtsocialGatewayCallerVerifier(private val context: Context) {
 
     private fun isTrustedPackage(packageName: String): Boolean = when (packageName) {
         RELEASE_PACKAGE -> hasCertificate(packageName, RELEASE_CERTIFICATE_SHA256)
-        DEBUG_PACKAGE -> isDebugHost && hasCertificate(packageName, DEBUG_CERTIFICATE_SHA256)
+        DEBUG_PACKAGE -> isDebugHost && hasMatchingHostCertificate(packageName)
         else -> false
     }
 
+    private fun hasCertificate(packageName: String, expectedDigest: String): Boolean =
+        expectedDigest in signingCertificateDigests(packageName)
+
+    private fun hasMatchingHostCertificate(packageName: String): Boolean = signerDigestsMatch(
+        trustedDigests = signingCertificateDigests(context.packageName),
+        callerDigests = signingCertificateDigests(packageName),
+    )
+
     @Suppress("DEPRECATION")
-    private fun hasCertificate(packageName: String, expectedDigest: String): Boolean = try {
+    private fun signingCertificateDigests(packageName: String): Set<String> = try {
         val packageInfo =
             context.packageManager.getPackageInfo(
                 packageName,
@@ -79,11 +87,11 @@ internal class NtsocialGatewayCallerVerifier(private val context: Context) {
                     PackageManager.GET_SIGNATURES
                 },
             )
-        packageInfo.signingCertificateBytes().any { certificateBytes ->
-            certificateBytes.sha256Hex() == expectedDigest
+        packageInfo.signingCertificateBytes().mapTo(mutableSetOf()) { certificateBytes ->
+            certificateBytes.sha256Hex()
         }
     } catch (_: PackageManager.NameNotFoundException) {
-        false
+        emptySet()
     }
 
     @Suppress("DEPRECATION")
@@ -107,7 +115,6 @@ internal class NtsocialGatewayCallerVerifier(private val context: Context) {
         const val RELEASE_CERTIFICATE_SHA256 = "29EF6EF5F0BE97EF1B8F2B405CEE99643FECFF11B71AC3B54D637EE01D0AE646"
 
         const val DEBUG_PACKAGE = "com.ntsocial.android.debug"
-        const val DEBUG_CERTIFICATE_SHA256 = "B578F8445925AEA570F7E916C335172559773D7B6EC92DB0D76355E0E8F3FF8D"
 
         const val BYTE_MASK = 0xFF
         const val NIBBLE_BITS = 4
@@ -116,3 +123,6 @@ internal class NtsocialGatewayCallerVerifier(private val context: Context) {
         const val HEX_DIGITS = "0123456789ABCDEF"
     }
 }
+
+internal fun signerDigestsMatch(trustedDigests: Set<String>, callerDigests: Set<String>): Boolean =
+    trustedDigests.isNotEmpty() && callerDigests.any(trustedDigests::contains)

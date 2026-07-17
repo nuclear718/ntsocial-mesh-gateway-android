@@ -19,7 +19,8 @@ git submodule update --init
 [ -f local.properties ] || cp secrets.defaults.properties local.properties
 
 # Full local verification (formatting -> lint -> compile -> tests)
-./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests
+./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile \
+  :app:lintFdroidDebug :app:lintGoogleDebug --continue --no-configuration-cache
 
 # Single module tests (KMP module)
 ./gradlew :core:data:allTests
@@ -38,10 +39,14 @@ git submodule update --init
 
 ### Current Build and Release Status
 
-- On 2026-07-15, Gradle Sync and the full local verification command above passed; Google universal
-  debug APK packaging also succeeded.
+- On 2026-07-17, the expanded full local verification command above passed in 10m13s (1,951
+  actionable tasks); the resulting XML reports contain 2,439 tests with zero failures or errors.
+- The F-Droid arm64 debug APK pins GeoPackage 6.7.5 for Android 16 KB native-page compatibility,
+  passes `zipalign -c -P 16`, and was clean-installed with the NTsocial parent on three Android 16
+  phones. Parent Provider status/launch, primary screens, lifecycle switching, English-keyboard text
+  entry, cross-phone parent sync, and relevant crash/ANR logs passed in the no-radio test scope.
 - This confirms compilation, lint/static checks, tests, and debug packaging only. It is not proof of
-  Google Play release readiness.
+  Google Play release readiness or remote RF delivery.
 - No Play-uploadable AAB is currently validated or tracked. The Google release trial reached R8 but
   production mapping upload rejected the dummy Firebase configuration. The unchanged official
   release workflow requires the authorized upload keystore and production Google/Firebase/DataDog
@@ -107,6 +112,10 @@ behavior in scoped modules.
 Feature navigation graphs are extension functions on `EntryProviderScope<NavKey>` in `commonMain`.
 The host shell renders via `MeshtasticNavDisplay`. Use `NavigationBackHandler`, not Android's
 `BackHandler`.
+
+Entry-provider assembly tests should directly construct their `NavBackStack` and providers. Do not
+launch Robolectric Activity/Compose infrastructure for registration-only assertions; that setup caused
+a coroutine-cleanup timeout flake under the full parallel baseline.
 
 ## Key Conventions
 
@@ -198,6 +207,9 @@ installed variants on a device:
 - Check the exact installed package before uninstalling.
 - Be aware that uninstalling loses onboarding state, permissions, and bonded-device data. Ask before
   uninstalling if the user has an active session.
+- After changing native dependencies, verify the target APK with `zipalign -c -P 16` and audit all
+  packaged arm64 ELF `PT_LOAD` alignments. Preserve the GeoPackage 6.7.5 override until the osmdroid
+  dependency path supplies an equally compatible or newer version.
 
 ## Deeper Guidance
 

@@ -280,6 +280,8 @@ dependencies {
     googleImplementation(libs.firebase.analytics)
     googleImplementation(libs.firebase.crashlytics)
 
+    // Override osmdroid's 6.7.3 transitively pinned GeoPackage build; 6.7.5 packages 16 KB-aligned libsqliteX.so.
+    fdroidImplementation(libs.geopackage.android)
     fdroidImplementation(libs.osmdroid.android)
     fdroidImplementation(libs.osmdroid.geopackage) { exclude(group = "com.j256.ormlite") }
     fdroidImplementation(libs.osmbonuspack)

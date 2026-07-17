@@ -3,6 +3,35 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-17 - Three-phone stabilization, parent interoperability, and final local acceptance
+- Repaired Android 16 KB native-page compatibility by pinning `mil.nga.geopackage:geopackage-android` 6.7.5 on the
+  F-Droid osmdroid dependency path. The arm64 debug APK passes `zipalign -c -P 16`; all packaged arm64 ELF load
+  segments were audited at 0x4000 alignment. Do not remove the override without repeating both archive and ELF audits.
+- Repaired debug parent pairing: a debuggable MeshLink host now accepts only `com.ntsocial.android.debug` sharing a
+  signer digest with the host, while release trust remains pinned. Removed the stale machine-specific debug signer
+  resource and added focused verifier tests. Unauthorized shell Provider access remains rejected.
+- Repaired two parent-App edge cases in the adjacent `NTsocial_release` worktree: attachment transfer now treats
+  `UNAVAILABLE` and `CONFLICT` receipts as terminal, and legacy sync Bloom filters use JVM-safe Base64 helpers. The
+  parent `:app:testDebugUnitTest :app:assembleDebug` validation passed with 477 unit tests.
+- Replaced the registration-only `NavigationAssemblyTest` Robolectric/Compose Activity launch with direct Navigation 3
+  provider construction. Five forced targeted rounds passed (1/1 each, roughly 1.7-2.4s), eliminating the prior
+  one-minute `UncompletedCoroutinesError` cleanup flake.
+- Final MeshLink validation passed:
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile :app:lintFdroidDebug
+  :app:lintGoogleDebug --continue --no-configuration-cache` (`BUILD SUCCESSFUL` in 10m13s; 1,951 actionable tasks).
+  The final XML report set contains 2,439 tests, zero failures, and zero errors.
+- Fixed MeshLink and parent debug APKs were clean-installed on three Android 16/API 36 arm64 phones: Samsung SM-S9080
+  (`R5CT30QMRTY`), Samsung SM-S9280 (`R5CWC4KNTRL`), and OPPO CPH2695 (`TWBYJJRWSGHIGU55`). Onboarding and all primary
+  MeshLink destinations opened; parent status correctly reported MeshLink preparing the radio channel; explicit launch,
+  repeated foreground/background switching, English-keyboard text entry, and parent-local/BLE cross-phone sync passed.
+  Relevant logs had zero crash, ANR, fatal, Provider trust, or app-process failure signals.
+- No Meshtastic/MeshCore node was available in this run. Therefore no radio connection, LoRa transmission, RF reception,
+  remote receipt, or MeshCore transport was tested or implied. Prior connected-radio queue acceptance still proves only
+  the local queue/Gateway boundary. Play upload also remains blocked on a real upload keystore and authorized production
+  Google/Firebase/DataDog configuration; debug device success is not a Play-ready AAB claim.
+- The main and parent worktrees intentionally remain uncommitted for user review. Root `AGENTS.md` and the Copilot quick
+  reference were synchronized with these current build, packaging, interop, testing, and release boundaries.
+
 ## 2026-07-17 - MeshCore UI aligned with Android NTsocial visual language
 - Used the local `NTsocial_release` Android implementation as the visual source of truth, specifically its theme,
   shell/header, people list, private chat, message bubble, and composer components. The non-dynamic MeshLink palette

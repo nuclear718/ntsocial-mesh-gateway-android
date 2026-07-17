@@ -72,6 +72,7 @@ detekt = "2.0.0-alpha.3"
 dokka = "2.2.0"
 devtools-ksp = "2.3.7"
 firebase-crashlytics-gradle = "3.0.7"
+geopackage-android = "6.7.5"
 google-services-gradle = "4.4.4"
 markdownRenderer = "0.40.2"
 okio = "3.17.0"
@@ -234,6 +235,7 @@ jserialcomm = { module = "com.fazecast:jSerialComm", version.ref = "jserialcomm"
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 uri-kmp = { module = "com.eygraber:uri-kmp", version.ref = "uri-kmp" }
 osmbonuspack = { module = "com.github.MKergall:osmbonuspack", version = "6.9.0" }
+geopackage-android = { module = "mil.nga.geopackage:geopackage-android", version.ref = "geopackage-android" }
 osmdroid-android = { module = "org.osmdroid:osmdroid-android", version.ref = "osmdroid-android" }
 osmdroid-geopackage = { module = "org.osmdroid:osmdroid-geopackage", version.ref = "osmdroid-android" }
 kermit = { module = "co.touchlab:kermit", version = "2.1.0" }
