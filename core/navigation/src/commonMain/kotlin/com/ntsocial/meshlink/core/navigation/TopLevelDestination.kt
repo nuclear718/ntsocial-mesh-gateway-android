@@ -22,6 +22,7 @@ import com.ntsocial.meshlink.core.resources.bottom_nav_settings
 import com.ntsocial.meshlink.core.resources.connections
 import com.ntsocial.meshlink.core.resources.conversations
 import com.ntsocial.meshlink.core.resources.map
+import com.ntsocial.meshlink.core.resources.meshcore
 import com.ntsocial.meshlink.core.resources.nodes
 import org.jetbrains.compose.resources.StringResource
 
@@ -35,6 +36,7 @@ enum class TopLevelDestination(val label: StringResource, val route: Route) {
     Conversations(Res.string.conversations, ContactsRoute.ContactsGraph),
     Nodes(Res.string.nodes, NodesRoute.NodesGraph),
     Map(Res.string.map, MapRoute.Map()),
+    MeshCore(Res.string.meshcore, MeshCoreRoute.MeshCoreGraph),
     Settings(Res.string.bottom_nav_settings, SettingsRoute.SettingsGraph()),
     Connections(Res.string.connections, ConnectionsRoute.ConnectionsGraph),
     ;

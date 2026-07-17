@@ -3,6 +3,47 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-17 - MeshCore UI aligned with Android NTsocial visual language
+- Used the local `NTsocial_release` Android implementation as the visual source of truth, specifically its theme,
+  shell/header, people list, private chat, message bubble, and composer components. The non-dynamic MeshLink palette
+  already exactly matched NTsocial indigo `#4F46E5`, emerald `#10B981`, amber `#F59E0B`, and the corresponding surfaces.
+- Added feature-local `MeshCoreNtsocialVisualTheme` primitives with NTsocial's exact monospace typography metrics,
+  standard Material shapes, elevated header treatment, uppercase section labels, 16x10 list rows, and 28dp identity
+  icons. The boundary intentionally preserves the host theme and Dynamic Color contract instead of changing global or
+  Meshtastic UI behavior.
+- Reworked the independent MeshCore home, directory, radio/settings, and conversation screens to match NTsocial's
+  compact information hierarchy. Conversations now use 78%-width asymmetric 16dp/4dp bubbles, NTsocial semantic
+  container colors, aligned metadata, and the same compact composer structure while remaining truthfully read-only.
+- Added `MeshCoreNtsocialVisualsTest` to lock the typography contract, updated English/Traditional Chinese pending-
+  transport wording, regenerated the string index, and documented the visual boundary in `docs/meshcore-integration.md`.
+- Targeted MeshCore formatting, Detekt, JVM/Android/Desktop compile and tests passed. The first full parallel baseline
+  encountered one unrelated Desktop notification-test timeout; its isolated retry passed, and the complete baseline
+  then passed on retry: `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile --continue
+  --no-configuration-cache` (`BUILD SUCCESSFUL in 1m 5s`, 1,632 actionable tasks).
+- The Desktop host launched successfully for a visual run, but Windows UI automation could not capture the window
+  because `GetCursorPos` returned access denied. No screenshot-based visual claim was made. MeshCore transport remains
+  pending, and no Meshtastic radio/service/database/settings internals or Gateway v1 contract were changed.
+
+## 2026-07-17 - Independent MeshCore UI and Companion protocol foundation
+- Added isolated `core/meshcore` and `feature/meshcore` KMP modules. The former owns MeshCore-only domain models and a
+  bounds-checked Companion Radio Protocol codec; the latter owns a StateFlow store, Koin ViewModel, dedicated messages,
+  contacts/channels, radio/settings panels, and conversation screen. No Meshtastic radio/service/database/settings
+  implementation or Gateway v1 contract was changed.
+- Added a sixth MeshCore top-level destination, a serializable Navigation 3 graph/conversation route, `/meshcore` deep
+  link, Android/Desktop graph assembly, Koin wiring, icons, and English/Traditional Chinese resources.
+- Official reference snapshot used on 2026-07-17: `meshcore-dev/MeshCore`
+  `219812b9f136744c3478908e9487afd0d6031b53` (source identifies Companion v1.16.0), `meshcore-dev/meshcore.js`
+  `bbe1f9301b801cbd48a053687f16eea9634634cd`, and `meshcore-dev/meshcore_py`
+  `5bac3573b51c4298062881885b6d15a994109076`. The codec covers the official Nordic UART UUIDs, app target protocol 3,
+  176-byte frames, contacts/channels, device/self/radio state, message sync, direct/channel text and v3 signal metadata.
+- Added protocol codec tests, state-store tests, route serialization/parity, deep-link, Android/Desktop assembly, and
+  top-level parity coverage. The full local baseline passed with JBR 21, Android SDK and English locale:
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile --continue --no-configuration-cache`
+  (`BUILD SUCCESSFUL in 18m 9s`, 1,632 actionable tasks).
+- Truthful status: this phase establishes a real protocol/UI boundary but does not yet implement MeshCore BLE/USB/TCP
+  transport, scanning/connection lifecycle, settings writes, message sending, persistence, background sync, parent-app
+  IPC, or two-radio RF validation. UI text and `docs/meshcore-integration.md` explicitly identify transport as pending.
+
 ## 2026-07-15 - Build and release status synchronized into agent guidance
 - Updated root `AGENTS.md` with the verified G1GC/JBR compatibility rule, the successful 2026-07-15 full baseline and
   Google debug packaging evidence, and the explicit boundary between local compile success and Play release readiness.

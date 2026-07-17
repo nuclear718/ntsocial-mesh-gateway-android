@@ -58,6 +58,14 @@ sealed interface MapRoute : Route {
 }
 
 @Serializable
+sealed interface MeshCoreRoute : Route {
+    @Serializable data object MeshCoreGraph : MeshCoreRoute, Graph
+
+    @Serializable
+    data class Conversation(val conversationId: String, val title: String, val isChannel: Boolean) : MeshCoreRoute
+}
+
+@Serializable
 sealed interface NodesRoute : Route {
     @Serializable data object NodesGraph : NodesRoute, Graph
 

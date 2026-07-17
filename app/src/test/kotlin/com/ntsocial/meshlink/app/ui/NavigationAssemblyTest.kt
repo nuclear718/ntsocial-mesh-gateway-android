@@ -25,6 +25,7 @@ import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.feature.connections.navigation.connectionsGraph
 import com.ntsocial.meshlink.feature.firmware.navigation.firmwareGraph
 import com.ntsocial.meshlink.feature.map.navigation.mapGraph
+import com.ntsocial.meshlink.feature.meshcore.navigation.meshCoreGraph
 import com.ntsocial.meshlink.feature.messaging.navigation.contactsGraph
 import com.ntsocial.meshlink.feature.node.navigation.nodesGraph
 import com.ntsocial.meshlink.feature.settings.navigation.settingsGraph
@@ -48,6 +49,7 @@ class NavigationAssemblyTest {
                 contactsGraph(backStack, emptyFlow())
                 nodesGraph(backStack = backStack, scrollToTopEvents = emptyFlow())
                 mapGraph(backStack)
+                meshCoreGraph(backStack)
                 channelsGraph(backStack)
                 connectionsGraph(backStack)
                 settingsGraph(backStack)

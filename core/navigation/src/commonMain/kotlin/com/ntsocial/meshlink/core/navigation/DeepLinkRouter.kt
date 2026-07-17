@@ -33,6 +33,7 @@ import com.ntsocial.meshlink.core.common.util.CommonUri
  * - `/nodes/{destNum}/{metric}` -> Specific node metric (e.g., `/nodes/1234/device-metrics`)
  * - `/messages` -> Conversation list
  * - `/messages/{contactKey}` -> Specific conversation
+ * - `/meshcore` -> Independent MeshCore area
  * - `/settings` -> Settings root
  * - `/settings/{destNum}/{page}` -> Specific settings page for a node
  * - `/wifi-provision` -> WiFi provisioning screen
@@ -63,6 +64,8 @@ object DeepLinkRouter {
             "connections" -> listOf(ConnectionsRoute.ConnectionsGraph)
 
             "map" -> routeMap(uri, pathSegments)
+
+            "meshcore" -> listOf(MeshCoreRoute.MeshCoreGraph)
 
             "nodes" -> routeNodes(uri, pathSegments)
 

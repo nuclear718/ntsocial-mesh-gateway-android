@@ -53,6 +53,9 @@ class NavigationConfigTest {
             // MapRoute
             MapRoute.Map(),
             MapRoute.Map(waypointId = 42),
+            // MeshCoreRoute
+            MeshCoreRoute.MeshCoreGraph,
+            MeshCoreRoute.Conversation(conversationId = "channel:0", title = "Public", isChannel = true),
             // NodesRoute
             NodesRoute.NodesGraph,
             NodesRoute.Nodes,
@@ -147,6 +150,7 @@ class NavigationConfigTest {
                         is ConnectionsRoute -> "ConnectionsRoute"
                         is ContactsRoute -> "ContactsRoute"
                         is MapRoute -> "MapRoute"
+                        is MeshCoreRoute -> "MeshCoreRoute"
                         is NodesRoute -> "NodesRoute"
                         is NodeDetailRoute -> "NodeDetailRoute"
                         is SettingsRoute -> "SettingsRoute"
@@ -163,6 +167,7 @@ class NavigationConfigTest {
                 "ConnectionsRoute",
                 "ContactsRoute",
                 "MapRoute",
+                "MeshCoreRoute",
                 "NodesRoute",
                 "NodeDetailRoute",
                 "SettingsRoute",

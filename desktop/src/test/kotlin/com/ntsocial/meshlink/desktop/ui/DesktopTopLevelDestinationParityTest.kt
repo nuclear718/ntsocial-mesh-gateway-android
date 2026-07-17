@@ -20,6 +20,7 @@ import com.ntsocial.meshlink.core.navigation.ConnectionsRoute
 import com.ntsocial.meshlink.core.navigation.ContactsRoute
 import com.ntsocial.meshlink.core.navigation.FirmwareRoute
 import com.ntsocial.meshlink.core.navigation.MapRoute
+import com.ntsocial.meshlink.core.navigation.MeshCoreRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.Route
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
@@ -29,10 +30,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
-/**
- * Keeps Desktop top-level destinations aligned with Android top-level navigation (Conversations, Nodes, Map, Settings,
- * Connections).
- */
+/** Keeps Desktop top-level destinations aligned with Android top-level navigation. */
 class DesktopTopLevelDestinationParityTest {
 
     @Test
@@ -44,6 +42,7 @@ class DesktopTopLevelDestinationParityTest {
                 ContactsRoute.ContactsGraph::class,
                 NodesRoute.NodesGraph::class,
                 MapRoute.Map::class,
+                MeshCoreRoute.MeshCoreGraph::class,
                 SettingsRoute.SettingsGraph::class,
                 ConnectionsRoute.ConnectionsGraph::class,
             )

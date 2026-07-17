@@ -290,6 +290,15 @@ class DeepLinkRouterTest {
 
     // endregion
 
+    // region meshcore
+
+    @Test
+    fun `meshcore routes to independent MeshCore graph`() {
+        assertEquals(listOf(MeshCoreRoute.MeshCoreGraph), route("/meshcore"))
+    }
+
+    // endregion
+
     // region settings
 
     @Test
