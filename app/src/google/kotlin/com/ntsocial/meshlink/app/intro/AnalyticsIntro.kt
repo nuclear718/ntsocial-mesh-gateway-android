@@ -32,7 +32,7 @@ import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.analytics_notice
 import com.ntsocial.meshlink.core.resources.analytics_platforms
 import com.ntsocial.meshlink.core.resources.datadog_link
-import com.ntsocial.meshlink.core.resources.firebase_link
+import com.ntsocial.meshlink.core.resources.firebase_crashlytics_link
 import com.ntsocial.meshlink.core.resources.for_more_information_see_our_privacy_policy
 import com.ntsocial.meshlink.core.resources.privacy_url
 import com.ntsocial.meshlink.core.ui.component.AutoLinkText
@@ -60,7 +60,7 @@ fun AnalyticsIntro(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         AutoLinkText(
-            text = stringResource(Res.string.firebase_link),
+            text = stringResource(Res.string.firebase_crashlytics_link),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,

@@ -74,7 +74,7 @@
     <string name="always_point_north">Always point north</string>
     <string name="ambient_lighting">Ambient Lighting</string>
     <string name="ambient_lighting_config">Ambient Lighting Config</string>
-    <string name="analytics_notice">Analytics are collected to help us improve the Android app (thank you), we will receive anonymized information about user behavior. This includes crash reports, screens used in the app, etc.</string>
+    <string name="analytics_notice">The Google Play version sends pseudonymous usage, performance, and crash data to Firebase Crashlytics and Datadog to help improve the app. This can include screens used, connection metadata, device and app information, and error logs. You can turn this off later in Settings. The app does not contain ads or advertising SDKs and does not collect advertising identifiers.</string>
     <string name="analytics_okay">Allow analytics and crash reporting.</string>
     <string name="analytics_platforms">Analytics platforms:</string>
     <string name="any">Any</string>
@@ -412,7 +412,7 @@
     <string name="filter_whole_word">Whole word match</string>
     <string name="filter_words">Filter Words</string>
     <string name="filter_words_summary">Messages containing these words will be hidden</string>
-    <string name="firebase_link" translatable="false">Firebase: https://firebase.google.com/</string>
+    <string name="firebase_crashlytics_link" translatable="false">Firebase Crashlytics: https://firebase.google.com/products/crashlytics/</string>
     <!-- FIRMWARE -->
     <string name="firmware">Firmware</string>
     <string name="firmware_edition">Firmware Edition</string>
@@ -978,7 +978,7 @@
     <string name="preview_text">Text</string>
     <string name="primary">Primary</string>
     <string name="primary_channel_feature">Periodic position and telemetry broadcast</string>
-    <string name="privacy_url" translatable="false">https://meshtastic.org/docs/legal/privacy/</string>
+    <string name="privacy_url" translatable="false">https://github.com/nuclear718/ntsocial-mesh-gateway-android/blob/main/docs/google-play/PRIVACY_POLICY.md</string>
     <string name="private_key">Private Key</string>
     <string name="provide_location_to_mesh">Provide phone location to mesh</string>
     <string name="provider_name_exists">Provider name exists.</string>

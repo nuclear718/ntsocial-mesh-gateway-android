@@ -1,1 +1,1 @@
-http://www.meshtastic.org
+https://github.com/nuclear718/ntsocial-mesh-gateway-android

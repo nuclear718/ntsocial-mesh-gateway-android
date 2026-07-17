@@ -70,7 +70,7 @@
     <string name="always_point_north">始終指向北方</string>
     <string name="ambient_lighting">周圍光照</string>
     <string name="ambient_lighting_config">裝置燈光設定</string>
-    <string name="analytics_notice">我們會收集分析數據以協助改善 Android 應用程式（感謝您的支持），我們將收到匿名化的使用者行為資訊，包括當機報告、應用程式使用畫面等。</string>
+    <string name="analytics_notice">Google Play 版本會將假名化的使用情形、效能與當機資料傳送至 Firebase Crashlytics 及 Datadog，以協助改善本 App；內容可能包含使用畫面、連線中繼資料、裝置與 App 資訊及錯誤日誌。您之後可在設定中關閉。本 App 不含廣告或廣告 SDK，也不收集廣告識別碼。</string>
     <string name="analytics_okay">允許傳送分析及崩潰報告。</string>
     <string name="analytics_platforms">分析平台：</string>
     <string name="any">所有</string>

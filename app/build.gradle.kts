@@ -15,12 +15,23 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import com.android.build.api.artifact.SingleArtifact
 import com.android.build.api.dsl.ApplicationExtension
 import com.ntsocial.meshlink.buildlogic.configProperties
 import com.ntsocial.meshlink.buildlogic.resolveVersionInfo
 import java.util.Properties
 
 val versionInfo = resolveVersionInfo()
+
+val forbiddenAdvertisingManifestEntries =
+    listOf(
+        "com.google.android.gms.permission.AD_ID",
+        "android.permission.ACCESS_ADSERVICES_ATTRIBUTION",
+        "android.permission.ACCESS_ADSERVICES_AD_ID",
+        "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE",
+        "android.ext.adservices",
+        "AppMeasurement",
+    )
 
 plugins {
     alias(libs.plugins.meshlink.android.application)
@@ -193,6 +204,33 @@ androidComponents {
             }
         }
     }
+
+    onVariants { variant ->
+        if (variant.flavorName == "google") {
+            val variantNameCapped = variant.name.replaceFirstChar { it.uppercase() }
+            val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
+            val verificationTask =
+                tasks.register("verify${variantNameCapped}NoAdvertisingComponents") {
+                    group = "verification"
+                    description =
+                        "Fails if the ${variant.name} manifest contains advertising or attribution components."
+                    inputs.file(mergedManifest)
+
+                    doLast {
+                        val manifestText = mergedManifest.get().asFile.readText()
+                        val detectedEntries = forbiddenAdvertisingManifestEntries.filter(manifestText::contains)
+                        check(detectedEntries.isEmpty()) {
+                            "Advertising or attribution components found in ${variant.name}: " +
+                                detectedEntries.joinToString()
+                        }
+                    }
+                }
+
+            tasks
+                .matching { it.name == "assemble$variantNameCapped" || it.name == "bundle$variantNameCapped" }
+                .configureEach { finalizedBy(verificationTask) }
+        }
+    }
 }
 
 dependencies {
@@ -277,7 +315,6 @@ dependencies {
     googleImplementation(libs.dd.sdk.android.trace)
     googleImplementation(libs.dd.sdk.android.trace.otel)
     googleImplementation(platform(libs.firebase.bom))
-    googleImplementation(libs.firebase.analytics)
     googleImplementation(libs.firebase.crashlytics)
 
     // Override osmdroid's 6.7.3 transitively pinned GeoPackage build; 6.7.5 packages 16 KB-aligned libsqliteX.so.

@@ -1,21 +1,43 @@
-Meshtastic 是一款 Android 應用程式，可搭配開源的離網網狀網路無線電裝置使用。 此應用程式是 Meshtastic 專案的主要客戶端，讓您可以管理網狀網路裝置並與其他使用者通訊。
+NTsocial MeshLink 是連接 NTsocial App 與 Meshtastic 相容無線電的開源傳輸閘道，也可作為 Meshtastic 無線電的管理工具。
 
-如需更多 Meshtastic 專案相關資訊，請造訪我們的網站：<a href="https://www.meshtastic.org">meshtastic.org</a>。 執行於無線電裝置上的韌體是一個獨立的開源專案，您可以在此找到：<a href="https://github.com/meshtastic/Meshtastic-device">https://github.com/meshtastic/Meshtastic-device</a>。
+您可以透過 Bluetooth、USB 或 TCP 連接相容節點，管理無線電、頻道與裝置設定，查看節點、訊息、位置與遙測資料，並透過 LoRa mesh 傳送文字訊息。
 
-<b>社群與支援</b>
+<b>NTsocial Gateway</b>
 
-本專案目前為 Beta 測試階段。 我們非常期待您的回饋！ 無論您有任何疑問、回饋或遭遇問題，都歡迎加入我們友善的社群：
+• 以受保護的 Provider、單次短效命令 capability 與明確事件介面，連接 NTsocial App
+• NTsocial 文字與狀態／控制封包使用 PRIVATE_APP／port 256
+• 舊版 port 497 僅保留接收相容性，不作為新的送出路徑
+• 內建公開 NTsocial Meshtastic 頻道，並在無線電資料庫就緒後檢查註冊狀態
+• 暫時性 envelope 快取最多 128 筆；完整社交歷史仍由 NTsocial App 管理
+• 圖片、語音及 PTT 媒體 bytes 不會經由 LoRa 傳送
 
-<b>討論論壇：</b><a href="https://github.com/orgs/meshtastic/discussions">https://github.com/orgs/meshtastic/discussions</a>
-<b>Discord：</b><a href="https://discord.gg/meshtastic">https://discord.gg/meshtastic</a>
-<b>回報問題：</b><a href="https://github.com/meshtastic/Meshtastic-Android/issues">https://github.com/meshtastic/Meshtastic-Android/issues</a>
+<b>無線電管理</b>
 
-<b>說明文件</b>
+• Bluetooth、USB 與 TCP 連線
+• 頻道、節點、無線電與模組設定
+• 頻道及直接文字訊息
+• 節點清單、地圖、位置、遙測與通知
+• QR code、NFC 與相容硬體韌體更新
 
-如需了解本應用程式與 Meshtastic 的更多功能，請查閱我們的官方文件：
-<a href="https://meshtastic.org/docs/">查看說明文件</a>
+核心無線電功能不依賴中央 NTsocial 訊息伺服器；但地圖、韌體資訊、MQTT、TAK、外部連結，以及 Google Play 版本的分析與當機回報可能使用網路。分析與當機回報可在設定中關閉。
 
-<b>翻譯</b>
+<b>使用前請注意</b>
 
-歡迎透過 Crowdin 平台，協助將本應用程式翻譯成您的母語：
-<a href="https://crowdin.meshtastic.org/android">https://crowdin.meshtastic.org/android</a>
+• 需要相容的 Meshtastic 無線電；只有手機無法產生 LoRa 通訊
+• 公開 mesh 或未加密 MQTT 不應視為私密管道
+• 「指令已接受」只表示命令已加入本機無線電佇列，不代表遠端節點已收到
+• 無線電可用性受硬體、韌體、區域法規、頻率設定、距離、地形與 airtime 影響
+• 本 App 不保證即時或緊急送達，不應作為唯一的緊急通訊方式
+
+<b>開放原始碼</b>
+
+NTsocial MeshLink 是以 meshtastic/Meshtastic-Android 為基礎的 GPL-3.0 開源分支，保留 Meshtastic 上游及第三方貢獻者的著作權與授權聲明。本 App 不是 Meshtastic 官方發行版。
+
+原始碼：
+https://github.com/nuclear718/ntsocial-mesh-gateway-android
+
+問題回報：
+https://github.com/nuclear718/ntsocial-mesh-gateway-android/issues
+
+隱私權政策：
+https://github.com/nuclear718/ntsocial-mesh-gateway-android/blob/main/docs/google-play/PRIVACY_POLICY.md

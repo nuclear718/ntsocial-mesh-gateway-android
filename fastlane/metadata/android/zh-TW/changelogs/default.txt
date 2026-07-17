@@ -1,1 +1,1 @@
-詳細的版本說明請參閱：https://github.com/meshtastic/Meshtastic-Android/releases/
+首次 Google Play 發行。提供 Meshtastic 無線電連線與管理、訊息、節點、地圖、遙測、內建 NTsocial 頻道，以及受保護的 NTsocial Gateway。NTsocial 文字與狀態／控制封包使用 port 256；圖片、語音與 PTT 媒體不經 LoRa 傳送。MeshCore 目前僅提供介面與協議基礎，實際傳輸尚未啟用。

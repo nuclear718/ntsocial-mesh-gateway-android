@@ -388,7 +388,7 @@ filter_show_count
 filter_whole_word
 filter_words
 filter_words_summary
-firebase_link
+firebase_crashlytics_link
 ### FIRMWARE ###
 firmware
 firmware_edition

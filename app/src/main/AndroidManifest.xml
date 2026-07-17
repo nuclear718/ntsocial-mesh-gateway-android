@@ -68,7 +68,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- This permission is required for analytics - and soon the MQTT gateway -->
+    <!-- Required for maps, firmware metadata, MQTT, TAK, TCP, external links, and optional diagnostics. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -159,35 +159,9 @@
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
 
-        <!-- Default crash collection and analytics off until we (possibly) turn it on in application.onCreate -->
+        <!-- Crash reporting stays off until the user-controlled analytics preference enables it. -->
         <meta-data
             android:name="firebase_crashlytics_collection_enabled"
-            android:value="false" />
-        <meta-data
-            android:name="firebase_analytics_collection_enabled"
-            android:value="false" />
-
-        <!-- Disable AdID collection for privacy -->
-        <meta-data
-            android:name="google_analytics_adid_collection_enabled"
-            android:value="false" />
-        <meta-data
-            android:name="google_analytics_default_allow_ad_personalization_signals"
-            android:value="false" />
-
-        <!-- Disable SSAID collection to reduce PII footprint -->
-        <meta-data
-            android:name="google_analytics_ssaid_collection_enabled"
-            android:value="false" />
-
-        <!-- Disable automatic screen reporting to reduce background noise -->
-        <meta-data
-            android:name="google_analytics_automatic_screen_reporting_enabled"
-            android:value="false" />
-
-        <!-- Set default analytics storage consent to denied for Advanced Consent Mode -->
-        <meta-data
-            android:name="google_analytics_default_allow_analytics_storage"
             android:value="false" />
 
         <!-- This is the public API for doing mesh radio operations from android apps -->

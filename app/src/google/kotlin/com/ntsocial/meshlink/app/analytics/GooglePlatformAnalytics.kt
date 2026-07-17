@@ -18,7 +18,6 @@ package com.ntsocial.meshlink.app.analytics
 
 import android.app.Application
 import android.content.Context
-import android.os.Bundle
 import android.provider.Settings
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
@@ -44,9 +43,6 @@ import com.datadog.android.trace.opentelemetry.DatadogOpenTelemetry
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailabilityLight
 import com.google.firebase.Firebase
-import com.google.firebase.analytics.FirebaseAnalytics.ConsentStatus
-import com.google.firebase.analytics.FirebaseAnalytics.ConsentType
-import com.google.firebase.analytics.analytics
 import com.google.firebase.crashlytics.crashlytics
 import com.google.firebase.crashlytics.setCustomKeys
 import com.google.firebase.initialize
@@ -62,8 +58,8 @@ import org.koin.core.annotation.Single
 import co.touchlab.kermit.Logger as KermitLogger
 
 /**
- * Google Play Services specific implementation of [PlatformAnalytics]. This helper initializes and manages Firebase and
- * Datadog services, and subscribes to analytics preference changes to update consent accordingly.
+ * Google Play Services specific implementation of [PlatformAnalytics]. This helper initializes and manages Firebase
+ * Crashlytics and Datadog services, and subscribes to analytics preference changes to update consent accordingly.
  *
  * This implementation delays initialization of SDKs until user consent is granted to reduce tracking "noise" and
  * respect privacy-focused environments.
@@ -75,7 +71,7 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
     private val sampleRate = 100f // Match Apple: 100% sampling for cross-platform DataDog comparison
 
     private var datadogLogger: Logger? = null
-    private var isFirebaseInitialized = false
+    private var isCrashlyticsInitialized = false
 
     private val isInTestLab: Boolean
         get() {
@@ -104,7 +100,7 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
         KermitLogger.setLogWriters(writers)
         KermitLogger.setMinSeverity(if (BuildConfig.DEBUG) Severity.Debug else Severity.Info)
 
-        // Initial consent state
+        // Initial diagnostics consent state
         updateAnalyticsConsent(analyticsPrefs.analyticsAllowed.value)
 
         // Subscribe to analytics preference changes
@@ -114,7 +110,7 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
     }
 
     /**
-     * Ensures that Datadog and Firebase SDKs are initialized if allowed. This is called lazily when consent is granted.
+     * Ensures that Datadog and Crashlytics are initialized if allowed. This is called lazily when consent is granted.
      */
     private fun ensureInitialized() {
         if (!analyticsPrefs.analyticsAllowed.value || isInTestLab) return
@@ -131,9 +127,9 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
                     .build()
         }
 
-        if (!isFirebaseInitialized) {
+        if (!isCrashlyticsInitialized) {
             initCrashlytics(context as Application)
-            isFirebaseInitialized = true
+            isCrashlyticsInitialized = true
         }
     }
 
@@ -184,19 +180,6 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
 
     private fun initCrashlytics(application: Application) {
         Firebase.initialize(application)
-
-        // Deny all ad-related consent types by default to minimize tracking noise
-        Firebase.analytics.setConsent(
-            mapOf(
-                ConsentType.AD_STORAGE to ConsentStatus.DENIED,
-                ConsentType.AD_USER_DATA to ConsentStatus.DENIED,
-                ConsentType.AD_PERSONALIZATION to ConsentStatus.DENIED,
-                ConsentType.ANALYTICS_STORAGE to ConsentStatus.DENIED,
-            ),
-        )
-
-        // Explicitly disable analytics collection until we confirm user consent
-        Firebase.analytics.setAnalyticsCollectionEnabled(false)
     }
 
     /**
@@ -217,27 +200,12 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
             Datadog.setTrackingConsent(if (allowed) TrackingConsent.GRANTED else TrackingConsent.NOT_GRANTED)
         }
 
-        if (isFirebaseInitialized) {
+        if (isCrashlyticsInitialized) {
             Firebase.crashlytics.isCrashlyticsCollectionEnabled = allowed
-            Firebase.analytics.setAnalyticsCollectionEnabled(allowed)
 
             if (allowed) {
                 Firebase.crashlytics.sendUnsentReports()
-                // Ensure ad-related PII collection remains disabled even if analytics is allowed
-                Firebase.analytics.setUserProperty("allow_personalized_ads", "false")
             }
-
-            // Manage Analytics Storage consent for Advanced Consent Mode
-            val consentStatus = if (allowed) ConsentStatus.GRANTED else ConsentStatus.DENIED
-            Firebase.analytics.setConsent(
-                mapOf(
-                    ConsentType.ANALYTICS_STORAGE to consentStatus,
-                    // Keep ad-related types explicitly denied
-                    ConsentType.AD_STORAGE to ConsentStatus.DENIED,
-                    ConsentType.AD_USER_DATA to ConsentStatus.DENIED,
-                    ConsentType.AD_PERSONALIZATION to ConsentStatus.DENIED,
-                ),
-            )
         }
     }
 
@@ -276,7 +244,7 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
 
     private inner class CrashlyticsLogWriter : LogWriter() {
         override fun log(severity: Severity, message: String, tag: String, throwable: Throwable?) {
-            if (!isFirebaseInitialized) return
+            if (!isCrashlyticsInitialized) return
             if (!Firebase.crashlytics.isCrashlyticsCollectionEnabled) return
 
             // Add the log to the Crashlytics log buffer so it appears in reports
@@ -324,25 +292,10 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
     }
 
     override fun track(event: String, vararg properties: DataPair) {
-        if (!isFirebaseInitialized) return
-        val bundle = Bundle()
+        if (!Datadog.isInitialized() || !GlobalRumMonitor.isRegistered()) return
+        val attributes = properties.associate { it.name to it.value }
         properties.forEach {
             val value = it.value
-            when (value) {
-                is Double -> bundle.putDouble(it.name, value)
-
-                is Int -> bundle.putLong(it.name, value.toLong())
-
-                // Firebase expects Long for integer values in bundles
-                is Long -> bundle.putLong(it.name, value)
-
-                is Float -> bundle.putDouble(it.name, value.toDouble())
-
-                is String -> bundle.putString(it.name, value)
-
-                // Explicitly handle String
-                else -> bundle.putString(it.name, value.toString()) // Fallback for other types
-            }
             KermitLogger.withTag(TAG).d {
                 if (BuildConfig.DEBUG) {
                     "Analytics: track $event (${it.name} : $value)"
@@ -351,6 +304,6 @@ class GooglePlatformAnalytics(private val context: Context, private val analytic
                 }
             }
         }
-        Firebase.analytics.logEvent(event, bundle)
+        GlobalRumMonitor.get().addAction(RumActionType.CUSTOM, event, attributes)
     }
 }

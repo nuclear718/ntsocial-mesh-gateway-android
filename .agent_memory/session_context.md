@@ -3,6 +3,63 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-17 - GitHub Desktop stale index-lock recovery
+- GitHub Desktop could not commit because `.git/index.lock` was a zero-byte stale file left from 21:49 local time.
+  There were no active merge, rebase, cherry-pick, revert, bisect, or sequencer operations and no unrelated Git process;
+  the lock was moved recoverably to the Windows temp directory before any index write.
+- A fresh `git fetch origin --prune` confirmed `main` and `origin/main` had zero divergence before publication. All 26
+  working-tree files belong to the completed Google Play launch-document and advertising-stack removal scope; they were
+  staged explicitly, with zero unstaged files and a passing `git diff --cached --check`.
+- The LF-to-CRLF notices shown by GitHub Desktop are informational checkout-conversion warnings, not the commit failure.
+  GitHub CLI is not installed, so this direct `main` synchronization uses ordinary Git and the existing GitHub Desktop /
+  Git Credential Manager authentication rather than a CLI-created pull request.
+
+## 2026-07-17 - Advertising stack removed and Play document pack centralized
+- Centralized all nine Google Play launch documents under `docs/google-play/`; the repository root no longer contains
+  separate privacy, terms, or community-guidelines copies. Local Markdown links were checked with zero broken targets.
+- Removed the direct Firebase Analytics dependency, catalog alias, Analytics consent/event calls, and Analytics-specific
+  manifest metadata. This also removes Play Services Measurement, Ads Identifier, Privacy Sandbox Ads, AppMeasurement,
+  AdServices permissions, and Install Referrer permission from the Google release graph and merged manifest.
+- Retained Firebase Crashlytics and Datadog as optional, user-controlled diagnostics only. General custom events now use
+  the existing Datadog RUM pipeline; the privacy notice and Play Data safety/Advertising ID answers were synchronized.
+- Added a Google-variant merged-manifest verification task that fails assemble/bundle if advertising identifiers,
+  AdServices, Install Referrer, `android.ext.adservices`, or AppMeasurement reappear.
+- The complete JDK 21 baseline passed twice. The final clean run included `spotlessApply spotlessCheck detekt
+  assembleDebug test allTests kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug
+  :app:processGoogleReleaseMainManifest :app:verifyGoogleReleaseNoAdvertisingComponents --continue
+  --no-configuration-cache` (`BUILD SUCCESSFUL` in 1m11s; 1,962 actionable tasks). A fresh Google release runtime
+  dependency scan and merged-manifest scan both reported zero forbidden matches; `git diff --check` also passed.
+- No production AAB was built, signed, uploaded, or submitted. A real upload keystore, authorized production
+  Crashlytics/Datadog configuration, final Play App Signing trust synchronization, and App Bundle Explorer verification
+  remain required; nothing was staged, committed, or pushed.
+
+## 2026-07-17 - Google Play launch document pack and policy audit
+- Created a Traditional Chinese Google Play submission pack under `docs/google-play/`, including public-facing
+  `PRIVACY_POLICY.md`, `TERMS_OF_USE.md`, and `COMMUNITY_GUIDELINES.md`. Updated the zh-TW Fastlane listing,
+  release notes, support links, and the base/zh-TW in-app analytics and privacy strings. The parent App's stale,
+  proprietary privacy/EULA text was not copied because it conflicts with MeshLink's actual SDKs, behavior, and GPL-3.0
+  status. `LiberaNt LLC` and `huangct_2025@liber-ant.com` remain candidate publisher/contact values that the Play
+  account owner must confirm.
+- Audited the actual Google release manifest and runtime behavior. The merged manifest currently contains Advertising
+  ID and AdServices permissions through Play Services Measurement, and the connected-device service declares both
+  connected-device and location foreground-service types. Location FGS activation and the current prominent disclosure
+  do not yet match the desired store declaration. These are submission blockers, not documentation-only concerns.
+- Play release remains blocked on a real upload keystore and authorized production Google/Firebase/DataDog settings;
+  the current release path can fall back to debug signing. Play App Signing's final signer must also be synchronized
+  with MeshLink/parent package-and-certificate trust before production interoperability can be claimed.
+- The App packages roughly 40 Compose locale directories and 39 Fastlane locale directories, so it is not currently
+  zh-TW-only. Non-English/non-zh-TW analytics notices remain stale upstream text. For the first listing, either audit
+  every advertised locale or package/list only the verified languages. Release builds do not expose Demo Mode outside
+  Firebase Test Lab. Store assets, UGC terms acceptance/reporting, location disclosure implementation, and any applicable
+  new-personal-account closed-testing eligibility remain open gates.
+- Validation ran the expanded local baseline with JDK 21 and completed Spotless, Detekt, debug assembly, KMP smoke
+  compilation, and both F-Droid/Google lint tasks. The combined command failed only on one nondeterministic
+  `ScannerViewModelTest.connectionProgressText reflects connectionProgress` occurrence; a forced targeted rerun and a
+  subsequent `:feature:connections:allTests` run both passed. Markdown local links, Play field lengths, XML parsing, and
+  `git diff --check` were also verified.
+- No Play-ready AAB was produced, no production credentials were added, and nothing was pushed, committed, or submitted
+  to Play Console. All documentation and metadata changes remain in the working tree for user review.
+
 ## 2026-07-17 - Three-phone stabilization, parent interoperability, and final local acceptance
 - Repaired Android 16 KB native-page compatibility by pinning `mil.nga.geopackage:geopackage-android` 6.7.5 on the
   F-Droid osmdroid dependency path. The arm64 debug APK passes `zipalign -c -P 16`; all packaged arm64 ELF load

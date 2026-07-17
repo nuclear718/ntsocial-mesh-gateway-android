@@ -1,1 +1,1 @@
-Meshtastic 官方應用程式——專為這款開源、離網式網狀無線電網路設計。
+連接 NTsocial 與 Meshtastic 相容無線電的開源 LoRa 傳輸閘道
