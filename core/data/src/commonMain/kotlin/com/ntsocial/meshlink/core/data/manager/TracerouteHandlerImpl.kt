@@ -26,7 +26,6 @@ import com.ntsocial.meshlink.core.model.service.TracerouteResponse
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.repository.TracerouteHandler
-import com.ntsocial.meshlink.core.repository.TracerouteSnapshotRepository
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.getStringSuspend
 import com.ntsocial.meshlink.core.resources.traceroute_route_back_to_us
@@ -43,7 +42,6 @@ import org.meshtastic.proto.MeshPacket
 @Single
 class TracerouteHandlerImpl(
     private val serviceRepository: ServiceRepository,
-    private val tracerouteSnapshotRepository: TracerouteSnapshotRepository,
     private val nodeRepository: NodeRepository,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : TracerouteHandler {
@@ -75,15 +73,6 @@ class TracerouteHandlerImpl(
                 )
 
             val requestId = packet.decoded?.request_id ?: 0
-
-            if (logUuid != null) {
-                logInsertJob?.join()
-                val routeNodeNums = (forwardRoute + returnRoute).distinct()
-                val nodeDbByNum = nodeRepository.nodeDBbyNum.value
-                val snapshotPositions =
-                    routeNodeNums.mapNotNull { num -> nodeDbByNum[num]?.validPosition?.let { num to it } }.toMap()
-                tracerouteSnapshotRepository.upsertSnapshotPositions(logUuid, requestId, snapshotPositions)
-            }
 
             val start = startTimes.value[requestId]
             startTimes.update { it.remove(requestId) }

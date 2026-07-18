@@ -46,7 +46,6 @@ import com.ntsocial.meshlink.core.ui.di.CoreUiModule
 import com.ntsocial.meshlink.feature.connections.di.FeatureConnectionsModule
 import com.ntsocial.meshlink.feature.firmware.di.FeatureFirmwareModule
 import com.ntsocial.meshlink.feature.intro.di.FeatureIntroModule
-import com.ntsocial.meshlink.feature.map.di.FeatureMapModule
 import com.ntsocial.meshlink.feature.meshcore.di.FeatureMeshCoreModule
 import com.ntsocial.meshlink.feature.messaging.di.FeatureMessagingModule
 import com.ntsocial.meshlink.feature.node.di.FeatureNodeModule
@@ -84,7 +83,6 @@ import org.koin.core.annotation.Single
         FeatureNodeModule::class,
         FeatureMessagingModule::class,
         FeatureConnectionsModule::class,
-        FeatureMapModule::class,
         FeatureMeshCoreModule::class,
         FeatureSettingsModule::class,
         FeatureFirmwareModule::class,

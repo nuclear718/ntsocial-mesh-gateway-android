@@ -9,13 +9,12 @@ This guide helps a Meshtastic-Android contributor bootstrap, navigate, test, and
 - **JDK 21**
 - **Android SDK** installed and `ANDROID_HOME` available to Gradle
 - **Git submodule initialized** for `core/proto`
-- A working `local.properties` file (copy from `secrets.defaults.properties` if needed)
+- `ANDROID_HOME` set, or an untracked `local.properties` containing only `sdk.dir=...`
 
 ## Workspace Bootstrap
 
 ```bash
 git submodule update --init
-[ -f local.properties ] || cp secrets.defaults.properties local.properties
 ```
 
 ## Feature Access Path

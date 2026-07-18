@@ -43,11 +43,8 @@ dependencies {
     compileOnly(libs.android.tools.common)
     compileOnly(libs.compose.gradlePlugin)
     compileOnly(libs.compose.multiplatform.gradlePlugin)
-    compileOnly(libs.datadog.gradlePlugin)
     compileOnly(libs.detekt.gradlePlugin)
     compileOnly(libs.dokka.gradlePlugin)
-    compileOnly(libs.firebase.crashlytics.gradlePlugin)
-    compileOnly(libs.google.services.gradlePlugin)
     compileOnly(libs.koin.gradlePlugin)
     compileOnly(libs.kover.gradlePlugin)
     implementation(libs.mokkery.gradlePlugin)
@@ -129,10 +126,6 @@ gradlePlugin {
         register("kotlinXSerialization") {
             id = "com.ntsocial.meshlink.kotlinx.serialization"
             implementationClass = "KotlinXSerializationConventionPlugin"
-        }
-        register("meshlinkAnalytics") {
-            id = "com.ntsocial.meshlink.analytics"
-            implementationClass = "AnalyticsConventionPlugin"
         }
         register("meshlinkKoin") {
             id = "com.ntsocial.meshlink.koin"

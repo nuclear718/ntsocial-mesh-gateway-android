@@ -19,7 +19,6 @@
     <ID>ComposableParamOrder:SignalMetrics.kt:@Suppress("LongMethod", "CyclomaticComplexMethod") @Composable private fun SignalMetricsChart</ID>
     <ID>ComposableParamOrder:TracerouteChart.kt:@Suppress("LongMethod", "CyclomaticComplexMethod") @Composable internal fun TracerouteMetricsChart</ID>
     <ID>ComposableParamOrder:TracerouteLog.kt:@OptIn(ExperimentalFoundationApi::class) @Suppress("LongMethod", "CyclomaticComplexMethod", "UnusedParameter") @Composable fun TracerouteLogScreen</ID>
-    <ID>ComposableParamOrder:TracerouteMapScreen.kt:@Composable private fun TracerouteNodeCount</ID>
     <ID>ContentSlotReused:BaseMetricChart.kt:chartPart: @Composable (Modifier) -> Unit</ID>
     <ID>ContentSlotReused:BaseMetricChart.kt:listPart: @Composable (Modifier) -> Unit</ID>
     <ID>LambdaParameterEventTrailing:DeviceMetrics.kt:onPointSelected: (Double) -> Unit</ID>
@@ -47,7 +46,6 @@
     <ID>ModifierMissing:PowerMetrics.kt:@Suppress("LongMethod") @Composable fun PowerMetricsScreen</ID>
     <ID>ModifierMissing:SignalMetrics.kt:@Suppress("LongMethod") @Composable fun SignalMetricsScreen</ID>
     <ID>ModifierNotUsedAtRoot:NeighborInfoLog.kt:modifier = modifier.fillMaxSize().padding(innerPadding)</ID>
-    <ID>ModifierNotUsedAtRoot:TracerouteMapScreen.kt:modifier = modifier.fillMaxSize().padding(paddingValues)</ID>
     <ID>ModifierWithoutDefault:NodeDetailScreens.kt:modifier: Modifier</ID>
     <ID>MultipleEmitters:AdministrationSection.kt:@Composable private fun FirmwareVersionItems</ID>
     <ID>MultipleEmitters:HostMetricsLog.kt:@Composable private fun LoadRow</ID>
@@ -55,7 +53,6 @@
     <ID>MultipleEmitters:PowerMetrics.kt:@Composable @Suppress("CyclomaticComplexMethod") private fun PowerChannelsExtraRows</ID>
     <ID>MultipleEmitters:TracerouteLog.kt:@Composable private fun TracerouteCardMetrics</ID>
     <ID>MutableStateAutoboxing:CooldownOutlinedIconButton.kt:mutableStateOf(0f)</ID>
-    <ID>MutableStateAutoboxing:TracerouteMapScreen.kt:mutableStateOf(0)</ID>
     <ID>ParameterNaming:BaseMetricChart.kt:onPointSelected: ((Double) -> Unit)? = null</ID>
     <ID>ParameterNaming:DeviceMetrics.kt:onPointSelected: (Double) -> Unit</ID>
     <ID>ParameterNaming:EnvironmentCharts.kt:onPointSelected: (Double) -> Unit</ID>

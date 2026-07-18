@@ -99,7 +99,7 @@ class SerialRadioTransport(
                                     0
                                 }
                             thrown?.let { e ->
-                                // USB errors are common when unplugging; log as warning to avoid Crashlytics noise
+                                // USB errors are common when unplugging, so keep this at warning level.
                                 Logger.w(e) { "[$address] Serial error after ${uptime}ms: ${e.message}" }
                             }
                             Logger.w {

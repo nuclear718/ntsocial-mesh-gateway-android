@@ -218,7 +218,6 @@ critical_alerts
 critical_alerts_dnd_request_text
 current
 currently
-datadog_link
 date
 dbm_value
 ### DEBUG ###
@@ -388,7 +387,6 @@ filter_show_count
 filter_whole_word
 filter_words
 filter_words_summary
-firebase_crashlytics_link
 ### FIRMWARE ###
 firmware
 firmware_edition

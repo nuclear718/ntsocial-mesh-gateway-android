@@ -18,8 +18,8 @@ This replaces the ad-hoc prose that used to be retyped at the start of every ses
    `meshtastic/Meshtastic-Android`. If only `origin` exists on a fork, treat `origin` as upstream.
 3. **Submodules initialised.** `core/proto/src/main/proto` must be populated — see AGENTS.md
    workspace bootstrap rules.
-4. **Secrets bootstrapped.** If `local.properties` is missing, copy `secrets.defaults.properties`
-   (required for `google` flavor builds).
+4. **Android SDK configured.** Export `ANDROID_HOME`, or use an untracked `local.properties` containing only
+   `sdk.dir=...`. Neither flavor requires cloud credentials.
 
 ## Standard Recipe
 
@@ -68,8 +68,7 @@ Never use plain `--force`. Always `--force-with-lease` to avoid clobbering colla
 ## Post-Branch Checklist
 - [ ] Branch name follows conventional prefix.
 - [ ] Submodules up to date.
-- [ ] `local.properties` exists.
-- [ ] `ANDROID_HOME` exported (see AGENTS.md workspace bootstrap).
+- [ ] `ANDROID_HOME` is exported, or `local.properties` contains `sdk.dir`.
 - [ ] Optional: run `./gradlew assembleDebug` once to catch environment regressions before editing.
 
 ## Tip: Prefer `/delegate` for Long Audits

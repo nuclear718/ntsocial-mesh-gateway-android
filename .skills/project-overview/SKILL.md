@@ -3,9 +3,9 @@
 ## Description
 Module directory, namespacing conventions, environment setup, and troubleshooting for NTsocial MeshLink Android.
 
-- **Build System:** Gradle (Kotlin DSL). JDK 21 REQUIRED. Target SDK: API 36. Min SDK: API 26.
-- **Flavors:** `fdroid` (OSS only) · `google` (Maps + DataDog analytics)
-- **Android-only Modules:** `core:api` (AIDL), `core:barcode` (CameraX). Shared contracts abstracted into `core:ui/commonMain`.
+- **Build System:** Gradle (Kotlin DSL). JDK 21 REQUIRED. Target SDK: API 37. Min SDK: API 26.
+- **Flavors:** `fdroid` and `google` are both OSS and cloud-runtime-free. The `google` name remains only for existing Google Play publication compatibility.
+- **Android-only Modules:** `core:api` (AIDL), `core:barcode` (CameraX + local ZXing decoding). Shared contracts abstracted into `core:ui/commonMain`.
 
 ## Codebase Map
 
@@ -30,12 +30,12 @@ Module directory, namespacing conventions, environment setup, and troubleshootin
 | `core:service` | KMP service layer; Android bindings stay in `androidMain`. |
 | `core:api` | Public AIDL/API integration module for external clients. |
 | `core:prefs` | KMP preferences layer built on DataStore abstractions. |
-| `core:barcode` | Barcode scanning (Android-only). |
+| `core:barcode` | Android-only CameraX scanning with local ZXing decoding; no ML Kit or cloud service. |
 | `core:nfc` | NFC abstractions (KMP). Android NFC hardware implementation in `androidMain`. |
 | `core/ble/` | Bluetooth Low Energy stack using Kable. |
 | `core/resources/` | Centralized string and image resources (Compose Multiplatform). |
 | `core/testing/` | Shared test doubles, fakes, and utilities for `commonTest` across all KMP modules. |
-| `feature/` | Feature modules (e.g., `settings`, `map`, `messaging`, `node`, `intro`, `connections`, `firmware`, `wifi-provision`, `widget`). All are KMP except `widget`. Use `com.ntsocial.meshlink.kmp.feature` convention plugin. |
+| `feature/` | Feature modules (e.g., `settings`, `messaging`, `node`, `intro`, `connections`, `firmware`, `wifi-provision`, `widget`). All are KMP except `widget`. Use `com.ntsocial.meshlink.kmp.feature` convention plugin. |
 | `feature/wifi-provision` | KMP WiFi provisioning via BLE (Nymea protocol). Uses `core:ble` Kable abstractions. |
 | `feature/firmware` | Fully KMP firmware update system: Unified OTA (BLE + WiFi), native Nordic Secure DFU protocol (pure KMP), USB/UF2 updates, and `FirmwareRetriever` with manifest-based resolution. Desktop is a first-class target. |
 | `desktop/` | Compose Desktop application. Thin host shell relying on feature modules for shared UI. Full Koin DI graph, TCP, Serial/USB, and BLE transports. Versioning via `config.properties` + `GitVersionValueSource`. |
@@ -47,12 +47,9 @@ Module directory, namespacing conventions, environment setup, and troubleshootin
 
 ## Environment Setup
 1. **JDK 21 MUST be used** to prevent Gradle sync/build failures.
-2. **Secrets:** Copy `secrets.defaults.properties` to `local.properties`:
-   ```properties
-   MAPS_API_KEY=dummy_key
-   datadogApplicationId=dummy_id
-   datadogClientToken=dummy_token
-   ```
+2. **Android SDK path:** Prefer `ANDROID_HOME`. If the local IDE requires a file, create an untracked
+   `local.properties` containing only `sdk.dir=...`; no Maps, Firebase, Crashlytics, Datadog, or
+   barcode cloud credentials are needed.
 
 ## Workspace Bootstrap (MUST run before any build)
 Agents **MUST** perform these steps automatically at the start of every session before running any Gradle task. Do not wait for the user to tell you.
@@ -73,10 +70,8 @@ Agents **MUST** perform these steps automatically at the start of every session 
    git submodule update --init
    ```
 
-3. **Init secrets:** If `local.properties` does not exist, copy `secrets.defaults.properties` to `local.properties`. Without this the `google` flavor build fails:
-   ```bash
-   [ -f local.properties ] || cp secrets.defaults.properties local.properties
-   ```
+3. **No cloud bootstrap:** Both Android flavors build without Google Cloud, Maps, Firebase,
+   Crashlytics, Datadog, or ML Kit configuration. Do not create dummy cloud credentials.
 
 ## Troubleshooting
 - **Build Failures:** Check `gradle/libs.versions.toml` for dependency conflicts.

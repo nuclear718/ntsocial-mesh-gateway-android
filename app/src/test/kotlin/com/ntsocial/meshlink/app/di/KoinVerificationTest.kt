@@ -22,7 +22,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.SavedStateHandle
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.ntsocial.meshlink.app.map.MapViewModel
 import com.ntsocial.meshlink.core.ble.BleLogFormat
 import com.ntsocial.meshlink.core.ble.BleLogLevel
 import com.ntsocial.meshlink.core.model.util.NodeIdLookup
@@ -61,11 +60,7 @@ class KoinVerificationTest {
                     BleLogLevel::class,
                     BleLogFormat::class,
                 ),
-                injections =
-                injectedParameters(
-                    definition<MapViewModel>(SavedStateHandle::class),
-                    definition<MetricsViewModel>(Int::class),
-                ),
+                injections = injectedParameters(definition<MetricsViewModel>(Int::class)),
             )
     }
 

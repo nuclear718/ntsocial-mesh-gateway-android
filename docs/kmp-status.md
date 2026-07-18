@@ -1,6 +1,6 @@
 # KMP Migration Status
 
-> Last updated: 2026-04-15
+> Last updated: 2026-07-18
 
 Single source of truth for Kotlin Multiplatform migration progress. For the forward-looking roadmap, see [`roadmap.md`](./roadmap.md). For completed decision records, see [`decisions/`](./decisions/).
 
@@ -36,11 +36,11 @@ Modules that share JVM-specific code between Android and desktop now standardize
 | `core:testing` | ✅ | ✅ | Shared test doubles, fakes, and utilities for `commonTest` |
 | `core:takserver` | ✅ | ✅ | TAK/ATAK integration, Fountain codec |
 | `core:api` | ❌ | — | Android-only (AIDL). Intentional. |
-| `core:barcode` | ❌ | — | Android-only (CameraX). Flavor split minimised to decoder factory only (ML Kit / ZXing). Shared contract in `core:ui`. |
+| `core:barcode` | ❌ | — | Android-only CameraX scanner with local ZXing decoding in both flavors. Shared contract in `core:ui`. |
 
 **19/21** core modules are KMP with JVM targets. The 2 Android-only modules are intentionally platform-specific, with shared contracts already abstracted into `core:ui/commonMain`.
 
-### Feature Modules (9 total — 9 KMP with JVM, 1 Android-only widget)
+### Feature Modules (9 total — 8 KMP with JVM, 1 Android-only widget)
 
 | Module | UI in commonMain? | Desktop wired? |
 |---|:---:|:---:|
@@ -49,7 +49,7 @@ Modules that share JVM-specific code between Android and desktop now standardize
 | `feature:messaging` | ✅ | ✅ Adaptive contacts + messages; fully shared `contactsGraph`, `MessageScreen`, `ContactsScreen`, and `MessageListPaged` |
 | `feature:connections` | ✅ | ✅ Shared `ConnectionsScreen` with dynamic transport detection |
 | `feature:intro` | — | — | Screens remain in `androidMain`; shared ViewModel only |
-| `feature:map` | — | Placeholder; shared `NodeMapViewModel`, `BaseMapViewModel`. Map rendering decomposed into 3 `CompositionLocal` provider contracts (`MapViewProvider`, `NodeTrackMapProvider`, `TracerouteMapProvider`) with per-flavor implementations in `:app` |
+| `feature:meshcore` | ✅ | ✅ Shared MeshCore screens and navigation |
 | `feature:firmware` | ✅ | ✅ Fully KMP: Unified OTA, native Secure DFU, USB/UF2, FirmwareRetriever |
 | `feature:wifi-provision` | ✅ | ✅ KMP WiFi provisioning via BLE (Nymea protocol); shared UI and ViewModel |
 | `feature:widget` | ❌ | — | Android-only (Glance appwidgets). Intentional. |
@@ -69,14 +69,26 @@ Working Compose Desktop application with:
 - **Native notifications and system tray icon** wired via `DesktopNotificationManager`
 - **Native release pipeline** generating `.dmg` (macOS), `.msi` (Windows), and `.deb` (Linux) installers in CI
 
+## Android Cloud-Free Distribution Boundary
+
+- `feature:map` and all rendered-map providers are removed. Location-related UI is limited to coordinates, position
+  logs, distance, and compass; Android platform location and Meshtastic radio/MQTT location controls remain.
+- Both Android flavors decode QR/barcodes locally with ZXing. Neither flavor packages Google Cloud, Maps, Google Play
+  services, Firebase, Crashlytics, Datadog, or ML Kit runtime/configuration.
+- The `googleRelease` name is retained only as the Play publishing flavor. Dependency and merged-manifest guards enforce
+  the cloud-free boundary during release builds.
+- `bundleGoogleRelease` has passed compilation, R8, Lint Vital, the cloud-runtime guards, and AAB packaging. The locally
+  generated artifact is unsigned until an upload keystore is supplied, so Android Play distribution is **not yet
+  release-ready**. Signing, certificate pairing, Console declarations, and track testing remain external gates.
+
 ## Scorecard
 
 | Area | Score | Notes |
 |---|---|---|
 | Shared business/data logic | **9/10** | All core layers shared; RadioTransport interface unified |
-| Shared feature/UI logic | **9/10** | 9 KMP feature modules; firmware fully migrated; wifi-provision added; `feature:intro` and `feature:map` share ViewModels but UI remains in `androidMain` |
+| Shared feature/UI logic | **9/10** | 8 KMP feature modules; firmware and wifi-provision are shared; `feature:intro` UI remains in `androidMain` |
 | Android decoupling | **9/10** | No known `java.*` calls in `commonMain`; app module extraction in progress (navigation, connections, background services, and widgets extracted) |
-| Multi-target readiness | **9/10** | Full JVM; release-ready desktop; iOS simulator builds compiling successfully |
+| Multi-target readiness | **9/10** | Full JVM; desktop installers automated; iOS simulator builds compiling successfully; Android Play delivery still requires signing and Console gates |
 | CI confidence | **9/10** | 26 modules validated (including feature:wifi-provision); native release installers automated |
 | DI portability | **8/10** | Koin annotations in commonMain; supportedDeviceTypes injected per platform |
 | Test maturity | **9/10** | Mokkery, Turbine, and Kotest integrated; property-based testing established; broad coverage across all 9 features. SfppHasher, AddressUtils, formatString hex, and MetricFormatter edge cases newly covered. Gaps: `core:service`, `core:network` (TcpTransport), `core:ble` state machine, `core:ui` utils |
@@ -95,8 +107,8 @@ Working Compose Desktop application with:
 
 Based on the latest codebase investigation, the following steps are proposed to complete the multi-target and iOS-readiness migrations:
 
-1. **Wire Desktop Features:** Complete desktop UI wiring for `feature:intro` and implement a shared fallback for `feature:map` (which is currently a placeholder on desktop).
-2. **Flesh out iOS Actuals:** Complete the actual implementations for iOS UI stubs (e.g., `AboutLibrariesLoader`, `rememberOpenMap`, `SettingsMainScreen`) that were recently added to unblock iOS compilation.
+1. **Wire Desktop Features:** Complete desktop UI wiring for `feature:intro` and continue feature parity without reintroducing rendered maps.
+2. **Flesh out iOS Actuals:** Complete the actual implementations for iOS UI stubs (e.g., `AboutLibrariesLoader` and `SettingsMainScreen`) that were recently added to unblock iOS compilation.
 3. **Boot iOS Target:** Set up an initial skeleton Xcode project to start running the now-compiling `iosSimulatorArm64` / `iosArm64` binaries on a real simulator/device.
 
 ## Key Architecture Decisions
@@ -142,9 +154,6 @@ Extracted to shared `commonMain` (no longer app-only):
 - `MetricsViewModel` → `feature:node/commonMain`
 - `UIViewModel` → `core:ui/commonMain`
 - `ChannelViewModel` → `feature:settings/commonMain`
-- `NodeMapViewModel` → `feature:map/commonMain` (Shared logic for node-specific maps)
-- `BaseMapViewModel` → `feature:map/commonMain` (Core contract for all maps)
-- `TracerouteOverlay` → `core:model/commonMain` (Pure data class for traceroute route segments; extracted from `feature:map` for cross-module reuse)
 - `GeoConstants` → `core:model/commonMain` (Centralized `DEG_D`, `HEADING_DEG`, `EARTH_RADIUS_METERS` constants; eliminates 7 duplicate private constants)
 
 Extracted to core KMP modules:
@@ -152,8 +161,7 @@ Extracted to core KMP modules:
 - USB/Serial radio connections → `core:network/androidMain`
 - TCP radio connections, BLE radio connections (`BleRadioTransport`), and mDNS/NSD Service Discovery → `core:network/commonMain` (with Android `NsdManager` and Desktop `JmDNS` implementations)
 
-Remaining to be extracted from `:app` or unified in `commonMain`:
-- `MapViewModel` (Unify Google/F-Droid flavors into a single `commonMain` class consuming a `MapConfigProvider` interface. `MapViewProvider` interface simplified — track rendering and traceroute rendering extracted to dedicated provider contracts)
+Remaining to be extracted from `:app` or unified in `commonMain`: no rendered-map implementation remains; future work should focus on transport and platform parity.
 
 ## Prerelease Dependencies
 

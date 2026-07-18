@@ -1,82 +1,73 @@
-# NTsocial MeshLink Google Play 上架包
+# NTsocial MeshLink：Google Play 首發文件
 
-更新日期：2026-07-17
+最後更新：2026 年 7 月 18 日
 
-這個目錄是 `NTsocial MeshLink`（`com.ntsocial.meshlink`）的繁體中文 Google Play
-Console 貼上稿。內容以目前 Google release 原始碼、實際合併 Manifest、母程式
-`NTsocial_release` 的可核對資訊，以及 2026-07-17 Google 官方規則為依據。
+這個目錄是 `NTsocial MeshLink`（`com.ntsocial.meshlink`）第一版 Google Play 上架的唯一工作包。
+請從 [最快上架流程](06-first-play-launch-plan-zh-TW.md) 開始，不必另外建立 Google Cloud、
+Maps 或 Firebase 專案。
 
-所有上架文件都集中在本目錄，不需要再回到專案根目錄尋找。內容包含五份 Play
-Console 填寫稿、隱私權政策、使用條款、社群規範及本索引，共九份 Markdown 文件。
+## 現況一覽
 
-## 建議填寫順序
+| 項目 | 狀態 | 說明 |
+|---|---|---|
+| Google Cloud／Maps／Play Services runtime | 已移除 | 兩個 Android flavor 都不得重新加入 |
+| Firebase／Crashlytics／Datadog／ML Kit | 已移除 | 不收集產品分析、意見或 App 內當機報告 |
+| 地圖 UI | 已移除 | 商店文案與截圖不得再出現地圖 |
+| QR／條碼 | 已完成 | 使用離線 ZXing，不上傳相機畫面 |
+| Release 建置 | 已通過 | `bundleGoogleRelease` 可完成，但目前 AAB 未簽署 |
+| Upload key／Play App Signing | 待人工完成 | 這是正式上傳必要項目，與 GCP billing 無關 |
+| Location FGS 行為 | 送審前阻擋 | 必須只在使用者啟用手機位置提供時使用 location 類型，或移除該功能 |
+| UGC 合規 | 送審前阻擋 | 必須有條款接受、App 內檢舉，以及一對一互動的封鎖／ignore 能力 |
+| 政策發布與 App 內 URL | 送審前阻擋 | 草稿警告須移除，正式公開 HTTPS URL 須寫回 App 並重建 |
+| 舊 `analytics_notice` 翻譯 | 待清理 | SDK 已移除，但最終封裝不得留下誤導性的舊收集聲明 |
+| 商店素材與 Console 表單 | 待人工完成 | 依本目錄提供的稿件填寫 |
+| Play 配送實測 | 待人工完成 | 必須從 Internal track 安裝，驗證正式簽章與 NTsocial pairing |
+| 新 personal 帳號測試門檻 | 依帳號判定 | 2023-11-13 後建立者通常需 12 位測試者連續 14 天 closed test |
 
-1. 先處理 [05-release-checklist-zh-TW.md](05-release-checklist-zh-TW.md) 的紅線阻擋。
-2. 建立 App 時依 [01-store-listing-zh-TW.md](01-store-listing-zh-TW.md) 填商店資料。
-3. 依 [02-app-content-zh-TW.md](02-app-content-zh-TW.md) 完成 App content 各聲明。
-4. 逐項依 [03-data-safety-zh-TW.md](03-data-safety-zh-TW.md) 填 Data safety。
-5. 依 [04-review-and-permissions-zh-TW.md](04-review-and-permissions-zh-TW.md) 填審查存取與
-   前景服務聲明，並錄製所需影片。
-6. 上傳已正式簽署且完成驗證的 AAB，貼上版本資訊，再送審。
+`googleRelease` 只是 Gradle variant 名稱，不表示 App 依賴 Google SDK。選擇 Google Play
+仍會使用 Play Console、Play App Signing、商店安裝／更新與 Android Vitals；若連這些平台
+服務也要避免，就不能透過 Google Play 發布。
 
-公開隱私權政策原稿位於 [PRIVACY_POLICY.md](PRIVACY_POLICY.md)。提交 Play Console
-前必須先推送到公開 GitHub，確認下列網址在無登入／無痕視窗可正常開啟：
+## 只照這個順序做
 
-`https://github.com/nuclear718/ntsocial-mesh-gateway-android/blob/main/docs/google-play/PRIVACY_POLICY.md`
+1. 先完成 [最快上架流程](06-first-play-launch-plan-zh-TW.md) 的兩個已確認政策／runtime 阻擋。
+2. 建立 upload key，產生已簽署 AAB。
+3. 準備 [商店文案與素材](01-store-listing-zh-TW.md)。
+4. 填寫 [App content](02-app-content-zh-TW.md)、[Data safety](03-data-safety-zh-TW.md) 與
+   [權限／前景服務](04-review-and-permissions-zh-TW.md)。
+5. 上傳 Internal track，從 Play 安裝並完成實測。
+6. 用 [最終檢查表](05-release-checklist-zh-TW.md) 做最後一次 Go／No-Go。
+7. 將同一個已測 artifact promote 到 Production。
 
-另已準備公開的 [使用條款](TERMS_OF_USE.md) 與
-[社群／通訊規範](COMMUNITY_GUIDELINES.md)。因本 App 可收發使用者產生內容，正式
-發布前仍須在 App 內提供可到達的條款／規範、適當的接受流程及檢舉入口；只有建立 Markdown
-文件並不等於完成 UGC 政策要求。
+公開政策草稿：
 
-## 目前不能宣稱「只要複製貼上即可明日公開」的原因
+- [隱私權政策](PRIVACY_POLICY.md)
+- [使用條款](TERMS_OF_USE.md)
+- [社群與通訊規範](COMMUNITY_GUIDELINES.md)
 
-文件貼上稿已準備完成，但目前仍有文件以外的發布阻擋：
+送審前要把政策發布成無需登入、無地區限制的公開 HTTPS 頁面，並確保 App 內可以開啟。
+這些 Markdown 是提交稿，不會自動完成 App 內條款接受或檢舉功能。
 
-- 尚無使用真實 upload key 與正式 Google/Firebase Crashlytics/Datadog 設定建置、簽署並驗證過的
-  Play AAB；缺少 `keystore.properties` 時，release 目前會退回 Debug 簽章。
-- Firebase Analytics／Play Services Measurement、Ads Identifier 與 Privacy Sandbox Ads
-  依賴已從程式移除；Google release 合併 Manifest 的廣告識別、AdServices、安裝歸因
-  權限及 AppMeasurement 元件已驗證不存在。最終上傳的 AAB 仍須在 App Bundle Explorer
-  再核對一次。
-- Google Play App Signing 的正式 App signing certificate SHA-256 必須同步加入 MeshLink
-  與母程式的 release 信任設定，否則商店版跨 App Gateway 配對可能失敗。
-- Location FGS type 目前在只要已有位置權限時便加入，尚未跟「提供手機位置」開關同步；
-  App 內位置揭露也尚未完整說明背景使用、接收者與未加密風險。
-- App 可收發 UGC，但目前只有 ignore／mute，尚未完成條款接受與 App 內檢舉入口；本包
-  已準備公開條款與社群規範，不能取代產品實作。
-- 除英文與繁中外，其他已打包語系的分析告知仍沿用上游「匿名」說法，必須更新或從
-  首發 Google AAB 排除；公開 Release 版也沒有一般使用者可選的 Demo Mode。
-- 既有 Feature graphic 是純黑圖，既有截圖仍顯示上游 Meshtastic／模擬節點與座標，不能
-  當成 NTsocial MeshLink 正式商店素材。
-- 若是 2023-11-13 後建立的個人開發者帳號，需先完成 12 位測試者連續 14 天封閉測試；
-  一般審查也可能超過 7 天，無法保證隔日公開。
+## 首發完全不需要
 
-## 語言與既有 Fastlane 中繼資料
+- GCP 專案、Cloud billing、Maps SDK 或 Maps API key；
+- `google-services.json`、Firebase、Crashlytics 或 mapping upload；
+- Datadog token、RUM／Logs／Trace；
+- ML Kit 或雲端 QR 解碼；
+- 分析 installation ID、意見收集後端或廣告 SDK；
+- Play service-account JSON（第一版採 Play Console 手動上傳即可）。
 
-本專案目前含約 40 組 Compose 語系資源與 39 組沿自上游的 Fastlane 商店語系目錄，
-因此 App 本身並非「只有繁體中文」。本包只把 `zh-TW` 當成首發預設商店語言；其他
-Fastlane 語系多半仍是上游 Meshtastic 文案，不得直接上傳。現行 `Fastfile` 也設定
-`skip_upload_metadata`、`skip_upload_images` 與 `skip_upload_screenshots`，因此首發請依
-本包人工貼入繁中內容與新素材，除非先完成所有語系的品牌與事實稽核。
-
-## 母程式資料的使用邊界
-
-本包只沿用母程式的 NTsocial 品牌關係、LiberaNt LLC 聯絡資料候選及產品分工。以下內容
-沒有沿用：
-
-- 「無分析、無 GPS、無伺服器」等與 MeshLink Google 版本不符的絕對宣稱；
-- 母程式的 Public／Channel／Private、附件、PTT、個人檔案及遊戲功能；
-- 禁止修改、反編譯或衍生作品的閉源 EULA；該條款與 MeshLink 的 GPL-3.0 不相容；
-- 只授權 `com.ntsocial.android` 的權利文件；它不等於 MeshLink 的發布授權。
+不要建立 dummy cloud secrets，也不要為了讓舊流程通過而重新加入已移除的 SDK。
 
 ## 官方參考
 
-- [建立 App 與商店欄位](https://support.google.com/googleplay/android-developer/answer/9859152)
-- [商店圖像規格](https://support.google.com/googleplay/android-developer/answer/9866151)
-- [準備 App 審查](https://support.google.com/googleplay/android-developer/answer/9859455)
+- [建立與設定 App](https://support.google.com/googleplay/android-developer/answer/9859152)
+- [準備及推出版本](https://support.google.com/googleplay/android-developer/answer/9859348)
 - [Data safety](https://support.google.com/googleplay/android-developer/answer/10787469)
-- [隱私權與 User Data 政策](https://support.google.com/googleplay/android-developer/answer/10144311)
-- [新個人帳號測試要求](https://support.google.com/googleplay/android-developer/answer/14151465)
+- [User Data 政策](https://support.google.com/googleplay/android-developer/answer/10144311)
+- [User Generated Content 政策](https://support.google.com/googleplay/android-developer/answer/9876937)
+- [Play App Signing](https://support.google.com/googleplay/android-developer/answer/9842756)
+- [新 personal 帳號測試規則](https://support.google.com/googleplay/android-developer/answer/14151465)
+- [開發者帳號類型與組織驗證](https://support.google.com/googleplay/android-developer/answer/13634885)
+- [Play Console 帳號與一次性註冊費](https://support.google.com/googleplay/android-developer/answer/6112435)
 - [前景服務聲明](https://support.google.com/googleplay/android-developer/answer/13392821)
-- [16 KB page size](https://developer.android.com/guide/practices/page-sizes)

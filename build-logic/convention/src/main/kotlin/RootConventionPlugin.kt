@@ -101,7 +101,6 @@ private val ALL_MODULES_FULL =
         ":feature:intro",
         ":feature:messaging",
         ":feature:connections",
-        ":feature:map",
         ":feature:node",
         ":feature:settings",
         ":feature:firmware",

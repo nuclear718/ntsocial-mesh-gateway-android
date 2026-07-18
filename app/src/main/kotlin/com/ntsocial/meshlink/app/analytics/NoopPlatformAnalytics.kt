@@ -14,18 +14,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ui.util
+package com.ntsocial.meshlink.app.analytics
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
-import com.ntsocial.meshlink.core.ui.component.PlaceholderScreen
+import com.ntsocial.meshlink.core.repository.DataPair
+import com.ntsocial.meshlink.core.repository.PlatformAnalytics
+import org.koin.core.annotation.Single
 
-/**
- * Provides the platform-specific Map Screen for a Node (e.g. Google Maps or OSMDroid on Android). On Desktop or JVM
- * targets where native maps aren't available yet, it falls back to a [PlaceholderScreen].
- */
-@Suppress("Wrapping")
-val LocalNodeMapScreenProvider =
-    compositionLocalOf<@Composable (destNum: Int, onNavigateUp: () -> Unit) -> Unit> {
-        { destNum, _ -> PlaceholderScreen("Node Map ($destNum)") }
-    }
+/** Local sink retained for upstream-compatible manager contracts. It never records, stores, or transmits events. */
+@Single
+class NoopPlatformAnalytics : PlatformAnalytics {
+    override fun track(event: String, vararg properties: DataPair) = Unit
+
+    override fun setDeviceAttributes(firmwareVersion: String, model: String) = Unit
+
+    override val isPlatformServicesAvailable: Boolean = false
+}

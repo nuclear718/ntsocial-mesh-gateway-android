@@ -16,9 +16,7 @@
  */
 package com.ntsocial.meshlink.core.network.radio
 
-import android.content.Context
 import android.hardware.usb.UsbManager
-import android.provider.Settings
 import com.ntsocial.meshlink.core.ble.BleConnectionFactory
 import com.ntsocial.meshlink.core.ble.BleScanner
 import com.ntsocial.meshlink.core.ble.BluetoothRepository
@@ -39,7 +37,6 @@ import org.koin.core.annotation.Single
 @Single(binds = [RadioTransportFactory::class])
 @Suppress("LongParameterList")
 class AndroidRadioTransportFactory(
-    private val context: Context,
     private val buildConfigProvider: BuildConfigProvider,
     private val usbRepository: UsbRepository,
     private val usbManager: UsbManager,
@@ -51,8 +48,7 @@ class AndroidRadioTransportFactory(
 
     override val supportedDeviceTypes: List<DeviceType> = listOf(DeviceType.BLE, DeviceType.TCP, DeviceType.USB)
 
-    override fun isMockTransport(): Boolean =
-        buildConfigProvider.isDebug || Settings.System.getString(context.contentResolver, "firebase.test.lab") == "true"
+    override fun isMockTransport(): Boolean = buildConfigProvider.isDebug
 
     override fun isPlatformAddressValid(address: String): Boolean {
         val interfaceId = address.firstOrNull()?.let { InterfaceId.forIdChar(it) } ?: return false

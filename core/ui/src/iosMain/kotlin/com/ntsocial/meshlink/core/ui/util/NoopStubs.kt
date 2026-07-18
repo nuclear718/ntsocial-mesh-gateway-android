@@ -34,8 +34,6 @@ actual fun annotatedStringFromHtml(html: String, linkStyles: TextLinkStyles?): A
 
 @Composable actual fun rememberShowToastResource(): suspend (StringResource) -> Unit = { _ -> }
 
-@Composable actual fun rememberOpenMap(): (latitude: Double, longitude: Double, label: String) -> Unit = { _, _, _ -> }
-
 @Composable actual fun rememberOpenUrl(): (url: String) -> Unit = { _ -> }
 
 @Composable

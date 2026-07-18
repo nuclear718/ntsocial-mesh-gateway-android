@@ -16,7 +16,6 @@
  */
 package com.ntsocial.meshlink.core.testing
 
-import app.cash.turbine.test
 import com.ntsocial.meshlink.core.database.entity.FirmwareRelease
 import com.ntsocial.meshlink.core.database.entity.QuickChatAction
 import com.ntsocial.meshlink.core.model.DeviceHardware
@@ -24,7 +23,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSettings
-import org.meshtastic.proto.Position
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -98,17 +96,6 @@ class RepositoryFakesTest {
 
         // Matches real DAO's decrementPositionsAfter: positions must stay contiguous.
         assertEquals(listOf(1L to 0, 3L to 1), repo.currentActions.map { it.uuid to it.position })
-    }
-
-    @Test
-    fun `FakeTracerouteSnapshotRepository roundtrips positions keyed by log uuid`() = runTest {
-        val repo = FakeTracerouteSnapshotRepository()
-        val positions = mapOf(1 to Position(latitude_i = 10), 2 to Position(latitude_i = 20))
-        repo.upsertSnapshotPositions(logUuid = "log-1", requestId = 99, positions = positions)
-
-        repo.getSnapshotPositions("log-1").test { assertEquals(positions, awaitItem()) }
-        assertEquals(99, repo.lastRequestId("log-1"))
-        assertNull(repo.lastRequestId("other"))
     }
 
     @Test

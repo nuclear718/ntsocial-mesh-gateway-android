@@ -240,7 +240,7 @@ fun AdaptiveMetricLayout(
  *   centralises the CSV export affordance so individual screens only need to provide the export logic.
  */
 @Composable
-@Suppress("LongMethod")
+@Suppress("LongMethod", "ContentSlotReused")
 fun <T> BaseMetricScreen(
     onNavigateUp: () -> Unit,
     telemetryType: TelemetryType?,
@@ -248,12 +248,13 @@ fun <T> BaseMetricScreen(
     nodeName: String,
     data: List<T>,
     timeProvider: (T) -> Double,
+    listPart: @Composable (Modifier, Double?, LazyListState, (Double) -> Unit) -> Unit,
+    modifier: Modifier = Modifier,
     infoData: List<InfoDialogData> = emptyList(),
     onRequestTelemetry: (() -> Unit)? = null,
     onExportCsv: (() -> Unit)? = null,
     extraActions: @Composable () -> Unit = {},
-    chartPart: @Composable (Modifier, Double?, VicoScrollState, (Double) -> Unit) -> Unit,
-    listPart: @Composable (Modifier, Double?, LazyListState, (Double) -> Unit) -> Unit,
+    chartPart: (@Composable (Modifier, Double?, VicoScrollState, (Double) -> Unit) -> Unit)? = null,
     controlPart: @Composable () -> Unit = {},
 ) {
     var displayInfoDialog by rememberSaveable { mutableStateOf(false) }
@@ -269,6 +270,7 @@ fun <T> BaseMetricScreen(
     var selectedX by remember { mutableStateOf<Double?>(null) }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             MainAppBar(
                 title = nodeName,
@@ -287,19 +289,21 @@ fun <T> BaseMetricScreen(
                             )
                         }
                     }
-                    IconToggleButton(checked = isChartExpanded, onCheckedChange = { isChartExpanded = it }) {
-                        Icon(
-                            imageVector =
-                            if (isChartExpanded) {
-                                MeshtasticIcons.List
-                            } else {
-                                MeshtasticIcons.BarChart
-                            },
-                            contentDescription =
-                            stringResource(
-                                if (isChartExpanded) Res.string.collapse_chart else Res.string.expand_chart,
-                            ),
-                        )
+                    if (chartPart != null) {
+                        IconToggleButton(checked = isChartExpanded, onCheckedChange = { isChartExpanded = it }) {
+                            Icon(
+                                imageVector =
+                                if (isChartExpanded) {
+                                    MeshtasticIcons.List
+                                } else {
+                                    MeshtasticIcons.BarChart
+                                },
+                                contentDescription =
+                                stringResource(
+                                    if (isChartExpanded) Res.string.collapse_chart else Res.string.expand_chart,
+                                ),
+                            )
+                        }
                     }
                     if (infoData.isNotEmpty()) {
                         IconButton(onClick = { displayInfoDialog = true }) {
@@ -329,26 +333,30 @@ fun <T> BaseMetricScreen(
 
             controlPart()
 
-            AdaptiveMetricLayout(
-                isChartExpanded = isChartExpanded,
-                chartPart = { modifier ->
-                    chartPart(modifier, selectedX, vicoScrollState) { x ->
-                        selectedX = x
-                        val index = data.indexOfFirst { timeProvider(it) == x }
-                        if (index != -1) {
-                            coroutineScope.launch { lazyListState.animateScrollToItem(index) }
+            if (chartPart == null) {
+                listPart(Modifier.fillMaxSize(), selectedX, lazyListState) { x -> selectedX = x }
+            } else {
+                AdaptiveMetricLayout(
+                    isChartExpanded = isChartExpanded,
+                    chartPart = { modifier ->
+                        chartPart(modifier, selectedX, vicoScrollState) { x ->
+                            selectedX = x
+                            val index = data.indexOfFirst { timeProvider(it) == x }
+                            if (index != -1) {
+                                coroutineScope.launch { lazyListState.animateScrollToItem(index) }
+                            }
                         }
-                    }
-                },
-                listPart = { modifier ->
-                    listPart(modifier, selectedX, lazyListState) { x ->
-                        selectedX = x
-                        coroutineScope.launch {
-                            vicoScrollState.animateScroll(Scroll.Absolute.x(x, CommonCharts.SCROLL_BIAS))
+                    },
+                    listPart = { modifier ->
+                        listPart(modifier, selectedX, lazyListState) { x ->
+                            selectedX = x
+                            coroutineScope.launch {
+                                vicoScrollState.animateScroll(Scroll.Absolute.x(x, CommonCharts.SCROLL_BIAS))
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
     }
 }

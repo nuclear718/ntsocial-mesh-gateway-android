@@ -23,12 +23,10 @@ import org.meshtastic.mqtt.MqttLogger
 /**
  * Adapter that implements [MqttLogger] to send MQTT client logs to Kermit's [Logger].
  *
- * This allows the MQTTastic library logging to integrate with the app's logging infrastructure, including any
- * configured log sinks (Crashlytics, Datadog, etc.).
+ * This allows MQTTastic library messages to use the app's local structured logging infrastructure.
  *
- * The library's [tag] (e.g. "MqttClient", "MqttConnection") is forwarded as a structured Kermit tag so that Datadog
- * receives it as an indexed attribute rather than freetext in the message body, enabling per-component filtering in log
- * queries.
+ * The library's [tag] (e.g. "MqttClient", "MqttConnection") is forwarded as a structured Kermit tag so developers can
+ * filter local diagnostic output by component.
  *
  * Note: The production log level should be set to [MqttLogLevel.WARN] (not INFO) to prevent the library's own
  * INFO-level messages (which include endpoint addresses and topic strings) from reaching remote analytics sinks.

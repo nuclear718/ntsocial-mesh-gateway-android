@@ -2,7 +2,9 @@
 
 NTsocial MeshLink is a GPL-3.0 fork of Meshtastic Android. App identity is `NTsocial MeshLink`,
 application ID is `com.ntsocial.meshlink`, and project-owned packages use `com.ntsocial.meshlink.*`.
-Gateway/cache/IPC/scheduler features are roadmap items unless concrete code exists.
+Gateway v1 Provider/capability/IPC/cache/channel-provisioning behavior is concrete code. RF scheduler
+expansion, node policy, persistent/reliable delivery, MeshCore transport, and remote RF verification
+remain roadmap work.
 
 ## Build, Test & Lint
 
@@ -16,7 +18,6 @@ not support `UseZGC`/`ZGenerational`. Do not restore those flags without verifyi
 ```bash
 # Bootstrap (run once per fresh clone)
 git submodule update --init
-[ -f local.properties ] || cp secrets.defaults.properties local.properties
 
 # Full local verification (formatting -> lint -> compile -> tests)
 ./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile \
@@ -33,24 +34,37 @@ git submodule update --init
 
 # Flavor-specific lint
 ./gradlew lintFdroidDebug lintGoogleDebug
+
+# Play publication candidate (still verify signing and Play-installed artifact separately)
+./gradlew :app:verifyGoogleReleaseNoCloudRuntimeDependencies :app:bundleGoogleRelease
 ```
 
 > Both `test` and `allTests` are needed. `allTests` covers KMP modules; `test` covers pure-Android modules.
 
 ### Current Build and Release Status
 
-- On 2026-07-17, the expanded full local verification command above passed in 10m13s (1,951
-  actionable tasks); the resulting XML reports contain 2,439 tests with zero failures or errors.
-- The F-Droid arm64 debug APK pins GeoPackage 6.7.5 for Android 16 KB native-page compatibility,
-  passes `zipalign -c -P 16`, and was clean-installed with the NTsocial parent on three Android 16
-  phones. Parent Provider status/launch, primary screens, lifecycle switching, English-keyboard text
-  entry, cross-phone parent sync, and relevant crash/ANR logs passed in the no-radio test scope.
+- On 2026-07-18, the cloud-free baseline passed: the formatting/static/build/test command completed
+  in 4m41s (1,569 actionable tasks), and KMP smoke compilation plus both flavor lint tasks completed
+  in 1m18s (932 actionable tasks).
+- The prior F-Droid arm64 debug APK passed `zipalign -c -P 16` and was clean-installed with the
+  NTsocial parent on three Android 16 phones. Parent Provider status/launch, primary screens,
+  lifecycle switching, English-keyboard text entry, cross-phone parent sync, and relevant crash/ANR
+  logs passed in the no-radio test scope. After removing the map/native dependency path, both current
+  arm64 debug APKs pass 16 KB zip alignment and the Google APK's packaged ELF load segments pass the
+  0x4000 alignment audit; repeat this on the final signed delivery artifact.
 - This confirms compilation, lint/static checks, tests, and debug packaging only. It is not proof of
   Google Play release readiness or remote RF delivery.
-- No Play-uploadable AAB is currently validated or tracked. The Google release trial reached R8 but
-  production mapping upload rejected the dummy Firebase configuration. The unchanged official
-  release workflow requires the authorized upload keystore and production Google/Firebase/DataDog
-  configuration; a fallback debug signature must never be treated as Play-ready.
+- `:app:bundleGoogleRelease` passes R8, Lint Vital, cloud-runtime guards, and AAB packaging. The local
+  artifact is unsigned and therefore not Play-uploadable; the release workflow still requires an
+  authorized upload keystore and Play Console setup. Neither flavor should require or package Google
+  Cloud, Maps, Play services, Firebase, Crashlytics, Datadog, or ML Kit runtime/configuration.
+- The current cloud-free artifact is not Production-submission-ready. Remaining gates include the
+  location-FGS/API-37 policy fix or feature removal, first-send terms plus in-app UGC report/block,
+  stale `analytics_notice` cleanup, final public policy URLs/in-app link, upload signing and Play
+  signer pairing, current store assets/Console declarations, and Internal-track device testing.
+  Account-specific closed-testing/Production-access requirements also remain external gates.
+  Use `docs/google-play/README.md` and `docs/google-play/06-first-play-launch-plan-zh-TW.md` as the
+  submission source of truth.
 
 ### Gradle Task Naming
 
@@ -90,7 +104,11 @@ behavior in scoped modules.
 - Database: Room KMP
 - I/O: Okio
 - Build: Gradle Kotlin DSL with convention plugins in `build-logic/`
-- Flavors: `fdroid` (OSS) and `google` (Maps + DataDog)
+- Flavors: `fdroid` and `google` are both OSS/cloud-runtime-free. `google` is the Play publication
+  path and uses the non-Google Meshtastic project API for device/firmware information; `fdroid`
+  intentionally uses bundled JSON fallback. QR/barcode decoding is local ZXing in both flavors.
+- `PlatformAnalytics` is an upstream-compatibility seam only. Every Android flavor binds it to
+  `NoopPlatformAnalytics`; never add an event-recording or network-backed implementation.
 
 ### Source-Set Boundaries
 
@@ -163,6 +181,8 @@ a coroutine-cleanup timeout flake under the full parallel baseline.
   and in-app variants keep that silhouette and use Meshtastic green `#67EA94` on black.
 - Use upstream Meshtastic design patterns when preserving existing Meshtastic screens, but do not
   treat the upstream mountain logo or palette as primary NTsocial branding.
+- Known branding debt: `feature/widget/src/main/res/drawable/widget_app_icon.xml` still uses the upstream mountain and
+  is rendered by `LocalStatsWidget`; replace it before claiming the current asset set is complete.
 
 ### Gateway Roadmap Boundaries
 
@@ -208,8 +228,7 @@ installed variants on a device:
 - Be aware that uninstalling loses onboarding state, permissions, and bonded-device data. Ask before
   uninstalling if the user has an active session.
 - After changing native dependencies, verify the target APK with `zipalign -c -P 16` and audit all
-  packaged arm64 ELF `PT_LOAD` alignments. Preserve the GeoPackage 6.7.5 override until the osmdroid
-  dependency path supplies an equally compatible or newer version.
+  packaged arm64 ELF `PT_LOAD` alignments.
 
 ## Deeper Guidance
 

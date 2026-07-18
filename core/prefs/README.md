@@ -6,12 +6,15 @@ The `:core:prefs` module provides a type-safe preferences layer backed by DataSt
 ## Key Components
 
 ### 1. DataStore Providers (`CorePrefsAndroidModule`)
-Provides named `DataStore<Preferences>` singletons for each preference domain (analytics, app, map, mesh, radio, UI, etc.). Each DataStore uses an injected `CoroutineDispatchers.io` scope and includes a `SharedPreferencesMigration` for seamless migration from the legacy preference files.
+Provides named `DataStore<Preferences>` singletons for each active preference domain (app, mesh, radio, UI, location-reporting consent, etc.). Each DataStore uses an injected `CoroutineDispatchers.io` scope and includes a `SharedPreferencesMigration` for seamless migration from the legacy preference files.
 
 ### 2. Specialized Prefs
 - **`RadioPrefs`**: Manages radio-specific settings (e.g., the last connected device address).
 - **`UiPrefs`**: Manages UI preferences (e.g., theme selection, unit systems).
-- **`MapPrefs`**: Manages mapping preferences (e.g., preferred map provider).
+- **`MapConsentPrefs`**: Stores consent for the Meshtastic radio/MQTT location-reporting feature. It does not configure or load a map SDK.
+
+Analytics preferences and map tile/provider preferences are intentionally absent. Both Android flavors
+use the same local-only preference behavior and do not initialize a cloud diagnostics runtime.
 
 ## Module dependency graph
 

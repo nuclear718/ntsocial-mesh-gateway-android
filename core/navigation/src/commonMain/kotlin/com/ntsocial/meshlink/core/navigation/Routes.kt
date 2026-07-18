@@ -53,11 +53,6 @@ sealed interface ContactsRoute : Route {
 }
 
 @Serializable
-sealed interface MapRoute : Route {
-    @Serializable data class Map(val waypointId: Int? = null) : MapRoute
-}
-
-@Serializable
 sealed interface MeshCoreRoute : Route {
     @Serializable data object MeshCoreGraph : MeshCoreRoute, Graph
 
@@ -93,9 +88,6 @@ sealed interface NodeDetailRoute : Route {
     @Serializable data class AirQualityMetrics(val destNum: Int) : NodeDetailRoute
 
     @Serializable data class TracerouteLog(val destNum: Int) : NodeDetailRoute
-
-    @Serializable
-    data class TracerouteMap(val destNum: Int, val requestId: Int, val logUuid: String? = null) : NodeDetailRoute
 
     @Serializable data class HostMetricsLog(val destNum: Int) : NodeDetailRoute
 

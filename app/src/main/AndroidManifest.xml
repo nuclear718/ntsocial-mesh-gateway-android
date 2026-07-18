@@ -68,7 +68,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- Required for maps, firmware metadata, MQTT, TAK, TCP, external links, and optional diagnostics. -->
+    <!-- Required for firmware metadata, MQTT, TAK, TCP, and user-opened external links. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -124,16 +124,11 @@
         android:name="android.hardware.usb.host"
         android:required="false" />
 
-    <!-- Declare geo: intent visibility for Android 11+ (needed for resolveActivity with map apps) -->
     <queries>
         <!-- Partner packages must be visible so the certificate-pinned Gateway caller verifier can inspect signers. -->
         <package android:name="com.ntsocial.android" />
         <package android:name="com.ntsocial.android.debug" />
 
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="geo" />
-        </intent>
     </queries>
 
     <application
@@ -153,16 +148,6 @@
         <uses-library
             android:name="org.apache.http.legacy"
             android:required="false" />
-
-        <!-- Android Auto: surface MessagingStyle notifications on the car's head unit -->
-        <meta-data
-            android:name="com.google.android.gms.car.application"
-            android:resource="@xml/automotive_app_desc" />
-
-        <!-- Crash reporting stays off until the user-controlled analytics preference enables it. -->
-        <meta-data
-            android:name="firebase_crashlytics_collection_enabled"
-            android:value="false" />
 
         <!-- This is the public API for doing mesh radio operations from android apps -->
         <service
@@ -271,7 +256,6 @@
                 
                 <data android:pathPrefix="/share" />
                 <data android:pathPrefix="/connections" />
-                <data android:pathPrefix="/map" />
                 <data android:pathPrefix="/messages" />
                 <data android:pathPrefix="/quickchat" />
                 <data android:pathPrefix="/nodes" />

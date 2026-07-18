@@ -26,36 +26,27 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.okay
 import com.ntsocial.meshlink.core.resources.traceroute
-import com.ntsocial.meshlink.core.resources.view_on_map
 import com.ntsocial.meshlink.core.ui.theme.StatusColors.StatusGreen
 import com.ntsocial.meshlink.core.ui.theme.StatusColors.StatusOrange
 import com.ntsocial.meshlink.core.ui.theme.StatusColors.StatusYellow
 import com.ntsocial.meshlink.core.ui.util.annotateTraceroute
-import com.ntsocial.meshlink.core.ui.util.toMessageRes
 import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
-import kotlinx.coroutines.launch
 
 /**
  * Handles the display of the traceroute alert when a response is received. Consolidates the side effect logic from the
  * main application screens into common code.
  */
 @Composable
-fun TracerouteAlertHandler(
-    uiViewModel: UIViewModel,
-    onNavigateToMap: (destinationNodeNum: Int, requestId: Int, logUuid: String?) -> Unit,
-) {
+fun TracerouteAlertHandler(uiViewModel: UIViewModel) {
     val traceRouteResponse by uiViewModel.tracerouteResponse.collectAsStateWithLifecycle(null)
     var dismissedTracerouteRequestId by remember { mutableStateOf<Int?>(null) }
     val colorScheme = MaterialTheme.colorScheme
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(traceRouteResponse, dismissedTracerouteRequestId) {
         val response = traceRouteResponse
@@ -75,32 +66,11 @@ fun TracerouteAlertHandler(
                         )
                     }
                 },
-                confirmTextRes = Res.string.view_on_map,
+                confirmTextRes = Res.string.okay,
                 onConfirm = {
-                    val availability =
-                        uiViewModel.tracerouteMapAvailability(
-                            forwardRoute = response.forwardRoute,
-                            returnRoute = response.returnRoute,
-                        )
-                    val errorRes = availability.toMessageRes()
-                    if (errorRes == null) {
-                        dismissedTracerouteRequestId = response.requestId
-                        onNavigateToMap(response.destinationNodeNum, response.requestId, response.logUuid)
-                    } else {
-                        uiViewModel.clearTracerouteResponse()
-                        // Post the error alert after the current alert is dismissed to avoid
-                        // the wrapping dismissAlert() in AlertManager immediately clearing it.
-                        @Suppress("TooGenericExceptionCaught")
-                        scope.launch {
-                            try {
-                                uiViewModel.showAlert(titleRes = Res.string.traceroute, messageRes = errorRes)
-                            } catch (e: Exception) {
-                                Logger.e(e) { "[TracerouteAlertHandler] Failed to show error alert" }
-                            }
-                        }
-                    }
+                    dismissedTracerouteRequestId = response.requestId
+                    uiViewModel.clearTracerouteResponse()
                 },
-                dismissTextRes = Res.string.okay,
                 onDismiss = {
                     uiViewModel.clearTracerouteResponse()
                     dismissedTracerouteRequestId = null

@@ -3,6 +3,80 @@
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>
 
+## 2026-07-18 — AGENTS guide reconciled with the cloud-free code and Play submission state
+- Audited the root `AGENTS.md` against the current source, artifacts, Google Play document packet, and prior validation
+  evidence. Corrected three-phone/parent interoperability wording so the pre-cloud-removal device run is treated as
+  regression evidence only; the current cloud-free/no-map artifact still needs its own device and Internal-track smoke.
+- Split Play build success from submission readiness. The unsigned AAB proves R8/Lint/guard/packaging only, while
+  location FGS/API-37 behavior, UGC terms/report/block safeguards, stale localized `analytics_notice` text, final policy
+  URLs, upload signing/Play signer trust, current assets/Console declarations, and account/track testing remain gates.
+- Added durable architecture rules for cloud-runtime exclusion, conservative Play Data safety disclosure, location FGS,
+  UGC, store metadata/policy drafts, and the no-op `PlatformAnalytics` compatibility seam. Clarified that the `google`
+  flavor's Meshtastic project API is not a Google service and that F-Droid intentionally uses bundled JSON fallback.
+- Recorded the active upstream-mountain widget icon and unused legacy splash vector as branding debt, renamed the native
+  rule to 16 KB page compatibility, and expanded the required KMP/flavor/Play release verification commands.
+- Synchronized `.github/copilot-instructions.md` as required by `AGENTS.md`. Structural tag checks, referenced-path
+  checks, stale-phrase scans, and `git diff --check` passed; no Gradle run was needed for this documentation-only task.
+
+## 2026-07-18 — Google Play submission docs rebaselined for the cloud-free first release
+- Rewrote the complete `docs/google-play/` submission packet around the current cloud-free Android runtime. The manual
+  first-upload path no longer asks for GCP, Cloud billing, Maps, Firebase, Crashlytics, Datadog, ML Kit, or a Play
+  service-account key. It still truthfully requires a verified Play developer account, upload signing, Play App Signing,
+  Console declarations, store assets, Internal-track installation, and any account-specific testing gate.
+- Replaced stale store copy and policy drafts with Traditional Chinese-first copy for the current no-map, local-ZXing,
+  no-telemetry build. Legacy Fastlane metadata and screenshots are explicitly barred from the first upload because they
+  still describe maps, analytics, or the official Meshtastic app.
+- Corrected the Data safety baseline: no publisher analytics/crash backend does not mean `Collect = No`. Mesh messages,
+  names/IDs, optional location, and other user-directed transports leave the Android device, so the draft conservatively
+  uses `Collect = Yes`, `Encryption = No`, optional/App functionality types, and requires path-by-path evidence before
+  relying on a `Shared = No` exception.
+- Documented two source-confirmed Production blockers rather than hiding them in Console prose: the service currently
+  adds the location FGS type whenever location permission exists, and the app has not yet proven first-send terms
+  acceptance plus in-app UGC reporting/blocking safeguards. Target SDK 37 also requires a deliberate Android 17
+  minimum-scope/location-button decision before submission.
+- Final documentation audit also found unused localized `analytics_notice` resources that still describe the removed
+  Firebase/Crashlytics/Datadog flow. They are not referenced by Kotlin and do not restore those SDKs, but must be removed
+  or rewritten before the final AAB so packaged policy text cannot contradict the cloud-free release.
+- Synchronized `BUILD_LOGIC_CONVENTIONS_GUIDE.md`, `kmp-status.md`, and `roadmap.md` with the removed map module,
+  cloud-runtime guards, unsigned AAB status, and remaining Play delivery gates. Local Markdown links, code fences,
+  listing field lengths, and `git diff --check` were validated; no Gradle build was needed for this documentation-only
+  follow-up.
+
+## 2026-07-18 — Cloud runtime and rendered maps removed; unsigned Google release pipeline passes
+- Implemented the user's decentralized first-release boundary across both Android flavors: removed Google Cloud/Maps,
+  Google Play services location, Firebase/Crashlytics, Datadog, ML Kit, osmdroid/GeoPackage, their Gradle plugins,
+  credentials/configuration, mapping uploads, CI secrets, manifests, and runtime dependencies. `googleRelease` remains
+  only as the existing Play publishing task name.
+- Deleted the rendered-map feature, map tab/routes/deep links, inline maps, traceroute maps, map providers/preferences,
+  Android Auto map metadata, and map-only controls. Node coordinates, distance, compass, position logs/CSV, Android
+  platform location, Meshtastic GPS forwarding, and the user-controlled Meshtastic MQTT/radio location preference remain.
+- Removed analytics/crash-report onboarding and Settings UI, analytics preferences/install ID, toggle use case, and
+  platform implementations. The retained platform analytics boundary is an explicit no-op for upstream-compatible call
+  sites and never records, stores, or transmits events.
+- Replaced both flavor-specific ML Kit scanners with one shared on-device ZXing analyzer. ZXing's historical Java
+  namespace is `com.google.zxing`, but it is the local open-source decoder and does not use a Google service or network.
+- Added release dependency and merged-manifest guards for both flavors. They reject Google Play services, Firebase,
+  Maps, ML Kit, Datadog, data transport, advertising/AdServices, and cloud runtime components if reintroduced.
+- Updated Google Play docs, privacy/data-safety drafts, CI/release workflows, Fastlane, public project docs, and agent
+  guidance to reflect the cloud-free runtime. Manual first upload does not need a Play service-account key; Play itself,
+  Play App Signing, and Android Vitals remain Google-controlled distribution infrastructure.
+- Fixed an existing App Bundle blocker: APK ABI splits now disable automatically for every `bundle*` invocation while
+  remaining enabled for APK/F-Droid tasks. `:app:bundleGoogleRelease` then passed R8, Lint Vital, cloud guards, and AAB
+  packaging (`BUILD SUCCESSFUL` in 2m23s; 706 actionable tasks).
+- The generated `app/build/outputs/bundle/googleRelease/app-google-release.aab` is 25,533,958 bytes with SHA-256
+  `39B2D41A07F5BBB687D3070B0BC200FACF8FEC7E5F4591627AF3A8F0DD03C511`, but `jarsigner` confirms it is unsigned
+  because no upload keystore is configured. It is a release-pipeline validation artifact, not Play-uploadable.
+- Full validation passed with JDK 21: `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue
+  --no-configuration-cache` in 4m41s (1,569 actionable tasks), followed by `kmpSmokeCompile :app:lintFdroidDebug
+  :app:lintGoogleDebug --continue --no-configuration-cache` in 1m18s (932 actionable tasks).
+- Final artifact audit found zero forbidden cloud/runtime strings across the merged Google release manifest and all
+  three AAB DEX files. Both current arm64 debug APKs pass `zipalign -c -P 16`; the Google arm64 APK's five ELF libraries
+  all have 0x4000-aligned `PT_LOAD` segments.
+- Remaining Play gates are a real upload keystore, Play App Signing and final signer synchronization with the NTsocial
+  parent trust rules, a current cloud-free artifact device smoke test, store assets and Console policy declarations,
+  Internal-track testing, and any account-specific closed-testing requirement. No GCP billing, Maps key,
+  `google-services.json`, Firebase project, Datadog token, or ML Kit setup is required.
+
 ## 2026-07-17 - GitHub Desktop stale index-lock recovery
 - GitHub Desktop could not commit because `.git/index.lock` was a zero-byte stale file left from 21:49 local time.
   There were no active merge, rebase, cherry-pick, revert, bisect, or sequencer operations and no unrelated Git process;

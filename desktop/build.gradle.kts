@@ -268,7 +268,6 @@ dependencies {
     implementation(projects.feature.node)
     implementation(projects.feature.messaging)
     implementation(projects.feature.connections)
-    implementation(projects.feature.map)
     implementation(projects.feature.meshcore)
     implementation(projects.feature.firmware)
     implementation(projects.feature.wifiProvision)

@@ -25,8 +25,8 @@ internal fun Project.configureAndroidCompose(commonExtension: CommonExtension) {
     commonExtension.apply { buildFeatures.compose = true }
 
     // CMP is the sole Compose version authority (BOM removed from the catalog).
-    // Third-party libraries (maps-compose, datadog, etc.) carry a transitive
-    // compose-bom whose constraints conflict with CMP-published AndroidX artifacts.
+    // Some third-party Compose libraries carry a transitive compose-bom whose constraints conflict with
+    // CMP-published AndroidX artifacts.
     // Exclude it globally so CMP's own dependency graph wins.
     configurations.configureEach { exclude(mapOf("group" to "androidx.compose", "module" to "compose-bom")) }
 
@@ -43,17 +43,11 @@ internal fun Project.configureAndroidCompose(commonExtension: CommonExtension) {
             "androidx.compose.runtime",
             "androidx.compose.ui",
         )
-    // The BOM exclusion above strips the version from `androidx.compose.material:material`
-    // requested by maps-compose-widgets (google flavor). Pin only that artifact — the
-    // group also contains `material-ripple`, which CMP publishes at the bom-aligned
-    // version and must not be force-downgraded.
-    val materialVersion = libs.version("androidx-compose-material")
+    // Keep CMP-aligned AndroidX artifacts on the version supplied by this project's Compose Multiplatform release.
     configurations.configureEach {
         resolutionStrategy.eachDependency {
             if (requested.group in cmpAlignedGroups) {
                 useVersion(androidxComposeVersion)
-            } else if (requested.group == "androidx.compose.material" && requested.name == "material") {
-                useVersion(materialVersion)
             }
         }
     }

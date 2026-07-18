@@ -46,10 +46,6 @@ import co.touchlab.kermit.Logger
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import com.eygraber.uri.toKmpUri
-import com.ntsocial.meshlink.app.intro.AnalyticsIntro
-import com.ntsocial.meshlink.app.map.getMapViewProvider
-import com.ntsocial.meshlink.app.node.component.InlineMap
-import com.ntsocial.meshlink.app.node.metrics.getTracerouteMapOverlayInsets
 import com.ntsocial.meshlink.app.ui.MainScreen
 import com.ntsocial.meshlink.core.barcode.rememberBarcodeScanner
 import com.ntsocial.meshlink.core.navigation.DEEP_LINK_BASE_URI
@@ -60,29 +56,15 @@ import com.ntsocial.meshlink.core.resources.channel_invalid
 import com.ntsocial.meshlink.core.service.MeshServiceClient
 import com.ntsocial.meshlink.core.ui.theme.AppTheme
 import com.ntsocial.meshlink.core.ui.theme.MODE_DYNAMIC
-import com.ntsocial.meshlink.core.ui.util.LocalAnalyticsIntroProvider
 import com.ntsocial.meshlink.core.ui.util.LocalBarcodeScannerProvider
 import com.ntsocial.meshlink.core.ui.util.LocalBarcodeScannerSupported
 import com.ntsocial.meshlink.core.ui.util.LocalEventBranding
-import com.ntsocial.meshlink.core.ui.util.LocalInlineMapProvider
-import com.ntsocial.meshlink.core.ui.util.LocalMapMainScreenProvider
-import com.ntsocial.meshlink.core.ui.util.LocalMapViewProvider
 import com.ntsocial.meshlink.core.ui.util.LocalNfcScannerProvider
 import com.ntsocial.meshlink.core.ui.util.LocalNfcScannerSupported
-import com.ntsocial.meshlink.core.ui.util.LocalNodeMapScreenProvider
-import com.ntsocial.meshlink.core.ui.util.LocalNodeTrackMapProvider
-import com.ntsocial.meshlink.core.ui.util.LocalTracerouteMapOverlayInsetsProvider
-import com.ntsocial.meshlink.core.ui.util.LocalTracerouteMapProvider
-import com.ntsocial.meshlink.core.ui.util.LocalTracerouteMapScreenProvider
 import com.ntsocial.meshlink.core.ui.util.showToast
 import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
 import com.ntsocial.meshlink.feature.intro.AppIntroductionScreen
 import com.ntsocial.meshlink.feature.intro.IntroViewModel
-import com.ntsocial.meshlink.feature.map.MapScreen
-import com.ntsocial.meshlink.feature.map.SharedMapViewModel
-import com.ntsocial.meshlink.feature.map.node.NodeMapViewModel
-import com.ntsocial.meshlink.feature.node.metrics.MetricsViewModel
-import com.ntsocial.meshlink.feature.node.metrics.TracerouteMapScreen
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.get
 import org.koin.android.ext.android.inject
@@ -188,57 +170,6 @@ class MainActivity : AppCompatActivity() {
             LocalNfcScannerProvider provides { onResult, onDisabled -> NfcScannerEffect(onResult, onDisabled) },
             LocalBarcodeScannerSupported provides true,
             LocalNfcScannerSupported provides true,
-            LocalAnalyticsIntroProvider provides { AnalyticsIntro() },
-            LocalMapViewProvider provides getMapViewProvider(),
-            LocalInlineMapProvider provides { node, modifier -> InlineMap(node, modifier) },
-            LocalNodeTrackMapProvider provides
-                { destNum, positions, modifier, selectedPositionTime, onPositionSelected ->
-                    com.ntsocial.meshlink.app.map.node.NodeTrackMap(
-                        destNum,
-                        positions,
-                        modifier,
-                        selectedPositionTime,
-                        onPositionSelected,
-                    )
-                },
-            LocalTracerouteMapOverlayInsetsProvider provides getTracerouteMapOverlayInsets(),
-            LocalTracerouteMapProvider provides
-                { overlay, nodePositions, onMappableCountChanged, modifier ->
-                    com.ntsocial.meshlink.app.map.traceroute.TracerouteMap(
-                        tracerouteOverlay = overlay,
-                        tracerouteNodePositions = nodePositions,
-                        onMappableCountChanged = onMappableCountChanged,
-                        modifier = modifier,
-                    )
-                },
-            LocalNodeMapScreenProvider provides
-                { destNum, onNavigateUp ->
-                    val vm = koinViewModel<NodeMapViewModel>()
-                    vm.setDestNum(destNum)
-                    com.ntsocial.meshlink.app.map.node.NodeMapScreen(vm, onNavigateUp = onNavigateUp)
-                },
-            LocalTracerouteMapScreenProvider provides
-                { destNum, requestId, logUuid, onNavigateUp ->
-                    val metricsViewModel = koinViewModel<MetricsViewModel> { parametersOf(destNum) }
-                    metricsViewModel.setNodeId(destNum)
-
-                    TracerouteMapScreen(
-                        metricsViewModel = metricsViewModel,
-                        requestId = requestId,
-                        logUuid = logUuid,
-                        onNavigateUp = onNavigateUp,
-                    )
-                },
-            LocalMapMainScreenProvider provides
-                { onClickNodeChip, navigateToNodeDetails, waypointId ->
-                    val viewModel = koinViewModel<SharedMapViewModel>()
-                    MapScreen(
-                        viewModel = viewModel,
-                        onClickNodeChip = onClickNodeChip,
-                        navigateToNodeDetails = navigateToNodeDetails,
-                        waypointId = waypointId,
-                    )
-                },
             content = content,
         )
     }

@@ -19,12 +19,10 @@ package com.ntsocial.meshlink.feature.settings.component
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.analytics_okay
 import com.ntsocial.meshlink.core.resources.app_settings
 import com.ntsocial.meshlink.core.resources.location_disabled
 import com.ntsocial.meshlink.core.resources.provide_location_to_mesh
 import com.ntsocial.meshlink.core.ui.component.SwitchListItem
-import com.ntsocial.meshlink.core.ui.icon.BugReport
 import com.ntsocial.meshlink.core.ui.icon.LocationOn
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.util.isGpsDisabled
@@ -33,12 +31,9 @@ import com.ntsocial.meshlink.core.ui.util.rememberRequestLocationPermission
 import com.ntsocial.meshlink.core.ui.util.rememberShowToastResource
 import org.jetbrains.compose.resources.stringResource
 
-/** Section managing privacy settings like analytics and location sharing. */
+/** Section managing local privacy settings such as optional phone-location forwarding. */
 @Composable
 fun PrivacySection(
-    analyticsAvailable: Boolean,
-    analyticsEnabled: Boolean,
-    onToggleAnalytics: () -> Unit,
     provideLocation: Boolean,
     onToggleLocation: (Boolean) -> Unit,
     homoglyphEnabled: Boolean,
@@ -69,15 +64,6 @@ fun PrivacySection(
     }
 
     ExpressiveSection(title = stringResource(Res.string.app_settings)) {
-        if (analyticsAvailable) {
-            SwitchListItem(
-                text = stringResource(Res.string.analytics_okay),
-                checked = analyticsEnabled,
-                leadingIcon = MeshtasticIcons.BugReport,
-                onClick = onToggleAnalytics,
-            )
-        }
-
         SwitchListItem(
             text = stringResource(Res.string.provide_location_to_mesh),
             leadingIcon = MeshtasticIcons.LocationOn,

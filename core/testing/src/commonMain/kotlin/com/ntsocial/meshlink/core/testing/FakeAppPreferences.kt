@@ -16,29 +16,16 @@
  */
 package com.ntsocial.meshlink.core.testing
 
-import com.ntsocial.meshlink.core.repository.AnalyticsPrefs
 import com.ntsocial.meshlink.core.repository.AppPreferences
 import com.ntsocial.meshlink.core.repository.CustomEmojiPrefs
 import com.ntsocial.meshlink.core.repository.FilterPrefs
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.MapConsentPrefs
-import com.ntsocial.meshlink.core.repository.MapPrefs
-import com.ntsocial.meshlink.core.repository.MapTileProviderPrefs
 import com.ntsocial.meshlink.core.repository.MeshPrefs
 import com.ntsocial.meshlink.core.repository.RadioPrefs
 import com.ntsocial.meshlink.core.repository.UiPrefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-
-class FakeAnalyticsPrefs : AnalyticsPrefs {
-    override val analyticsAllowed = MutableStateFlow(true)
-
-    override fun setAnalyticsAllowed(allowed: Boolean) {
-        analyticsAllowed.value = allowed
-    }
-
-    override val installId = MutableStateFlow("fake-install-id")
-}
 
 class FakeHomoglyphPrefs : HomoglyphPrefs {
     override val homoglyphEncodingEnabled = MutableStateFlow(false)
@@ -184,44 +171,6 @@ class FakeUiPrefs : UiPrefs {
     }
 }
 
-class FakeMapPrefs : MapPrefs {
-    override val mapStyle = MutableStateFlow(0)
-
-    override fun setMapStyle(style: Int) {
-        mapStyle.value = style
-    }
-
-    override val showOnlyFavorites = MutableStateFlow(false)
-
-    override fun setShowOnlyFavorites(show: Boolean) {
-        showOnlyFavorites.value = show
-    }
-
-    override val showWaypointsOnMap = MutableStateFlow(true)
-
-    override fun setShowWaypointsOnMap(show: Boolean) {
-        showWaypointsOnMap.value = show
-    }
-
-    override val showPrecisionCircleOnMap = MutableStateFlow(true)
-
-    override fun setShowPrecisionCircleOnMap(show: Boolean) {
-        showPrecisionCircleOnMap.value = show
-    }
-
-    override val lastHeardFilter = MutableStateFlow(0L)
-
-    override fun setLastHeardFilter(seconds: Long) {
-        lastHeardFilter.value = seconds
-    }
-
-    override val lastHeardTrackFilter = MutableStateFlow(0L)
-
-    override fun setLastHeardTrackFilter(seconds: Long) {
-        lastHeardTrackFilter.value = seconds
-    }
-}
-
 class FakeMapConsentPrefs : MapConsentPrefs {
     private val consent = mutableMapOf<Int?, MutableStateFlow<Boolean>>()
 
@@ -230,14 +179,6 @@ class FakeMapConsentPrefs : MapConsentPrefs {
 
     override fun setShouldReportLocation(nodeNum: Int?, report: Boolean) {
         consent.getOrPut(nodeNum) { MutableStateFlow(report) }.value = report
-    }
-}
-
-class FakeMapTileProviderPrefs : MapTileProviderPrefs {
-    override val customTileProviders = MutableStateFlow<String?>(null)
-
-    override fun setCustomTileProviders(providers: String?) {
-        customTileProviders.value = providers
     }
 }
 
@@ -272,15 +213,12 @@ class FakeMeshPrefs : MeshPrefs {
 }
 
 class FakeAppPreferences : AppPreferences {
-    override val analytics = FakeAnalyticsPrefs()
     override val homoglyph = FakeHomoglyphPrefs()
     override val filter = FakeFilterPrefs()
     override val meshLog = FakeMeshLogPrefs()
     override val emoji = FakeCustomEmojiPrefs()
     override val ui = FakeUiPrefs()
-    override val map = FakeMapPrefs()
     override val mapConsent = FakeMapConsentPrefs()
-    override val mapTileProvider = FakeMapTileProviderPrefs()
     override val radio = FakeRadioPrefs()
     override val mesh = FakeMeshPrefs()
     override val tak = FakeTakPrefs()

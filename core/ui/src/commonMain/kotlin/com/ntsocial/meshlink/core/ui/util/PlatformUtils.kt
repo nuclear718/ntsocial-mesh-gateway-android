@@ -31,9 +31,6 @@ import org.jetbrains.compose.resources.StringResource
 /** Returns a function to show a toast message from a string resource. */
 @Composable expect fun rememberShowToastResource(): suspend (StringResource) -> Unit
 
-/** Returns a function to open the platform's map application at the given coordinates. */
-@Composable expect fun rememberOpenMap(): (latitude: Double, longitude: Double, label: String) -> Unit
-
 /** Returns a function to open the platform's browser with the given URL. */
 @Composable expect fun rememberOpenUrl(): (url: String) -> Unit
 

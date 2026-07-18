@@ -24,7 +24,6 @@ import com.ntsocial.meshlink.core.navigation.TopLevelDestination
 import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
 import com.ntsocial.meshlink.feature.connections.navigation.connectionsGraph
 import com.ntsocial.meshlink.feature.firmware.navigation.firmwareGraph
-import com.ntsocial.meshlink.feature.map.navigation.mapGraph
 import com.ntsocial.meshlink.feature.meshcore.navigation.meshCoreGraph
 import com.ntsocial.meshlink.feature.messaging.navigation.contactsGraph
 import com.ntsocial.meshlink.feature.node.navigation.nodesGraph
@@ -50,7 +49,6 @@ fun EntryProviderScope<NavKey>.desktopNavGraph(
         onNavigateToConnections = { multiBackstack.navigateTopLevel(TopLevelDestination.Connections.route) },
     )
     contactsGraph(backStack, uiViewModel.scrollToTopEventFlow)
-    mapGraph(backStack)
     meshCoreGraph(backStack)
     firmwareGraph(backStack)
     settingsGraph(backStack)

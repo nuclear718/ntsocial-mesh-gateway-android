@@ -749,15 +749,16 @@ class MeshServiceNotificationsImpl(
     }
 
     private fun createOpenWaypointIntent(waypointId: Int): PendingIntent {
-        val deepLinkUri = "$DEEP_LINK_BASE_URI/map?waypointId=$waypointId".toUri()
-        val deepLinkIntent =
-            Intent(Intent.ACTION_VIEW, deepLinkUri, context, Class.forName("com.ntsocial.meshlink.app.MainActivity"))
-                .apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP }
-
-        return TaskStackBuilder.create(context).run {
-            addNextIntentWithParentStack(deepLinkIntent)
-            getPendingIntent(waypointId, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        }
+        val intent =
+            Intent(context, Class.forName("com.ntsocial.meshlink.app.MainActivity")).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+        return PendingIntent.getActivity(
+            context,
+            waypointId,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
     }
 
     private fun createOpenNodeDetailIntent(nodeNum: Int): PendingIntent {

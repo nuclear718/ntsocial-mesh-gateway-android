@@ -20,7 +20,6 @@ import com.ntsocial.meshlink.core.navigation.TopLevelDestination
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.ic_forum
 import com.ntsocial.meshlink.core.resources.ic_hub
-import com.ntsocial.meshlink.core.resources.ic_map
 import com.ntsocial.meshlink.core.resources.ic_nodes
 import com.ntsocial.meshlink.core.resources.ic_settings
 import com.ntsocial.meshlink.core.resources.ic_wifi
@@ -32,7 +31,6 @@ val TopLevelDestination.icon: DrawableResource
         when (this) {
             TopLevelDestination.Conversations -> Res.drawable.ic_forum
             TopLevelDestination.Nodes -> Res.drawable.ic_nodes
-            TopLevelDestination.Map -> Res.drawable.ic_map
             TopLevelDestination.MeshCore -> Res.drawable.ic_hub
             TopLevelDestination.Settings -> Res.drawable.ic_settings
             TopLevelDestination.Connections -> Res.drawable.ic_wifi

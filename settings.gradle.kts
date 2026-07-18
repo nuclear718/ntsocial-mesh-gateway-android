@@ -107,7 +107,6 @@ include(
     ":feature:intro",
     ":feature:messaging",
     ":feature:connections",
-    ":feature:map",
     ":feature:meshcore",
     ":feature:node",
     ":feature:settings",

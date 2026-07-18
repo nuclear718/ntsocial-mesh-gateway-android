@@ -56,7 +56,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ntsocial.meshlink.core.common.util.DateFormatter
 import com.ntsocial.meshlink.core.common.util.NumberFormatter
 import com.ntsocial.meshlink.core.common.util.formatString
-import com.ntsocial.meshlink.core.model.TracerouteOverlay
 import com.ntsocial.meshlink.core.model.fullRouteDiscovery
 import com.ntsocial.meshlink.core.model.getTracerouteResponse
 import com.ntsocial.meshlink.core.model.util.TimeConstants.MS_PER_SEC
@@ -93,14 +92,9 @@ import org.meshtastic.proto.RouteDiscovery
  * synchronisation.
  */
 @OptIn(ExperimentalFoundationApi::class)
-@Suppress("LongMethod", "CyclomaticComplexMethod", "UnusedParameter")
+@Suppress("LongMethod", "CyclomaticComplexMethod", "UnusedParameter", "LambdaParameterEventTrailing")
 @Composable
-fun TracerouteLogScreen(
-    modifier: Modifier = Modifier,
-    viewModel: MetricsViewModel,
-    onNavigateUp: () -> Unit,
-    onViewOnMap: (requestId: Int, responseLogUuid: String) -> Unit = { _, _ -> },
-) {
+fun TracerouteLogScreen(viewModel: MetricsViewModel, modifier: Modifier = Modifier, onNavigateUp: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val timeFrame by viewModel.timeFrame.collectAsStateWithLifecycle()
     val availableTimeFrames by viewModel.availableTimeFrames.collectAsStateWithLifecycle()
@@ -181,7 +175,6 @@ fun TracerouteLogScreen(
                                 statusGreen = statusGreen,
                                 statusYellow = statusYellow,
                                 statusOrange = statusOrange,
-                                onViewOnMap = onViewOnMap,
                             )
                         },
                     )
@@ -317,7 +310,6 @@ private fun showTracerouteDetail(
     statusGreen: Color,
     statusYellow: Color,
     statusOrange: Color,
-    onViewOnMap: (requestId: Int, responseLogUuid: String) -> Unit,
 ) {
     val result = point.result ?: return
     val route = result.fromRadio.packet?.fullRouteDiscovery
@@ -347,22 +339,7 @@ private fun showTracerouteDetail(
                 ?.let { AnnotatedString(it) } ?: return
         }
 
-    val overlay =
-        route?.let {
-            TracerouteOverlay(
-                requestId = point.request.fromRadio.packet?.id ?: 0,
-                forwardRoute = it.route,
-                returnRoute = it.route_back,
-            )
-        }
-
-    viewModel.showTracerouteDetail(
-        annotatedMessage = annotated,
-        requestId = point.request.fromRadio.packet?.id ?: 0,
-        responseLogUuid = result.uuid,
-        overlay = overlay,
-        onViewOnMap = onViewOnMap,
-    )
+    viewModel.showTracerouteDetail(annotatedMessage = annotated)
 }
 
 /** Generates a display string and icon based on the route discovery information. */

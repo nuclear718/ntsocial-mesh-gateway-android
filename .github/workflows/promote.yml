@@ -32,23 +32,7 @@ on:
         required: true
         type: string
     secrets:
-      GSERVICES:
-        required: true
-      KEYSTORE:
-        required: true
-      KEYSTORE_FILENAME:
-        required: true
-      KEYSTORE_PROPERTIES:
-        required: true
-      DATADOG_APPLICATION_ID:
-        required: true
-      DATADOG_CLIENT_TOKEN:
-        required: true
-      GOOGLE_MAPS_API_KEY:
-        required: true
       GOOGLE_PLAY_JSON_KEY:
-        required: true
-      GRADLE_ENCRYPTION_KEY:
         required: true
       DISCORD_WEBHOOK_ANDROID:
         required: false

@@ -23,7 +23,6 @@ import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.MeshLogRepository
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.ServiceRepository
-import com.ntsocial.meshlink.core.repository.TracerouteSnapshotRepository
 import com.ntsocial.meshlink.feature.node.detail.NodeDetailUiState
 import com.ntsocial.meshlink.feature.node.detail.NodeRequestActions
 import com.ntsocial.meshlink.feature.node.domain.usecase.GetNodeDetailsUseCase
@@ -64,7 +63,6 @@ class MetricsViewModelTest {
     private val meshLogRepository: MeshLogRepository = mock()
     private val serviceRepository: ServiceRepository = mock()
     private val nodeRepository: NodeRepository = mock()
-    private val tracerouteSnapshotRepository: TracerouteSnapshotRepository = mock()
     private val nodeRequestActions: NodeRequestActions = mock()
     private val alertManager: com.ntsocial.meshlink.core.ui.util.AlertManager = mock()
     private val getNodeDetailsUseCase: GetNodeDetailsUseCase = mock()
@@ -94,7 +92,6 @@ class MetricsViewModelTest {
         meshLogRepository = meshLogRepository,
         serviceRepository = serviceRepository,
         nodeRepository = nodeRepository,
-        tracerouteSnapshotRepository = tracerouteSnapshotRepository,
         nodeRequestActions = nodeRequestActions,
         alertManager = alertManager,
         getNodeDetailsUseCase = getNodeDetailsUseCase,

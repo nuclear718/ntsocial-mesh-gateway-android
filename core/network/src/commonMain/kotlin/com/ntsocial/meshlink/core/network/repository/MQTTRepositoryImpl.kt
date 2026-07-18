@@ -146,8 +146,7 @@ class MQTTRepositoryImpl(
         launch { newClient.messages.collect { msg -> processMessage(msg) } }
 
         // Forward the client's connection state to the repo-level StateFlow for UI observation.
-        // Also emit structured log messages on transitions so reconnect attempt counts and
-        // disconnect reason codes are visible in Crashlytics/Datadog without any PII.
+        // Also emit structured local log messages on transitions for reconnect attempt counts and disconnect reasons.
         launch {
             newClient.connectionState.collect { state ->
                 _connectionState.value = state

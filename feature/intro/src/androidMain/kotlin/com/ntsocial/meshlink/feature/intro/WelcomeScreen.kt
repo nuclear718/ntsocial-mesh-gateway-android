@@ -50,7 +50,6 @@ import com.ntsocial.meshlink.core.ui.icon.Antenna
 import com.ntsocial.meshlink.core.ui.icon.MeshHub
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.NearMe
-import com.ntsocial.meshlink.core.ui.util.LocalAnalyticsIntroProvider
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -61,7 +60,6 @@ import org.jetbrains.compose.resources.stringResource
  */
 @Composable
 internal fun WelcomeScreen(onGetStarted: () -> Unit) {
-    val analyticsIntro = LocalAnalyticsIntroProvider.current
     val features =
         listOf(
             FeatureUIData(
@@ -116,7 +114,6 @@ internal fun WelcomeScreen(onGetStarted: () -> Unit) {
                 textAlign = TextAlign.Start,
             )
             features.forEach { feature -> FeatureRow(feature = feature) }
-            analyticsIntro()
         }
     }
 }

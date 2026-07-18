@@ -30,7 +30,6 @@ import com.ntsocial.meshlink.core.domain.usecase.settings.InstallProfileUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.ProcessRadioResponseUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.RadioConfigUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.RadioResponseResult
-import com.ntsocial.meshlink.core.domain.usecase.settings.ToggleAnalyticsUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.ToggleHomoglyphEncodingUseCase
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.MqttConnectionState
@@ -38,7 +37,6 @@ import com.ntsocial.meshlink.core.model.MqttProbeStatus
 import com.ntsocial.meshlink.core.model.MyNodeInfo
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Position
-import com.ntsocial.meshlink.core.repository.AnalyticsPrefs
 import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.LocationRepository
@@ -104,8 +102,6 @@ data class RadioConfigState(
     val deviceUIConfig: DeviceUIConfig? = null,
     val fileManifest: List<FileInfo> = emptyList(),
     val responseState: ResponseState<Boolean> = ResponseState.Empty,
-    val analyticsAvailable: Boolean = true,
-    val analyticsEnabled: Boolean = true,
     val nodeDbResetPreserveFavorites: Boolean = false,
 )
 
@@ -119,9 +115,7 @@ open class RadioConfigViewModel(
     private val nodeRepository: NodeRepository,
     private val locationRepository: LocationRepository,
     private val mapConsentPrefs: MapConsentPrefs,
-    private val analyticsPrefs: AnalyticsPrefs,
     private val homoglyphEncodingPrefs: HomoglyphPrefs,
-    private val toggleAnalyticsUseCase: ToggleAnalyticsUseCase,
     private val toggleHomoglyphEncodingUseCase: ToggleHomoglyphEncodingUseCase,
     protected val importProfileUseCase: ImportProfileUseCase,
     protected val exportProfileUseCase: ExportProfileUseCase,
@@ -134,12 +128,6 @@ open class RadioConfigViewModel(
     private val fileService: FileService,
     private val mqttManager: MqttManager,
 ) : ViewModel() {
-    val analyticsAllowedFlow = analyticsPrefs.analyticsAllowed
-
-    fun toggleAnalyticsAllowed() {
-        toggleAnalyticsUseCase()
-    }
-
     val homoglyphEncodingEnabledFlow = homoglyphEncodingPrefs.homoglyphEncodingEnabled
 
     fun toggleHomoglyphCharactersEncodingEnabled() {

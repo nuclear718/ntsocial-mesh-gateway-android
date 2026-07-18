@@ -109,9 +109,6 @@ fun desktopPlatformModule() = module {
 
 /** Named [DataStore]<[Preferences]> instances for all preference domains. */
 private fun desktopPreferencesDataStoreModule() = module {
-    single<DataStore<Preferences>>(named("AnalyticsDataStore")) {
-        createPreferencesDataStore("analytics", get(named(DATASTORE_SCOPE)))
-    }
     single<DataStore<Preferences>>(named("HomoglyphEncodingDataStore")) {
         createPreferencesDataStore("homoglyph_encoding", get(named(DATASTORE_SCOPE)))
     }
@@ -121,14 +118,8 @@ private fun desktopPreferencesDataStoreModule() = module {
     single<DataStore<Preferences>>(named("CustomEmojiDataStore")) {
         createPreferencesDataStore("custom_emoji", get(named(DATASTORE_SCOPE)))
     }
-    single<DataStore<Preferences>>(named("MapDataStore")) {
-        createPreferencesDataStore("map", get(named(DATASTORE_SCOPE)))
-    }
     single<DataStore<Preferences>>(named("MapConsentDataStore")) {
         createPreferencesDataStore("map_consent", get(named(DATASTORE_SCOPE)))
-    }
-    single<DataStore<Preferences>>(named("MapTileProviderDataStore")) {
-        createPreferencesDataStore("map_tile_provider", get(named(DATASTORE_SCOPE)))
     }
     single<DataStore<Preferences>>(named("MeshDataStore")) {
         createPreferencesDataStore("mesh", get(named(DATASTORE_SCOPE)))

@@ -19,7 +19,6 @@ package com.ntsocial.meshlink.desktop.ui
 import com.ntsocial.meshlink.core.navigation.ConnectionsRoute
 import com.ntsocial.meshlink.core.navigation.ContactsRoute
 import com.ntsocial.meshlink.core.navigation.FirmwareRoute
-import com.ntsocial.meshlink.core.navigation.MapRoute
 import com.ntsocial.meshlink.core.navigation.MeshCoreRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.Route
@@ -41,7 +40,6 @@ class DesktopTopLevelDestinationParityTest {
             setOf(
                 ContactsRoute.ContactsGraph::class,
                 NodesRoute.NodesGraph::class,
-                MapRoute.Map::class,
                 MeshCoreRoute.MeshCoreGraph::class,
                 SettingsRoute.SettingsGraph::class,
                 ConnectionsRoute.ConnectionsGraph::class,

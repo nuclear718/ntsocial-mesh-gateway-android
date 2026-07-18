@@ -63,8 +63,6 @@ object DeepLinkRouter {
 
             "connections" -> listOf(ConnectionsRoute.ConnectionsGraph)
 
-            "map" -> routeMap(uri, pathSegments)
-
             "meshcore" -> listOf(MeshCoreRoute.MeshCoreGraph)
 
             "nodes" -> routeNodes(uri, pathSegments)
@@ -111,12 +109,6 @@ object DeepLinkRouter {
 
             else -> listOf(ContactsRoute.ContactsGraph)
         }
-    }
-
-    private fun routeMap(uri: CommonUri, segments: List<String>): List<NavKey> {
-        val waypointIdStr = if (segments.size > 1) segments[1] else uri.getQueryParameter("waypointId")
-        val waypointId = waypointIdStr?.toIntOrNull()
-        return listOf(MapRoute.Map(waypointId))
     }
 
     private fun routeNodes(uri: CommonUri, segments: List<String>): List<NavKey> {
@@ -222,7 +214,6 @@ object DeepLinkRouter {
     private val nodeDetailSubRoutes: Map<String, (Int) -> Route> =
         mapOf(
             "device-metrics" to { destNum -> NodeDetailRoute.DeviceMetrics(destNum) },
-            "map" to { destNum -> NodeDetailRoute.PositionLog(destNum) },
             "position" to { destNum -> NodeDetailRoute.PositionLog(destNum) },
             "environment" to { destNum -> NodeDetailRoute.EnvironmentMetrics(destNum) },
             "signal" to { destNum -> NodeDetailRoute.SignalMetrics(destNum) },

@@ -102,26 +102,13 @@ class DeepLinkRouterTest {
 
     // endregion
 
-    // region map
+    // region removed map routes
 
     @Test
-    fun `map without waypointId`() {
-        assertEquals(listOf(MapRoute.Map(waypointId = null)), route("/map"))
-    }
-
-    @Test
-    fun `map with waypointId path segment`() {
-        assertEquals(listOf(MapRoute.Map(waypointId = 42)), route("/map/42"))
-    }
-
-    @Test
-    fun `map with waypointId query param`() {
-        assertEquals(listOf(MapRoute.Map(waypointId = 99)), route("/map?waypointId=99"))
-    }
-
-    @Test
-    fun `map with invalid waypointId falls back to null`() {
-        assertEquals(listOf(MapRoute.Map(waypointId = null)), route("/map/not-a-number"))
+    fun `removed map deep links return null`() {
+        listOf("/map", "/map/42", "/map?waypointId=99", "/map/not-a-number").forEach { path ->
+            assertNull(route(path), "Removed map deep link must not resolve: $path")
+        }
     }
 
     // endregion
@@ -151,15 +138,8 @@ class DeepLinkRouterTest {
     }
 
     @Test
-    fun `nodes with destNum and map sub-route`() {
-        assertEquals(
-            listOf(
-                NodesRoute.NodesGraph,
-                NodesRoute.NodeDetailGraph(destNum = 5678),
-                NodeDetailRoute.PositionLog(destNum = 5678),
-            ),
-            route("/nodes/5678/map"),
-        )
+    fun `nodes with destNum and removed map sub-route falls back to NodeDetail`() {
+        assertEquals(listOf(NodesRoute.NodesGraph, NodesRoute.NodeDetail(destNum = 5678)), route("/nodes/5678/map"))
     }
 
     @Test

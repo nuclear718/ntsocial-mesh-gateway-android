@@ -97,29 +97,3 @@ fun MeshPacket.getTracerouteResponse(
     headerTowards: String = "Route traced toward destination:\n\n",
     headerBack: String = "Route traced back to us:\n\n",
 ): String? = fullRouteDiscovery?.getTracerouteResponse(getUser, headerTowards, headerBack)
-
-enum class TracerouteMapAvailability {
-    Ok,
-    MissingEndpoints,
-    NoMappableNodes,
-}
-
-fun evaluateTracerouteMapAvailability(
-    forwardRoute: List<Int>,
-    returnRoute: List<Int>,
-    positionedNodeNums: Set<Int>,
-): TracerouteMapAvailability {
-    val endpoints =
-        listOfNotNull(
-            forwardRoute.firstOrNull(),
-            forwardRoute.lastOrNull(),
-            returnRoute.firstOrNull(),
-            returnRoute.lastOrNull(),
-        )
-            .distinct()
-    val missingEndpoint = endpoints.any { !positionedNodeNums.contains(it) }
-    if (missingEndpoint) return TracerouteMapAvailability.MissingEndpoints
-    val relatedNodeNums = (forwardRoute + returnRoute).toSet()
-    val hasAnyMappable = relatedNodeNums.any { positionedNodeNums.contains(it) }
-    return if (hasAnyMappable) TracerouteMapAvailability.Ok else TracerouteMapAvailability.NoMappableNodes
-}

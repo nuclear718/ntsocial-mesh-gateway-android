@@ -50,9 +50,6 @@ class NavigationConfigTest {
             ContactsRoute.Messages(contactKey = "test-contact"),
             ContactsRoute.Share(message = "share-text"),
             ContactsRoute.QuickChat,
-            // MapRoute
-            MapRoute.Map(),
-            MapRoute.Map(waypointId = 42),
             // MeshCoreRoute
             MeshCoreRoute.MeshCoreGraph,
             MeshCoreRoute.Conversation(conversationId = "channel:0", title = "Public", isChannel = true),
@@ -71,8 +68,6 @@ class NavigationConfigTest {
             NodeDetailRoute.PowerMetrics(destNum = 100),
             NodeDetailRoute.AirQualityMetrics(destNum = 100),
             NodeDetailRoute.TracerouteLog(destNum = 100),
-            NodeDetailRoute.TracerouteMap(destNum = 100, requestId = 200, logUuid = "uuid-123"),
-            NodeDetailRoute.TracerouteMap(destNum = 100, requestId = 200),
             NodeDetailRoute.HostMetricsLog(destNum = 100),
             NodeDetailRoute.PaxMetrics(destNum = 100),
             NodeDetailRoute.NeighborInfoLog(destNum = 100),
@@ -149,7 +144,6 @@ class NavigationConfigTest {
                         is ChannelsRoute -> "ChannelsRoute"
                         is ConnectionsRoute -> "ConnectionsRoute"
                         is ContactsRoute -> "ContactsRoute"
-                        is MapRoute -> "MapRoute"
                         is MeshCoreRoute -> "MeshCoreRoute"
                         is NodesRoute -> "NodesRoute"
                         is NodeDetailRoute -> "NodeDetailRoute"
@@ -166,7 +160,6 @@ class NavigationConfigTest {
                 "ChannelsRoute",
                 "ConnectionsRoute",
                 "ContactsRoute",
-                "MapRoute",
                 "MeshCoreRoute",
                 "NodesRoute",
                 "NodeDetailRoute",
@@ -189,7 +182,6 @@ class NavigationConfigTest {
         // serialization issues with optional fields.
         val routesWithDefaults: List<Pair<NavKey, NavKey>> =
             listOf(
-                MapRoute.Map() to MapRoute.Map(waypointId = null),
                 NodesRoute.NodeDetailGraph() to NodesRoute.NodeDetailGraph(destNum = null),
                 NodesRoute.NodeDetail() to NodesRoute.NodeDetail(destNum = null),
                 SettingsRoute.SettingsGraph() to SettingsRoute.SettingsGraph(destNum = null),

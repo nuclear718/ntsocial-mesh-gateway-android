@@ -16,8 +16,7 @@
  */
 package com.ntsocial.meshlink.app.di
 
-import com.ntsocial.meshlink.app.map.prefs.di.GoogleMapsKoinModule
 import org.koin.core.annotation.Module
 
-@Module(includes = [GoogleNetworkModule::class, GoogleMapsKoinModule::class])
+@Module(includes = [OnlineNetworkModule::class])
 class FlavorModule

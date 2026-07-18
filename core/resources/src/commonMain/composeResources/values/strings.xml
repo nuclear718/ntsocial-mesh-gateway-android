@@ -239,7 +239,6 @@
     </string>
     <string name="current">Current</string>
     <string name="currently">Currently:</string>
-    <string name="datadog_link" translatable="false">Datadog: https://www.datadoghq.com/</string>
     <string name="date">Date</string>
     <string name="dbm_value">%1$d dBm</string>
     <!-- DEBUG -->
@@ -412,7 +411,6 @@
     <string name="filter_whole_word">Whole word match</string>
     <string name="filter_words">Filter Words</string>
     <string name="filter_words_summary">Messages containing these words will be hidden</string>
-    <string name="firebase_crashlytics_link" translatable="false">Firebase Crashlytics: https://firebase.google.com/products/crashlytics/</string>
     <!-- FIRMWARE -->
     <string name="firmware">Firmware</string>
     <string name="firmware_edition">Firmware Edition</string>

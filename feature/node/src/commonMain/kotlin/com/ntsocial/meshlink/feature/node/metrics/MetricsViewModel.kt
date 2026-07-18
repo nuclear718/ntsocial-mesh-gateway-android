@@ -27,23 +27,16 @@ import com.ntsocial.meshlink.core.common.util.formatString
 import com.ntsocial.meshlink.core.common.util.nowSeconds
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.model.MeshLog
-import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.TelemetryType
-import com.ntsocial.meshlink.core.model.TracerouteOverlay
-import com.ntsocial.meshlink.core.model.evaluateTracerouteMapAvailability
 import com.ntsocial.meshlink.core.model.util.GeoConstants
 import com.ntsocial.meshlink.core.model.util.UnitConversions
 import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.MeshLogRepository
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.ServiceRepository
-import com.ntsocial.meshlink.core.repository.TracerouteSnapshotRepository
 import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.okay
 import com.ntsocial.meshlink.core.resources.traceroute
-import com.ntsocial.meshlink.core.resources.view_on_map
 import com.ntsocial.meshlink.core.ui.util.AlertManager
-import com.ntsocial.meshlink.core.ui.util.toMessageRes
 import com.ntsocial.meshlink.core.ui.viewmodel.safeLaunch
 import com.ntsocial.meshlink.core.ui.viewmodel.stateInWhileSubscribed
 import com.ntsocial.meshlink.feature.node.detail.NodeRequestActions
@@ -53,12 +46,9 @@ import com.ntsocial.meshlink.feature.node.model.TimeFrame
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import okio.ByteString.Companion.decodeBase64
@@ -82,7 +72,6 @@ open class MetricsViewModel(
     private val meshLogRepository: MeshLogRepository,
     private val serviceRepository: ServiceRepository,
     private val nodeRepository: NodeRepository,
-    private val tracerouteSnapshotRepository: TracerouteSnapshotRepository,
     private val nodeRequestActions: NodeRequestActions,
     private val alertManager: AlertManager,
     private val getNodeDetailsUseCase: GetNodeDetailsUseCase,
@@ -95,8 +84,6 @@ open class MetricsViewModel(
     private val manualNodeId = MutableStateFlow<Int?>(null)
     private val activeNodeId =
         combine(MutableStateFlow(nodeIdFromRoute), manualNodeId) { fromRoute, manual -> manual ?: fromRoute }
-
-    private val tracerouteOverlayCache = MutableStateFlow<Map<Int, TracerouteOverlay>>(emptyMap())
 
     val state: StateFlow<MetricsState> =
         activeNodeId
@@ -186,52 +173,9 @@ open class MetricsViewModel(
     fun deleteLog(uuid: String) =
         safeLaunch(context = dispatchers.io, tag = "deleteLog") { meshLogRepository.deleteLog(uuid) }
 
-    fun getTracerouteOverlay(requestId: Int): TracerouteOverlay? {
-        val cached = tracerouteOverlayCache.value[requestId]
-        if (cached != null) return cached
-
-        val overlay =
-            serviceRepository.tracerouteResponse.value
-                ?.takeIf { it.requestId == requestId }
-                ?.let { response ->
-                    TracerouteOverlay(
-                        requestId = response.requestId,
-                        forwardRoute = response.forwardRoute,
-                        returnRoute = response.returnRoute,
-                    )
-                }
-                ?.takeIf { it.hasRoutes }
-
-        if (overlay != null) {
-            tracerouteOverlayCache.update { it + (requestId to overlay) }
-        }
-
-        return overlay
-    }
-
-    fun tracerouteSnapshotPositions(logUuid: String) = tracerouteSnapshotRepository.getSnapshotPositions(logUuid)
-
     fun clearTracerouteResponse() = serviceRepository.clearTracerouteResponse()
 
-    fun positionedNodeNums(): Set<Int> =
-        nodeRepository.nodeDBbyNum.value.values.filter { it.validPosition != null }.numSet()
-
-    private fun List<Node>.numSet(): Set<Int> = map { it.num }.toSet()
-
     init {
-        safeLaunch(tag = "tracerouteCollector") {
-            serviceRepository.tracerouteResponse.filterNotNull().collect { response ->
-                val overlay =
-                    TracerouteOverlay(
-                        requestId = response.requestId,
-                        forwardRoute = response.forwardRoute,
-                        returnRoute = response.returnRoute,
-                    )
-                if (overlay.hasRoutes) {
-                    tracerouteOverlayCache.update { it + (response.requestId to overlay) }
-                }
-            }
-        }
         Logger.d { "MetricsViewModel created" }
     }
 
@@ -272,46 +216,8 @@ open class MetricsViewModel(
         )
     }
 
-    fun showTracerouteDetail(
-        annotatedMessage: AnnotatedString,
-        requestId: Int,
-        responseLogUuid: String,
-        overlay: TracerouteOverlay?,
-        onViewOnMap: (Int, String) -> Unit,
-    ) {
-        safeLaunch(tag = "showTracerouteDetail") {
-            val snapshotPositions = tracerouteSnapshotRepository.getSnapshotPositions(responseLogUuid).first()
-            alertManager.showAlert(
-                titleRes = Res.string.traceroute,
-                composableMessage = { SelectionContainer { Text(text = annotatedMessage) } },
-                confirmTextRes = Res.string.view_on_map,
-                onConfirm = {
-                    val positionedNodeNums =
-                        if (snapshotPositions.isNotEmpty()) {
-                            snapshotPositions.keys
-                        } else {
-                            positionedNodeNums()
-                        }
-                    val availability =
-                        evaluateTracerouteMapAvailability(
-                            forwardRoute = overlay?.forwardRoute.orEmpty(),
-                            returnRoute = overlay?.returnRoute.orEmpty(),
-                            positionedNodeNums = positionedNodeNums,
-                        )
-                    val errorRes = availability.toMessageRes()
-                    if (errorRes != null) {
-                        // Post the error alert after the current alert is dismissed to avoid
-                        // the wrapping dismissAlert() in AlertManager immediately clearing it.
-                        safeLaunch(tag = "tracerouteError") {
-                            alertManager.showAlert(titleRes = Res.string.traceroute, messageRes = errorRes)
-                        }
-                    } else {
-                        onViewOnMap(requestId, responseLogUuid)
-                    }
-                },
-                dismissTextRes = Res.string.okay,
-            )
-        }
+    fun showTracerouteDetail(annotatedMessage: AnnotatedString) {
+        showLogDetail(Res.string.traceroute, annotatedMessage)
     }
 
     fun setNodeId(id: Int) {

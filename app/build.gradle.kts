@@ -19,11 +19,12 @@ import com.android.build.api.artifact.SingleArtifact
 import com.android.build.api.dsl.ApplicationExtension
 import com.ntsocial.meshlink.buildlogic.configProperties
 import com.ntsocial.meshlink.buildlogic.resolveVersionInfo
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import java.util.Properties
 
 val versionInfo = resolveVersionInfo()
 
-val forbiddenAdvertisingManifestEntries =
+val forbiddenCloudRuntimeManifestEntries =
     listOf(
         "com.google.android.gms.permission.AD_ID",
         "android.permission.ACCESS_ADSERVICES_ATTRIBUTION",
@@ -31,6 +32,23 @@ val forbiddenAdvertisingManifestEntries =
         "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE",
         "android.ext.adservices",
         "AppMeasurement",
+        "com.google.android.gms",
+        "com.google.firebase",
+        "com.google.mlkit",
+        "com.google.maps",
+        "com.google.android.datatransport",
+        "com.datadoghq",
+    )
+
+val forbiddenCloudRuntimeGroups =
+    listOf(
+        "com.google.android.gms",
+        "com.google.firebase",
+        "com.google.mlkit",
+        "com.google.maps",
+        "com.google.android.libraries.mapsplatform",
+        "com.google.android.datatransport",
+        "com.datadoghq",
     )
 
 plugins {
@@ -39,7 +57,6 @@ plugins {
     alias(libs.plugins.meshlink.android.application.compose)
     id("com.ntsocial.meshlink.koin")
     alias(libs.plugins.kotlin.parcelize)
-    alias(libs.plugins.secrets)
     id("com.ntsocial.meshlink.aboutlibraries")
     id("dev.mokkery")
 }
@@ -126,9 +143,12 @@ configure<ApplicationExtension> {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Disable ABI splits for bundle builds or when explicitly requested via Gradle property.
-    // Usage: ./gradlew :app:bundleGoogleRelease -Pmeshlink.disableAbiSplits=true
-    val disableSplits = providers.gradleProperty("meshlink.disableAbiSplits").map { it.toBoolean() }.getOrElse(false)
+    // Android App Bundles perform their own ABI delivery, and AGP cannot build a bundle while APK ABI splits are
+    // enabled. Keep APK splits for F-Droid/IzzyOnDroid, but disable them automatically for every bundle invocation.
+    val isBundleInvocation = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
+    val disableSplits =
+        isBundleInvocation ||
+            providers.gradleProperty("meshlink.disableAbiSplits").map { it.toBoolean() }.getOrElse(false)
 
     // Enable ABI splits to generate smaller APKs per architecture for F-Droid/IzzyOnDroid
     splits {
@@ -157,23 +177,16 @@ configure<ApplicationExtension> {
         }
     }
 
-    // Configure existing product flavors (defined by convention plugin)
-    // with their dynamic version names.
+    // Keep both flavor task names for existing release channels. Their runtime dependency sets are intentionally
+    // cloud-free and equivalent with respect to maps, diagnostics, and barcode decoding.
     productFlavors {
-        configureEach {
-            versionName = "${defaultConfig.versionName} (${defaultConfig.versionCode}) $name"
-            if (name == "google") {
-                manifestPlaceholders["MAPS_API_KEY"] = "dummy"
-            }
-        }
+        configureEach { versionName = "${defaultConfig.versionName} (${defaultConfig.versionCode}) $name" }
     }
 
     buildTypes {
         release {
             if (keystoreProperties["storeFile"] != null) {
                 signingConfig = signingConfigs.named("release").get()
-            } else {
-                signingConfig = signingConfigs.getByName("debug")
             }
             isDebuggable = false
         }
@@ -183,44 +196,27 @@ configure<ApplicationExtension> {
     testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
-secrets {
-    defaultPropertiesFileName = "secrets.defaults.properties"
-    propertiesFileName = "secrets.properties"
-}
-
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.flavorName?.let { flavor -> variant.applicationId.set("com.ntsocial.meshlink.$flavor.debug") }
     }
 
-    onVariants(selector().withBuildType("release")) { variant ->
-        if (variant.flavorName == "google") {
-            val variantNameCapped = variant.name.replaceFirstChar { it.uppercase() }
-            val minifyTaskName = "minify${variantNameCapped}WithR8"
-            val uploadTaskName = "uploadMapping$variantNameCapped"
-            // Use tasks.names to check existence without eagerly realizing tasks
-            if (tasks.names.contains(uploadTaskName) && tasks.names.contains(minifyTaskName)) {
-                tasks.named(minifyTaskName).configure { finalizedBy(uploadTaskName) }
-            }
-        }
-    }
-
     onVariants { variant ->
-        if (variant.flavorName == "google") {
+        if (variant.flavorName == "google" || variant.flavorName == "fdroid") {
             val variantNameCapped = variant.name.replaceFirstChar { it.uppercase() }
             val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
             val verificationTask =
-                tasks.register("verify${variantNameCapped}NoAdvertisingComponents") {
+                tasks.register("verify${variantNameCapped}NoCloudRuntimeComponents") {
                     group = "verification"
                     description =
-                        "Fails if the ${variant.name} manifest contains advertising or attribution components."
+                        "Fails if the ${variant.name} manifest contains Google cloud, Maps, ML Kit, or diagnostics components."
                     inputs.file(mergedManifest)
 
                     doLast {
                         val manifestText = mergedManifest.get().asFile.readText()
-                        val detectedEntries = forbiddenAdvertisingManifestEntries.filter(manifestText::contains)
+                        val detectedEntries = forbiddenCloudRuntimeManifestEntries.filter(manifestText::contains)
                         check(detectedEntries.isEmpty()) {
-                            "Advertising or attribution components found in ${variant.name}: " +
+                            "Forbidden cloud runtime components found in ${variant.name}: " +
                                 detectedEntries.joinToString()
                         }
                     }
@@ -232,6 +228,40 @@ androidComponents {
         }
     }
 }
+
+val verifyGoogleReleaseNoCloudRuntimeDependencies =
+    tasks.register("verifyGoogleReleaseNoCloudRuntimeDependencies") {
+        group = "verification"
+        description = "Rejects Google cloud/Maps/ML Kit and Datadog artifacts from the Play release runtime graph."
+
+        doLast {
+            val configuration = configurations.getByName("googleReleaseRuntimeClasspath")
+            val forbidden =
+                configuration.incoming.resolutionResult.allComponents
+                    .mapNotNull { component ->
+                        val id = component.id as? ModuleComponentIdentifier ?: return@mapNotNull null
+                        val group = id.group
+                        val blocked =
+                            forbiddenCloudRuntimeGroups.any { prefix ->
+                                group == prefix || group.startsWith("$prefix.")
+                            }
+                        if (blocked) {
+                            "${id.group}:${id.module}:${id.version}"
+                        } else {
+                            null
+                        }
+                    }
+                    .distinct()
+                    .sorted()
+            check(forbidden.isEmpty()) {
+                "Forbidden cloud runtime dependencies found in googleRelease:\n${forbidden.joinToString("\n")}"
+            }
+        }
+    }
+
+tasks
+    .matching { it.name == "assembleGoogleRelease" || it.name == "bundleGoogleRelease" }
+    .configureEach { dependsOn(verifyGoogleReleaseNoCloudRuntimeDependencies) }
 
 dependencies {
     implementation(projects.core.ble)
@@ -257,7 +287,6 @@ dependencies {
     implementation(projects.feature.intro)
     implementation(projects.feature.messaging)
     implementation(projects.feature.connections)
-    implementation(projects.feature.map)
     implementation(projects.feature.meshcore)
     implementation(projects.feature.node)
     implementation(projects.feature.settings)
@@ -301,27 +330,6 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.glance.preview)
-
-    googleImplementation(libs.location.services)
-    googleImplementation(libs.play.services.maps)
-    googleImplementation(libs.maps.compose)
-    googleImplementation(libs.maps.compose.utils)
-    googleImplementation(libs.maps.compose.widgets)
-    googleImplementation(libs.dd.sdk.android.logs)
-    googleImplementation(libs.dd.sdk.android.rum)
-    googleImplementation(libs.dd.sdk.android.session.replay)
-    googleImplementation(libs.dd.sdk.android.session.replay.material)
-    googleImplementation(libs.dd.sdk.android.timber)
-    googleImplementation(libs.dd.sdk.android.trace)
-    googleImplementation(libs.dd.sdk.android.trace.otel)
-    googleImplementation(platform(libs.firebase.bom))
-    googleImplementation(libs.firebase.crashlytics)
-
-    // Override osmdroid's 6.7.3 transitively pinned GeoPackage build; 6.7.5 packages 16 KB-aligned libsqliteX.so.
-    fdroidImplementation(libs.geopackage.android)
-    fdroidImplementation(libs.osmdroid.android)
-    fdroidImplementation(libs.osmdroid.geopackage) { exclude(group = "com.j256.ormlite") }
-    fdroidImplementation(libs.osmbonuspack)
 
     testImplementation(kotlin("test-junit"))
     testImplementation(libs.androidx.work.testing)

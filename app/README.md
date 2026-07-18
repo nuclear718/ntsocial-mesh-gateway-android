@@ -46,7 +46,7 @@ graph TB
   :app -.-> :feature:intro
   :app -.-> :feature:messaging
   :app -.-> :feature:connections
-  :app -.-> :feature:map
+  :app -.-> :feature:meshcore
   :app -.-> :feature:node
   :app -.-> :feature:settings
   :app -.-> :feature:firmware

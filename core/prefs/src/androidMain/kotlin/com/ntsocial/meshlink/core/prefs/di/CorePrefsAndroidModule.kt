@@ -40,15 +40,6 @@ import org.koin.core.annotation.Single
 class CorePrefsAndroidModule {
 
     @Single
-    @Named("AnalyticsDataStore")
-    fun provideAnalyticsDataStore(context: Context, dispatchers: CoroutineDispatchers): DataStore<Preferences> =
-        PreferenceDataStoreFactory.create(
-            migrations = listOf(SharedPreferencesMigration(context, "analytics-prefs")),
-            scope = CoroutineScope(dispatchers.io + SupervisorJob()),
-            produceFile = { context.preferencesDataStoreFile("analytics_ds") },
-        )
-
-    @Single
     @Named("HomoglyphEncodingDataStore")
     fun provideHomoglyphEncodingDataStore(context: Context, dispatchers: CoroutineDispatchers): DataStore<Preferences> =
         PreferenceDataStoreFactory.create(
@@ -76,30 +67,12 @@ class CorePrefsAndroidModule {
         )
 
     @Single
-    @Named("MapDataStore")
-    fun provideMapDataStore(context: Context, dispatchers: CoroutineDispatchers): DataStore<Preferences> =
-        PreferenceDataStoreFactory.create(
-            migrations = listOf(SharedPreferencesMigration(context, "map_prefs")),
-            scope = CoroutineScope(dispatchers.io + SupervisorJob()),
-            produceFile = { context.preferencesDataStoreFile("map_ds") },
-        )
-
-    @Single
     @Named("MapConsentDataStore")
     fun provideMapConsentDataStore(context: Context, dispatchers: CoroutineDispatchers): DataStore<Preferences> =
         PreferenceDataStoreFactory.create(
             migrations = listOf(SharedPreferencesMigration(context, "map_consent_preferences")),
             scope = CoroutineScope(dispatchers.io + SupervisorJob()),
             produceFile = { context.preferencesDataStoreFile("map_consent_ds") },
-        )
-
-    @Single
-    @Named("MapTileProviderDataStore")
-    fun provideMapTileProviderDataStore(context: Context, dispatchers: CoroutineDispatchers): DataStore<Preferences> =
-        PreferenceDataStoreFactory.create(
-            migrations = listOf(SharedPreferencesMigration(context, "map_tile_provider_prefs")),
-            scope = CoroutineScope(dispatchers.io + SupervisorJob()),
-            produceFile = { context.preferencesDataStoreFile("map_tile_provider_ds") },
         )
 
     @Single

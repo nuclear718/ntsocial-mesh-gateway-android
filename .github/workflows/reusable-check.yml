@@ -23,12 +23,6 @@ on:
         required: false
       CODECOV_TOKEN:
         required: false
-      DATADOG_APPLICATION_ID:
-        required: false
-      DATADOG_CLIENT_TOKEN:
-        required: false
-      GOOGLE_MAPS_API_KEY:
-        required: false
       GRADLE_CACHE_URL:
         required: false
       GRADLE_CACHE_USERNAME:
@@ -37,9 +31,6 @@ on:
         required: false
 
 env:
-  DATADOG_APPLICATION_ID: ${{ secrets.DATADOG_APPLICATION_ID }}
-  DATADOG_CLIENT_TOKEN: ${{ secrets.DATADOG_CLIENT_TOKEN }}
-  MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
   GITHUB_TOKEN: ${{ github.token }}
   GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
   GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
@@ -94,7 +85,7 @@ jobs:
 
       - name: Lint, Analysis & KMP Smoke Compile
         if: inputs.run_lint == true
-        run: ./gradlew spotlessCheck detekt app:lintFdroidDebug app:lintGoogleDebug core:barcode:lintFdroidDebug core:barcode:lintGoogleDebug core:api:lintDebug kmpSmokeCompile -Pci=true --continue --scan
+        run: ./gradlew spotlessCheck detekt app:lintFdroidDebug app:lintGoogleDebug core:barcode:lintFdroidDebug core:barcode:lintGoogleDebug core:api:lintDebug kmpSmokeCompile :app:verifyGoogleReleaseNoCloudRuntimeDependencies -Pci=true --continue --scan
 
       - name: KMP Smoke Compile (lint skipped)
         if: inputs.run_lint == false
@@ -129,8 +120,8 @@ jobs:
           # Based on: https://izzyondroid.org/docs/reproducibleBuilds/DebugFailedRBs/
           # Catches regressions that have historically broken reproducibility:
           #   1. aboutlibraries.json non-determinism (network fetching)
-          #   2. Datadog buildId leaking into fdroid APK
-          #   3. Google/Firebase/GMS/MLKit classes in fdroid APK
+          #   2. A diagnostics build ID leaking into the OSS APK
+          #   3. Google cloud/Maps/Firebase/GMS/ML Kit/Datadog classes in the OSS APK
           #   4. DEPENDENCY_INFO_BLOCK in signing block
           #   5. Native library stripping (NDK version mismatch)
           #   6. aboutlibraries "generated" timestamp in res/M7.json
@@ -174,7 +165,7 @@ jobs:
           TMPDIR=$(mktemp -d)
           unzip -q "$APK" -d "$TMPDIR"
           OFFENDERS=""
-          for pattern in "com/google/firebase" "com/google/android/gms" "com/crashlytics" "com/google/mlkit" "com/google/android/datatransport" "androidx/privacysandbox/ads"; do
+          for pattern in "com/google/firebase" "com/google/android/gms" "com/crashlytics" "com/google/mlkit" "com/google/maps" "com/google/android/datatransport" "com/datadog" "androidx/privacysandbox/ads"; do
             for dex in "$TMPDIR"/classes*.dex; do
               if [ -f "$dex" ] && strings "$dex" | grep -q "L${pattern}/"; then
                 OFFENDERS="${OFFENDERS}\n  - $pattern"
@@ -341,7 +332,6 @@ jobs:
               :feature:connections:allTests
               :feature:firmware:allTests
               :feature:intro:allTests
-              :feature:map:allTests
               :feature:messaging:allTests
               :feature:node:allTests
               :feature:settings:allTests
@@ -350,7 +340,6 @@ jobs:
               :feature:connections:koverXmlReport
               :feature:firmware:koverXmlReport
               :feature:intro:koverXmlReport
-              :feature:map:koverXmlReport
               :feature:messaging:koverXmlReport
               :feature:node:koverXmlReport
               :feature:settings:koverXmlReport

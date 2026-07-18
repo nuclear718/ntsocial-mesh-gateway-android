@@ -5,7 +5,7 @@
 - JDK 21
 - Android SDK (`ANDROID_HOME` set or discoverable)
 - Git submodules initialized
-- `local.properties` present (`cp secrets.defaults.properties local.properties` if needed)
+- `ANDROID_HOME` set, or an untracked `local.properties` containing only `sdk.dir=...`
 - Ruby + Bundler only if you want to preview Jekyll locally
 - No Node.js requirement
 
@@ -13,7 +13,6 @@
 
 ```bash
 git submodule update --init
-[ -f local.properties ] || cp secrets.defaults.properties local.properties
 ```
 
 ## 2. Author or edit docs content

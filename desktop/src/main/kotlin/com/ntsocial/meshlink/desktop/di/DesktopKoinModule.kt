@@ -100,7 +100,6 @@ import com.ntsocial.meshlink.desktop.di.module as desktopDiModule
 import com.ntsocial.meshlink.feature.connections.di.module as featureConnectionsModule
 import com.ntsocial.meshlink.feature.firmware.di.module as featureFirmwareModule
 import com.ntsocial.meshlink.feature.intro.di.module as featureIntroModule
-import com.ntsocial.meshlink.feature.map.di.module as featureMapModule
 import com.ntsocial.meshlink.feature.meshcore.di.module as featureMeshCoreModule
 import com.ntsocial.meshlink.feature.messaging.di.module as featureMessagingModule
 import com.ntsocial.meshlink.feature.node.di.module as featureNodeModule
@@ -138,7 +137,6 @@ fun desktopModule() = module {
         com.ntsocial.meshlink.feature.node.di.FeatureNodeModule().featureNodeModule(),
         com.ntsocial.meshlink.feature.messaging.di.FeatureMessagingModule().featureMessagingModule(),
         com.ntsocial.meshlink.feature.connections.di.FeatureConnectionsModule().featureConnectionsModule(),
-        com.ntsocial.meshlink.feature.map.di.FeatureMapModule().featureMapModule(),
         com.ntsocial.meshlink.feature.meshcore.di.FeatureMeshCoreModule().featureMeshCoreModule(),
         com.ntsocial.meshlink.feature.firmware.di.FeatureFirmwareModule().featureFirmwareModule(),
         com.ntsocial.meshlink.feature.intro.di.FeatureIntroModule().featureIntroModule(),

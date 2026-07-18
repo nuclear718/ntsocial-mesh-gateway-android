@@ -23,13 +23,11 @@ import com.ntsocial.meshlink.core.navigation.ChannelsRoute
 import com.ntsocial.meshlink.core.navigation.ConnectionsRoute
 import com.ntsocial.meshlink.core.navigation.ContactsRoute
 import com.ntsocial.meshlink.core.navigation.FirmwareRoute
-import com.ntsocial.meshlink.core.navigation.MapRoute
 import com.ntsocial.meshlink.core.navigation.MeshCoreRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.feature.connections.navigation.connectionsGraph
 import com.ntsocial.meshlink.feature.firmware.navigation.firmwareGraph
-import com.ntsocial.meshlink.feature.map.navigation.mapGraph
 import com.ntsocial.meshlink.feature.meshcore.navigation.meshCoreGraph
 import com.ntsocial.meshlink.feature.messaging.navigation.contactsGraph
 import com.ntsocial.meshlink.feature.node.navigation.nodesGraph
@@ -48,7 +46,6 @@ class NavigationAssemblyTest {
             entryProvider<NavKey> {
                 contactsGraph(backStack, emptyFlow())
                 nodesGraph(backStack = backStack, scrollToTopEvents = emptyFlow())
-                mapGraph(backStack)
                 meshCoreGraph(backStack)
                 channelsGraph(backStack)
                 connectionsGraph(backStack)
@@ -60,7 +57,6 @@ class NavigationAssemblyTest {
             listOf(
                 ContactsRoute.ContactsGraph,
                 NodesRoute.NodesGraph,
-                MapRoute.Map(),
                 MeshCoreRoute.MeshCoreGraph,
                 ChannelsRoute.ChannelsGraph,
                 ConnectionsRoute.ConnectionsGraph,

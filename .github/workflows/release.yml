@@ -25,19 +25,11 @@ on:
         type: boolean
         default: false
     secrets:
-      GSERVICES:
-        required: true
       KEYSTORE:
         required: true
       KEYSTORE_FILENAME:
         required: true
       KEYSTORE_PROPERTIES:
-        required: true
-      DATADOG_APPLICATION_ID:
-        required: true
-      DATADOG_CLIENT_TOKEN:
-        required: true
-      GOOGLE_MAPS_API_KEY:
         required: true
       GOOGLE_PLAY_JSON_KEY:
         required: true
@@ -134,24 +126,15 @@ jobs:
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           cache_read_only: 'false'
 
-      - name: Load secrets
+      - name: Load release credentials
         env:
-          GSERVICES: ${{ secrets.GSERVICES }}
           KEYSTORE: ${{ secrets.KEYSTORE }}
           KEYSTORE_FILENAME: ${{ secrets.KEYSTORE_FILENAME }}
           KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
-          DATADOG_APPLICATION_ID: ${{ secrets.DATADOG_APPLICATION_ID }}
-          DATADOG_CLIENT_TOKEN: ${{ secrets.DATADOG_CLIENT_TOKEN }}
-          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
         run: |
-          rm -f ./app/google-services.json
-          echo $GSERVICES > ./app/google-services.json
           echo $KEYSTORE | base64 -di > ./app/$KEYSTORE_FILENAME
           echo "$KEYSTORE_PROPERTIES" > ./keystore.properties
-          echo "datadogApplicationId=$DATADOG_APPLICATION_ID" >> ./secrets.properties
-          echo "datadogClientToken=$DATADOG_CLIENT_TOKEN" >> ./secrets.properties
-          echo "MAPS_API_KEY=$GOOGLE_MAPS_API_KEY" >> ./secrets.properties
           echo "$GOOGLE_PLAY_JSON_KEY" > ./fastlane/play-store-credentials.json
 
       - name: Setup Fastlane

@@ -31,7 +31,6 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
             apply(plugin = "com.ntsocial.meshlink.android.lint")
             apply(plugin = "com.ntsocial.meshlink.detekt")
             apply(plugin = "com.ntsocial.meshlink.spotless")
-            apply(plugin = "com.ntsocial.meshlink.analytics")
             apply(plugin = "com.ntsocial.meshlink.kover")
             apply(plugin = "com.ntsocial.meshlink.dokka")
 

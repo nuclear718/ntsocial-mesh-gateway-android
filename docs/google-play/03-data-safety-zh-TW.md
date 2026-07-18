@@ -1,128 +1,89 @@
-# 03｜Data safety 資料安全表單
+# Data safety 填寫稿
 
-## 填寫前提
+最後更新：2026 年 7 月 18 日
 
-以下是對目前 Google flavor 的保守申報。正式提交前必須以「實際上傳的 AAB」重做
-SDK／Manifest 稽核，並確認 Firebase Crashlytics、Datadog 與地圖服務的正式設定。
+## 先分清楚兩件事
 
-目前程式事實：
+產品事實是：本版本沒有發布者分析／當機後端，也不內嵌 Firebase、Crashlytics、Datadog、
+Maps、Play Services runtime 或 ML Kit；QR frame、偏好與本機資料庫也不會為了分析離開
+裝置。
 
-- Firebase Crashlytics 與 Datadog 會在分析偏好允許時傳送資料；新安裝的
-  分析偏好目前預設為開啟，使用者可在設定中退出。
-- 使用者可選擇把名稱、節點 ID、訊息與位置送到 radio／mesh／MQTT／TAK。
-- Google Play 正式版不啟用 Datadog Session Replay；只有 Debug 建置啟用且遮罩輸入。
-- App 不顯示廣告、不使用付款，也不收集 Advertising ID；Firebase Analytics、Play
-  Services Measurement、Ads Identifier 與 Privacy Sandbox Ads 依賴均已移除。
+但是 Google Play 對 `collection` 的定義比「發布者有沒有伺服器」更廣：使用者資料只要
+由 App 傳出 Android 裝置，可能就要申報。現有功能會把訊息、節點名稱／ID、選用位置或
+其他資料送到 radio、mesh、受信任 NTsocial App 或使用者自行設定的端點，因此不能只因
+移除雲端 SDK 就回答「不收集任何資料」。
 
-## Overview
+官方定義與例外以
+[Data safety 說明](https://support.google.com/googleplay/android-developer/answer/10787469)
+為準：純本機處理不算 collection；符合嚴格條件的端對端加密資料可排除；特定的使用者
+主動傳輸或符合顯著揭露與同意的傳輸可能不算 sharing。公開頻道、共享 PSK、未加密 MQTT
+或可由中介者讀取的資料，不可直接套用端對端加密例外。
 
-| 問題 | 建議答案 |
-|---|---|
-| App 是否收集或分享必要的使用者資料類型 | 是 |
-| 所有收集資料是否在傳輸時加密 | 否 |
-| 使用者是否可要求刪除資料 | 目前否 |
-| 是否通過獨立安全審查 | 否，除非日後取得 Play 認可的有效審查 |
-| 是否允許建立帳號 | 否 |
+## 現有首發功能的保守答案
 
-「傳輸時加密」必須答否，因為即使 Firebase Crashlytics／Datadog 使用 TLS，公開
-Meshtastic 頻道、
-Ham mode 或使用者同意的未加密 MQTT 位置回報不保證所有離開裝置的資料都加密。
+在沒有關閉 mesh 訊息、手機位置與自選網路端點的前提下，建議 Overview 如下：
 
-## 是否分享給第三方
+| 問題 | 建議答案 | 原因 |
+|---|---|---|
+| App 是否 collect 或 share 任何必要資料類型 | **Yes** | 核心通訊會把部分資料傳出 Android 裝置 |
+| 所有 collected data 是否都在傳輸時加密 | **No** | 公開 mesh／Ham mode／未加密 MQTT 等情境不能保證 |
+| 是否提供刪除 collected data 的方式 | **No** | 可刪本機資料，但發布者無法刪除其他 radio／mesh／端點副本 |
+| 是否建立帳號 | **No** | 沒有發布者帳號 |
+| 是否有獨立安全審查 | **No** | 除非日後取得 Play 認可且仍有效的審查 |
 
-**建議總體選擇：不分享（No data shared with third parties）**，但只在下列條件均成立時
-使用：
+這個答案不表示發布者建立使用者追蹤資料庫；它反映 Google 對 off-device transport 的
+表單定義。若要改填「No」，必須先逐條證明所有傳輸都是純本機或完全符合官方排除，並
+保存 AAB、程式與網路測試證據。
 
-1. Firebase Crashlytics、Datadog、地圖及託管服務在合約與實務上是代表發布者處理資料
-   的 service providers；
-2. Mesh 訊息、名稱與位置是使用者主動要求傳送，符合 user-initiated transfer 例外；
-3. NTsocial App 與 MeshLink 由同一發布者／第一方負責，且受保護 IPC 的揭露與使用者
-   預期一致；
-4. 沒有把資料出售、用於跨客戶廣告画像或提供給其他未披露的公司。
+## 建議資料類型
 
-任何一項不成立，就要把對應資料類型改成「有分享」。即使 Data safety 使用例外而選
-「不分享」，隱私權政策仍須完整說明實際接收者。
+以下是目前功能的最低保守集合；送出時仍以正式 AAB 的實際流量為準。
 
-## 應勾選的資料類型
+| Play 類別 | 資料類型 | Collected | Shared | Required／Optional | Purpose |
+|---|---|---:|---:|---|---|
+| Location | Approximate location | Yes | Yes（驗證例外後可改 No） | Optional | App functionality |
+| Location | Precise location | Yes | Yes（驗證例外後可改 No） | Optional | App functionality |
+| Personal info | Name | Yes | Yes（驗證例外後可改 No） | Optional | App functionality |
+| Personal info | User IDs | Yes | Yes（驗證例外後可改 No） | Optional | App functionality |
+| Messages | Other in-app messages | Yes | Yes（驗證例外後可改 No） | Optional | App functionality |
+| Device or other IDs | Device or other IDs | Yes | Yes（驗證例外後可改 No） | Optional | App functionality |
 
-每一列均選「Collected：Yes」、「Shared：No」、「Processed ephemerally：No」。
+`Name` 包含使用者設定的節點暱稱；`User IDs`／`Device or other IDs` 應依 Console 定義判斷
+node ID、packet identity 與其他可連結識別碼。若正式測試發現 profile、自由文字欄位或
+其他未列資料，加入相應的 `Other user-generated content`，不要為了縮短表單而省略。
 
-| Play 類別 | 資料類型 | Required/Optional | 使用目的 |
-|---|---|---|---|
-| Location | Approximate location | Optional | App functionality、Analytics |
-| Location | Precise location | Optional | App functionality |
-| Personal info | Name | Optional | App functionality |
-| Personal info | User IDs | Optional | App functionality |
-| Messages | Other in-app messages | Optional | App functionality |
-| App activity | App interactions | Optional | Analytics |
-| App info and performance | Crash logs | Optional | Analytics |
-| App info and performance | Diagnostics | Optional | Analytics |
-| App info and performance | Other app performance data | Optional | Analytics |
-| Device or other IDs | Device or other IDs | Optional | Analytics、App functionality |
+### Shared 要選 Yes 還是 No
 
-### 逐項理由
+若每一次第三方傳輸都符合下列其中一項，可依官方 sharing exception 評估選 **No**：
 
-- Approximate location：Datadog 可能由 IP 推導國家／地區；位置功能也可能
-  提供概略位置。
-- Precise location：使用者授權並開啟「提供手機位置」後，可送往 mesh、MQTT 或 TAK。
-- Name：Meshtastic long name／short name 可由使用者設定並傳送。
-- User IDs：Meshtastic node ID／user ID 會在 mesh 與本機節點資料庫中處理。
-- Other in-app messages：頻道及直接文字訊息由使用者主動收發，並可保存在本機。
-- App interactions：Datadog RUM／自訂使用事件與 connect action。
-- Crash logs：Firebase Crashlytics 與 Datadog crash reports。
-- Diagnostics：ANR、long tasks、trace、錯誤、網路與連線診斷日誌。
-- Other app performance data：RUM 畫面時間、背景事件、資源與效能資料。
-- Device or other IDs：Firebase Crashlytics installation UUID、Datadog session ID，以及
-  診斷日誌中的 radio／BLE／TCP 識別資訊。
+- 使用者執行一個明確動作，且合理預期資料會送給指定 mesh／端點；或
+- App 先提供符合 User Data 政策的顯著揭露，再取得肯定同意。
 
-「Optional」是因為使用者可不設定名稱、不傳送訊息／位置，並可在設定關閉分析；但
-分析目前是 opt-out 而非事前 opt-in。不要在商店文案或政策中宣稱「預設不收集」。若
-Play Console 對「使用者在第一次傳送前無法退出」採更嚴格判定，分析相關列應改選
-Required。最穩健的產品修正是上架前把分析預設改為 false 並提供明確 opt-in。
+背景手機位置、Gateway 自動交換或任何未清楚揭露的路徑若不符合例外，就選 **Yes**。
+目前 location FGS 與顯著揭露尚有送審阻擋，因此在修正並實測前不要先填 No。
 
-## 不應勾選的資料類型
+## 不應申報為本 App 收集
 
-除非正式 AAB 或產品設定另有新增，以下選「否」：
+在程式未再改動的前提下，不勾選：
 
-- Email address、Phone number、Address、Race／ethnicity、Political／religious beliefs、
-  Sexual orientation、Other personal info；
-- Credit card、Purchase history、Credit score、Other financial info；
-- Health info、Fitness info；
-- Emails、SMS／MMS；
-- Photos、Videos、Audio files、Music files；
-- Files and docs；
-- Calendar、Android 系統 Contacts；
-- In-app search history、Installed apps、Web browsing history；
-- Advertising or marketing purpose、Account management purpose。
+- App interactions、Crash logs、Diagnostics、Other app performance data；
+- Advertising or marketing、Personalization、Account management；
+- Email、電話、地址、聯絡人、相片、影片、音訊、檔案、行事曆、健康、財務、購買紀錄、
+  瀏覽紀錄或已安裝 App。
 
-相機只掃描 QR code，NFC 只處理相容分享資料；目前沒有相片／影片讀取、麥克風、系統
-聯絡人、SMS、通話紀錄、行事曆、付款或 Billing 權限。
+Android Vitals 是 Google Play／Android 平台的品質處理，不是 App 內嵌 Crashlytics；App
+不應把它宣稱成發布者 Firebase 收集。但選擇 Play 發布仍會受 Google 平台條款約束。
 
-## Security practices
+## 送出表單前的最小稽核
 
-建議依序回答：
+1. 對最終已簽署 AAB 跑 cloud-runtime dependency 與 merged Manifest guards；
+2. 在 App Bundle Explorer 核對 SDK、權限、provider 與 metadata，確認沒有 Advertising ID、
+   Firebase、Maps、AppMeasurement、Install Referrer 或 Datadog；
+3. 用乾淨安裝與受控網路側錄測試：首次啟動、離線 QR、無 radio 待機、radio 連線、發收
+   訊息、NTsocial Gateway、位置開／關、MQTT／TAK／TCP 開／關；
+4. 建立「資料類型 → 接收者 → 是否保存 → 是否加密 → 使用者動作／同意」證據表；
+5. 讓本表、隱私政策、App 內揭露與實際 runtime 完全一致；
+6. 若任何舊 artifact 含診斷 SDK 且仍在其他 Play track 散布，將其納入 package 層級申報或
+   先停止散布。
 
-```text
-Data encrypted in transit: No
-Users can request data deletion: No（目前營運流程）
-Independent security review: No
-Committed to Google Play Families Policy: No／Not applicable
-```
-
-本機 Room、DataStore 與訊息資料位於 App sandbox，Android backup 與裝置轉移均停用。
-本機資料可由 App 刪除、Android 清除儲存空間或解除安裝移除。遠端分析目前沒有可驗證
-的逐一刪除工作流程；若日後建立並實際執行刪除申請機制，再把答案改成 Yes，並填入
-直接到達刪除說明的公開 URL。
-
-## 第三方服務核對清單
-
-提交前由有權限的人確認：
-
-- Firebase Crashlytics 收集狀態與未送出報告行為；
-- Datadog RUM／Logs／Trace 的正式 retention、IP／GeoIP 設定與刪除流程；
-- Google Maps API key 的限制與資料處理條款；
-- 最終正式 AAB 是否仍未含 measurement、install referrer、Advertising ID 或 AdServices SDK；
-- 發布者與 NTsocial App 是否確實屬同一第一方資料控制者。
-
-官方定義與例外：
-[Google Play Data safety](https://support.google.com/googleplay/android-developer/answer/10787469)
+本文件是依目前程式做的保守預填稿，不是法律意見。發布者對 Play 表單的完整性負責。

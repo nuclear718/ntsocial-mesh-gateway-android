@@ -17,7 +17,6 @@
 package com.ntsocial.meshlink.core.ui.util
 
 import com.ntsocial.meshlink.core.model.ChannelOption
-import com.ntsocial.meshlink.core.model.TracerouteMapAvailability
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.label_lite_fast
 import com.ntsocial.meshlink.core.resources.label_lite_slow
@@ -33,8 +32,6 @@ import com.ntsocial.meshlink.core.resources.label_short_fast
 import com.ntsocial.meshlink.core.resources.label_short_slow
 import com.ntsocial.meshlink.core.resources.label_short_turbo
 import com.ntsocial.meshlink.core.resources.label_very_long_slow
-import com.ntsocial.meshlink.core.resources.traceroute_endpoint_missing
-import com.ntsocial.meshlink.core.resources.traceroute_map_no_data
 import org.jetbrains.compose.resources.StringResource
 
 val ChannelOption.labelRes: StringResource
@@ -55,9 +52,3 @@ val ChannelOption.labelRes: StringResource
             ChannelOption.NARROW_FAST -> Res.string.label_narrow_fast
             ChannelOption.NARROW_SLOW -> Res.string.label_narrow_slow
         }
-
-fun TracerouteMapAvailability.toMessageRes(): StringResource? = when (this) {
-    TracerouteMapAvailability.Ok -> null
-    TracerouteMapAvailability.MissingEndpoints -> Res.string.traceroute_endpoint_missing
-    TracerouteMapAvailability.NoMappableNodes -> Res.string.traceroute_map_no_data
-}

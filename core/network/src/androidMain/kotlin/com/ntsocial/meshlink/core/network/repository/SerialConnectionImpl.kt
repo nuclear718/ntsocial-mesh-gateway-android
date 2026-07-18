@@ -49,7 +49,7 @@ internal class SerialConnectionImpl(
             } catch (e: BufferOverflowException) {
                 Logger.w(e) { "Buffer overflow while writing to serial port" }
             } catch (e: Exception) {
-                // USB disconnections often cause IOExceptions here; log as warning to avoid Crashlytics noise
+                // USB disconnections often cause IOExceptions here, so keep this at warning level.
                 Logger.w(e) { "Failed to write to serial port (likely disconnected)" }
             }
         }

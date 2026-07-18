@@ -41,12 +41,6 @@ actual fun rememberOpenNfcSettings(): () -> Unit = { Logger.w { "NFC settings no
 @Composable
 actual fun rememberShowToastResource(): suspend (StringResource) -> Unit = { _ -> Logger.i { "Toast (resource)" } }
 
-/** JVM stub — map opening is not available on Desktop. */
-@Composable
-actual fun rememberOpenMap(): (latitude: Double, longitude: Double, label: String) -> Unit = { lat, lon, label ->
-    Logger.i { "Open map: $lat, $lon ($label)" }
-}
-
 /** JVM stub — URL opening via Desktop browse API. */
 @Composable
 actual fun rememberOpenUrl(): (url: String) -> Unit = { url ->

@@ -138,21 +138,7 @@ fun EntryProviderScope<NavKey>.nodeDetailGraph(
         TracerouteLogScreen(
             viewModel = metricsViewModel,
             onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
-            onViewOnMap = { requestId, responseLogUuid ->
-                backStack.add(
-                    NodeDetailRoute.TracerouteMap(
-                        destNum = args.destNum,
-                        requestId = requestId,
-                        logUuid = responseLogUuid,
-                    ),
-                )
-            },
         )
-    }
-
-    entry<NodeDetailRoute.TracerouteMap>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
-        val tracerouteMapScreen = com.ntsocial.meshlink.core.ui.util.LocalTracerouteMapScreenProvider.current
-        tracerouteMapScreen(args.destNum, args.requestId, args.logUuid) { backStack.removeLastOrNull() }
     }
 
     NodeDetailScreen.entries.forEach { routeInfo ->

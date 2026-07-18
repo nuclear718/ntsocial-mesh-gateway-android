@@ -179,13 +179,26 @@ After modifying a convention plugin, verify:
 ./gradlew spotlessCheck detekt
 
 # 2. Compilation
-./gradlew assembleDebug assembleRelease
+./gradlew assembleDebug :app:bundleGoogleRelease
 
-# 3. Tests
+# 3. Cloud-free Android release boundary
+./gradlew :app:verifyGoogleReleaseNoCloudRuntimeDependencies \
+  :app:verifyGoogleReleaseNoCloudRuntimeComponents
+
+# 4. Tests
 ./gradlew test                          # All unit tests
 ./gradlew :feature:messaging:jvmTest    # Feature module tests
 ./gradlew :feature:node:testAndroidHostTest # Android host tests
 ```
+
+`googleRelease` is the Play publishing flavor name; it does not opt the app into Google Cloud or Google Play
+services. Its release tasks reject dependencies or merged-manifest entries from Google Cloud, Maps, Firebase,
+Crashlytics, Datadog, and ML Kit. Local ZXing QR/barcode decoding is allowed because it is an offline open-source
+library and not a Google service runtime.
+
+Building an AAB proves compilation and packaging only. Without a configured upload keystore, the resulting AAB is
+unsigned and must not be described as Play-ready. Signing, Play App Signing certificate pairing, Console declarations,
+and track testing are separate release gates.
 
 ## Documentation Requirements
 

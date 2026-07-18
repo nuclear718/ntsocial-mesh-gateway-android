@@ -30,7 +30,6 @@ import com.ntsocial.meshlink.core.resources.position_log
 import com.ntsocial.meshlink.core.ui.icon.Delete
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.Refresh
-import com.ntsocial.meshlink.core.ui.util.LocalNodeTrackMapProvider
 import com.ntsocial.meshlink.core.ui.util.rememberSaveFileLauncher
 import org.jetbrains.compose.resources.stringResource
 
@@ -40,9 +39,6 @@ fun PositionLogScreen(viewModel: MetricsViewModel, onNavigateUp: () -> Unit) {
     val positions = state.positionLogs
 
     val exportPositionLauncher = rememberSaveFileLauncher { uri -> viewModel.savePositionCSV(uri, positions) }
-
-    val trackMap = LocalNodeTrackMapProvider.current
-    val destNum = state.node?.num ?: 0
 
     BaseMetricScreen(
         onNavigateUp = onNavigateUp,
@@ -63,10 +59,6 @@ fun PositionLogScreen(viewModel: MetricsViewModel, onNavigateUp: () -> Unit) {
                     Icon(imageVector = MeshtasticIcons.Refresh, contentDescription = null)
                 }
             }
-        },
-        chartPart = { modifier, selectedX, _, onPointSelected ->
-            val selectedTime = selectedX?.toInt()
-            trackMap(destNum, positions, modifier, selectedTime) { time -> onPointSelected(time.toDouble()) }
         },
         listPart = { modifier, selectedX, lazyListState, onCardClick ->
             LazyColumn(modifier = modifier.fillMaxSize(), state = lazyListState) {

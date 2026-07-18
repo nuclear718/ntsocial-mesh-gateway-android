@@ -8,7 +8,7 @@ Guidelines for building shared UI, adaptive layouts, and handling strings/resour
 - **Dialogs & Alerts:** Use centralized components like `AlertHost(alertManager)` from `core:ui/commonMain`. Do NOT trigger alerts inline or duplicate alert logic. Use `SharedDialogs(uiViewModel)` for general popups.
 - **Placeholders:** Use `PlaceholderScreen(name)` from `core:ui/commonMain` for unimplemented desktop/JVM features.
 - **Theme Picker:** Use `ThemePickerDialog` from `feature:settings/commonMain`.
-- **Platform Implementations:** Inject platform-specific behavior (e.g., Map providers) via `CompositionLocal` from the `app` or `desktop` shells. Do not tightly couple Google Maps/osmdroid dependencies to `commonMain`.
+- **Platform Implementations:** Inject platform-specific behavior via `CompositionLocal` from the `app` or `desktop` shells. Keep platform SDKs out of `commonMain`; rendered map providers are intentionally absent from this fork.
 
 ## 2. Strings & Resources
 - **Multiplatform Resources:** MUST use `core:resources` (e.g., `stringResource(Res.string.your_key)`). Never use hardcoded strings.

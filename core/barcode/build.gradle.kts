@@ -39,9 +39,8 @@ dependencies {
     implementation(libs.accompanist.permissions)
     implementation(libs.kermit)
 
-    // ML Kit is used for the Google flavor, while ZXing is used for F-Droid to avoid GMS dependencies.
-    googleImplementation(libs.mlkit.barcode.scanning)
-    fdroidImplementation(libs.zxing.core)
+    // Decode locally in both flavors. ZXing does not require Google Play services or a network connection.
+    implementation(libs.zxing.core)
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)

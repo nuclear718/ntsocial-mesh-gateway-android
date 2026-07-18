@@ -34,7 +34,6 @@ val MeshtasticNavSavedStateConfig = SavedStateConfiguration {
             subclassesOfSealed<ChannelsRoute>()
             subclassesOfSealed<ConnectionsRoute>()
             subclassesOfSealed<ContactsRoute>()
-            subclassesOfSealed<MapRoute>()
             subclassesOfSealed<MeshCoreRoute>()
             subclassesOfSealed<NodesRoute>()
             subclassesOfSealed<NodeDetailRoute>()

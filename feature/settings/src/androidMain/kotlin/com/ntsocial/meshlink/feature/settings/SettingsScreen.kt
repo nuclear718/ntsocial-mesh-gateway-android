@@ -224,9 +224,6 @@ fun SettingsScreen(
             // App-local settings are only relevant when configuring the local node
             if (state.isLocal) {
                 PrivacySection(
-                    analyticsAvailable = state.analyticsAvailable,
-                    analyticsEnabled = viewModel.analyticsAllowedFlow.collectAsStateWithLifecycle(true).value,
-                    onToggleAnalytics = { viewModel.toggleAnalyticsAllowed() },
                     provideLocation = settingsViewModel.provideLocation.collectAsStateWithLifecycle().value,
                     onToggleLocation = { settingsViewModel.setProvideLocation(it) },
                     homoglyphEnabled = viewModel.homoglyphEncodingEnabledFlow.collectAsStateWithLifecycle(false).value,

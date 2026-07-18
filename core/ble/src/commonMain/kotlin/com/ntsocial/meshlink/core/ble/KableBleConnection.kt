@@ -262,7 +262,7 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
             peripheral?.disconnect()
         } catch (_: NotConnectedException) {
             // Silence "Disconnect requested" which Kable throws if already disconnected.
-            // This is a common non-fatal reported in Crashlytics that is safe to ignore here.
+            // This expected non-fatal state is safe to ignore.
         } catch (e: Exception) {
             Logger.w(e) { "[$tag] Failed to disconnect peripheral" }
         }

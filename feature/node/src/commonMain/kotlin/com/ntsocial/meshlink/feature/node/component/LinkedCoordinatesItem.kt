@@ -37,12 +37,11 @@ import com.ntsocial.meshlink.core.resources.elevation_suffix
 import com.ntsocial.meshlink.core.resources.last_position_update
 import com.ntsocial.meshlink.core.ui.component.BasicListItem
 import com.ntsocial.meshlink.core.ui.component.icon
-import com.ntsocial.meshlink.core.ui.icon.ChevronRight
+import com.ntsocial.meshlink.core.ui.icon.Copy
 import com.ntsocial.meshlink.core.ui.icon.LocationOn
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.util.createClipEntry
 import com.ntsocial.meshlink.core.ui.util.formatAgo
-import com.ntsocial.meshlink.core.ui.util.rememberOpenMap
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.meshtastic.proto.Config
@@ -55,7 +54,6 @@ fun LinkedCoordinatesItem(
 ) {
     val clipboard: Clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
-    val openMap = rememberOpenMap()
 
     val ago = formatAgo(node.position.time)
     val coordinates = GPSFormat.toDec(node.latitude, node.longitude)
@@ -82,8 +80,8 @@ fun LinkedCoordinatesItem(
         text = stringResource(Res.string.last_position_update),
         leadingIcon = MeshtasticIcons.LocationOn,
         supportingText = "$ago • $coordinates$elevationText",
-        trailingContent = MeshtasticIcons.ChevronRight.icon(),
-        onClick = { openMap(node.latitude, node.longitude, node.user.long_name) },
+        trailingContent = MeshtasticIcons.Copy.icon(),
+        onClick = { coroutineScope.launch { clipboard.setClipEntry(createClipEntry(coordinates, copyLabel)) } },
         onLongClick = { coroutineScope.launch { clipboard.setClipEntry(createClipEntry(coordinates, copyLabel)) } },
     )
 }

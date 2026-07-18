@@ -5,7 +5,7 @@
 > [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android).
 > Gateway v1 is implemented, but this fork is not an official Meshtastic release. A
 > locally tested Debug APK is not a Play-ready release: Google Play publication still
-> requires a production upload key, authorized service configuration, a validated AAB,
+> requires a production upload key, Play Console credentials, a validated AAB,
 > Play-signing interoperability checks, and completed Play policy declarations.
 
 ## 專案使命
@@ -43,8 +43,10 @@ MeshCore transport，以及第二台 radio 的遠端 RF 接收驗證。「comman
 本機 radio queue 接受，不代表遠端節點已收到。
 
 Google Play 文件準備稿位於 [`docs/google-play/`](docs/google-play/)。目前沒有已驗證的
-Play AAB；正式發布仍需 production upload key、Google/Firebase/Datadog 設定與 Play
-App Signing 下的跨 App 簽章配對驗證。
+Play AAB；正式發布仍需 production upload key、Play Console 發布權限與 Play App Signing
+下的跨 App 簽章配對驗證。Android 的 `google` flavor 名稱只保留既有 Play 發布流程相容性；
+`google` 與 `fdroid` flavor 都不應包含 Google Cloud、Maps、Firebase、Crashlytics 或
+Datadog runtime。QR／條碼則在裝置上以 ZXing 解碼，不需 Google ML Kit 或雲端服務。
 
 如果你只是要安裝官方 Meshtastic Android，請使用 upstream 專案：
 [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android)。
@@ -163,15 +165,12 @@ Requirements:
 - JDK 21
 - Android SDK, with `ANDROID_HOME` pointing to the SDK directory
 - Git submodules initialized, especially `core/proto/src/main/proto`
-- `local.properties` initialized from `secrets.defaults.properties` for local builds
+- Optional `local.properties` with `sdk.dir=...` when `ANDROID_HOME` is not used
 
 Bootstrap:
 
 ```powershell
 git submodule update --init
-if (-not (Test-Path local.properties)) {
-    Copy-Item secrets.defaults.properties local.properties
-}
 ```
 
 Baseline verification before pushing implementation changes:

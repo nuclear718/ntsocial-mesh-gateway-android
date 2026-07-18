@@ -33,8 +33,8 @@ interface PlatformAnalytics {
     fun setDeviceAttributes(firmwareVersion: String, model: String)
 
     /**
-     * Tracks a successful device connection as a custom RUM action, aligned with the Meshtastic-Apple DataDog
-     * integration for cross-platform analytics comparison.
+     * Compatibility hook invoked after a successful device connection. The NTsocial implementation is intentionally
+     * local and no-op.
      *
      * @param firmwareVersion The firmware version of the connected device (major.minor).
      * @param transportType The transport used for the connection (e.g., "BLE", "TCP", "USB").
@@ -52,9 +52,6 @@ interface PlatformAnalytics {
         // Default no-op for platforms that don't support RUM (fdroid, desktop)
     }
 
-    /**
-     * Indicates whether platform-specific services (like Google Play Services or Datadog) are available and
-     * initialized.
-     */
+    /** Indicates whether an external event sink is available. NTsocial MeshLink always returns `false`. */
     val isPlatformServicesAvailable: Boolean
 }

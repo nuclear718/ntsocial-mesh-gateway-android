@@ -32,12 +32,10 @@ import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
  * Platform hosts should invoke this near the root before rendering `MeshtasticNavDisplay`.
  */
 @Composable
-fun MeshtasticCommonAppSetup(
-    uiViewModel: UIViewModel,
-    onNavigateToTracerouteMap: (destinationNodeNum: Int, requestId: Int, logUuid: String?) -> Unit,
-) {
+@Suppress("ViewModelForwarding")
+fun MeshtasticCommonAppSetup(uiViewModel: UIViewModel) {
     SharedDialogs(uiViewModel = uiViewModel)
     FirmwareVersionCheck(viewModel = uiViewModel)
     AlertHost(alertManager = uiViewModel.alertManager)
-    TracerouteAlertHandler(uiViewModel = uiViewModel, onNavigateToMap = onNavigateToTracerouteMap)
+    TracerouteAlertHandler(uiViewModel = uiViewModel)
 }

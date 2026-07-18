@@ -18,15 +18,6 @@ package com.ntsocial.meshlink.core.repository
 
 import kotlinx.coroutines.flow.StateFlow
 
-/** Reactive interface for analytics-related preferences. */
-interface AnalyticsPrefs {
-    val analyticsAllowed: StateFlow<Boolean>
-
-    fun setAnalyticsAllowed(allowed: Boolean)
-
-    val installId: StateFlow<String>
-}
-
 /** Reactive interface for homoglyph encoding preferences. */
 interface HomoglyphPrefs {
     val homoglyphEncodingEnabled: StateFlow<Boolean>
@@ -169,45 +160,11 @@ interface NotificationPrefs {
     fun setLowBatteryEnabled(enabled: Boolean)
 }
 
-/** Reactive interface for general map preferences. */
-interface MapPrefs {
-    val mapStyle: StateFlow<Int>
-
-    fun setMapStyle(style: Int)
-
-    val showOnlyFavorites: StateFlow<Boolean>
-
-    fun setShowOnlyFavorites(show: Boolean)
-
-    val showWaypointsOnMap: StateFlow<Boolean>
-
-    fun setShowWaypointsOnMap(show: Boolean)
-
-    val showPrecisionCircleOnMap: StateFlow<Boolean>
-
-    fun setShowPrecisionCircleOnMap(show: Boolean)
-
-    val lastHeardFilter: StateFlow<Long>
-
-    fun setLastHeardFilter(seconds: Long)
-
-    val lastHeardTrackFilter: StateFlow<Long>
-
-    fun setLastHeardTrackFilter(seconds: Long)
-}
-
 /** Reactive interface for map consent. */
 interface MapConsentPrefs {
     fun shouldReportLocation(nodeNum: Int?): StateFlow<Boolean>
 
     fun setShouldReportLocation(nodeNum: Int?, report: Boolean)
-}
-
-/** Reactive interface for map tile provider settings. */
-interface MapTileProviderPrefs {
-    val customTileProviders: StateFlow<String?>
-
-    fun setCustomTileProviders(providers: String?)
 }
 
 /** Reactive interface for radio settings. */
@@ -252,15 +209,12 @@ interface TakPrefs {
 
 /** Consolidated interface for all application preferences. */
 interface AppPreferences {
-    val analytics: AnalyticsPrefs
     val homoglyph: HomoglyphPrefs
     val filter: FilterPrefs
     val meshLog: MeshLogPrefs
     val emoji: CustomEmojiPrefs
     val ui: UiPrefs
-    val map: MapPrefs
     val mapConsent: MapConsentPrefs
-    val mapTileProvider: MapTileProviderPrefs
     val radio: RadioPrefs
     val mesh: MeshPrefs
     val tak: TakPrefs

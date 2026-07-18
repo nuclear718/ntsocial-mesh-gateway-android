@@ -20,8 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import com.ntsocial.meshlink.core.navigation.MultiBackstack
-import com.ntsocial.meshlink.core.navigation.NodeDetailRoute
-import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
 
 /**
@@ -31,6 +29,7 @@ import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
  * [MeshtasticSnackbarProvider]. Platform entry points should wrap their navigation layout inside this shell.
  */
 @Composable
+@Suppress("ViewModelForwarding")
 fun MeshtasticAppShell(
     multiBackstack: MultiBackstack,
     uiViewModel: UIViewModel,
@@ -41,17 +40,7 @@ fun MeshtasticAppShell(
         uiViewModel.navigationDeepLink.collect { navKeys -> multiBackstack.handleDeepLink(navKeys) }
     }
 
-    MeshtasticCommonAppSetup(
-        uiViewModel = uiViewModel,
-        onNavigateToTracerouteMap = { destNum, requestId, logUuid ->
-            multiBackstack.handleDeepLink(
-                listOf(
-                    NodesRoute.NodesGraph,
-                    NodeDetailRoute.TracerouteMap(destNum = destNum, requestId = requestId, logUuid = logUuid),
-                ),
-            )
-        },
-    )
+    MeshtasticCommonAppSetup(uiViewModel = uiViewModel)
 
     MeshtasticSnackbarProvider(snackbarManager = uiViewModel.snackbarManager, hostModifier = hostModifier) { content() }
 }

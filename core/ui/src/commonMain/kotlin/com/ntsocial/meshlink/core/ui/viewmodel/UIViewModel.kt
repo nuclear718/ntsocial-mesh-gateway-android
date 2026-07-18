@@ -27,8 +27,6 @@ import com.ntsocial.meshlink.core.model.EventEdition
 import com.ntsocial.meshlink.core.model.MeshActivity
 import com.ntsocial.meshlink.core.model.MyNodeInfo
 import com.ntsocial.meshlink.core.model.RadioController
-import com.ntsocial.meshlink.core.model.TracerouteMapAvailability
-import com.ntsocial.meshlink.core.model.evaluateTracerouteMapAvailability
 import com.ntsocial.meshlink.core.model.service.TracerouteResponse
 import com.ntsocial.meshlink.core.model.toEventEdition
 import com.ntsocial.meshlink.core.model.util.dispatchMeshtasticUri
@@ -148,14 +146,6 @@ class UIViewModel(
     fun emitScrollToTopEvent(event: ScrollToTopEvent) {
         _scrollToTopEventFlow.tryEmit(event)
     }
-
-    fun tracerouteMapAvailability(forwardRoute: List<Int>, returnRoute: List<Int>): TracerouteMapAvailability =
-        evaluateTracerouteMapAvailability(
-            forwardRoute = forwardRoute,
-            returnRoute = returnRoute,
-            positionedNodeNums =
-            nodeDB.nodeDBbyNum.value.values.filter { it.validPosition != null }.map { it.num }.toSet(),
-        )
 
     fun showAlert(
         title: String? = null,

@@ -14,18 +14,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ui.util
+package com.ntsocial.meshlink.app.di
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
-import com.ntsocial.meshlink.core.ui.component.PlaceholderScreen
+import com.ntsocial.meshlink.core.network.service.ApiService
+import com.ntsocial.meshlink.core.network.service.ApiServiceImpl
+import org.koin.core.annotation.Module
+import org.koin.core.annotation.Single
 
-/**
- * Provides the platform-specific Traceroute Map Screen. On Desktop or JVM targets where native maps aren't available
- * yet, it falls back to a [PlaceholderScreen].
- */
-@Suppress("Wrapping")
-val LocalTracerouteMapScreenProvider =
-    compositionLocalOf<@Composable (destNum: Int, requestId: Int, logUuid: String?, onNavigateUp: () -> Unit) -> Unit> {
-        { _, _, _, _ -> PlaceholderScreen("Traceroute Map") }
-    }
+/** Meshtastic project API binding for the Play publication flavor; this is not a Google service. */
+@Module
+class OnlineNetworkModule {
+
+    @Single fun bindApiService(apiServiceImpl: ApiServiceImpl): ApiService = apiServiceImpl
+}

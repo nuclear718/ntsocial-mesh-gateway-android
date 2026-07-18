@@ -42,7 +42,6 @@ import com.ntsocial.meshlink.core.common.util.ioDispatcher
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
-import java.net.URLEncoder
 
 @Composable
 actual fun rememberOpenNfcSettings(): () -> Unit {
@@ -66,26 +65,6 @@ actual fun rememberShowToast(): suspend (String) -> Unit {
 actual fun rememberShowToastResource(): suspend (StringResource) -> Unit {
     val context = LocalContext.current
     return remember(context) { { stringResource -> context.showToast(getString(stringResource)) } }
-}
-
-@Composable
-actual fun rememberOpenMap(): (latitude: Double, longitude: Double, label: String) -> Unit {
-    val context = LocalContext.current
-    return remember(context) {
-        { lat, lon, label ->
-            val encodedLabel = URLEncoder.encode(label, "utf-8")
-            val uri = "geo:0,0?q=$lat,$lon&z=17&label=$encodedLabel".toUri()
-            val intent = Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-
-            try {
-                if (intent.resolveActivity(context.packageManager) != null) {
-                    context.startActivity(intent)
-                }
-            } catch (ex: ActivityNotFoundException) {
-                Logger.d { "Failed to open geo intent: $ex" }
-            }
-        }
-    }
 }
 
 @Composable

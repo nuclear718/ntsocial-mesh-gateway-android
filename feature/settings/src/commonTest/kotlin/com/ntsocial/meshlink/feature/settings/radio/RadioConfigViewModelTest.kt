@@ -26,10 +26,8 @@ import com.ntsocial.meshlink.core.domain.usecase.settings.InstallProfileUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.ProcessRadioResponseUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.RadioConfigUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.RadioResponseResult
-import com.ntsocial.meshlink.core.domain.usecase.settings.ToggleAnalyticsUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.ToggleHomoglyphEncodingUseCase
 import com.ntsocial.meshlink.core.model.Node
-import com.ntsocial.meshlink.core.repository.AnalyticsPrefs
 import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.LocationRepository
@@ -86,10 +84,8 @@ class RadioConfigViewModelTest {
     private val nodeRepository = FakeNodeRepository()
     private val locationRepository: LocationRepository = mock(MockMode.autofill)
     private val mapConsentPrefs: MapConsentPrefs = mock(MockMode.autofill)
-    private val analyticsPrefs: AnalyticsPrefs = mock(MockMode.autofill)
     private val homoglyphEncodingPrefs: HomoglyphPrefs = mock(MockMode.autofill)
 
-    private val toggleAnalyticsUseCase: ToggleAnalyticsUseCase = mock(MockMode.autofill)
     private val toggleHomoglyphEncodingUseCase: ToggleHomoglyphEncodingUseCase = mock(MockMode.autofill)
     private val importProfileUseCase: ImportProfileUseCase = mock(MockMode.autofill)
     private val exportProfileUseCase: ExportProfileUseCase = mock(MockMode.autofill)
@@ -116,7 +112,6 @@ class RadioConfigViewModelTest {
         every { radioConfigRepository.deviceUIConfigFlow } returns MutableStateFlow(null)
         every { radioConfigRepository.fileManifestFlow } returns MutableStateFlow(emptyList())
 
-        every { analyticsPrefs.analyticsAllowed } returns MutableStateFlow(false)
         every { homoglyphEncodingPrefs.homoglyphEncodingEnabled } returns MutableStateFlow(false)
 
         every { serviceRepository.meshPacketFlow } returns MutableSharedFlow()
@@ -144,9 +139,7 @@ class RadioConfigViewModelTest {
         nodeRepository = nodeRepository,
         locationRepository = locationRepository,
         mapConsentPrefs = mapConsentPrefs,
-        analyticsPrefs = analyticsPrefs,
         homoglyphEncodingPrefs = homoglyphEncodingPrefs,
-        toggleAnalyticsUseCase = toggleAnalyticsUseCase,
         toggleHomoglyphEncodingUseCase = toggleHomoglyphEncodingUseCase,
         importProfileUseCase = importProfileUseCase,
         exportProfileUseCase = exportProfileUseCase,
@@ -178,15 +171,6 @@ class RadioConfigViewModelTest {
         }
 
         verifySuspend { radioConfigUseCase.setConfig(123, config) }
-    }
-
-    @Test
-    fun `toggleAnalyticsAllowed calls useCase`() {
-        every { toggleAnalyticsUseCase() } returns Unit
-
-        viewModel.toggleAnalyticsAllowed()
-
-        verify { toggleAnalyticsUseCase() }
     }
 
     @Test

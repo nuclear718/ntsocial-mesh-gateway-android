@@ -43,7 +43,6 @@ kotlin {
             implementation(projects.core.service)
             implementation(projects.core.ui)
             implementation(projects.core.di)
-            implementation(projects.feature.map)
 
             implementation(libs.jetbrains.navigation3.ui)
             implementation(libs.markdown.renderer)

@@ -9,7 +9,7 @@ This guide helps a Meshtastic-Android contributor bootstrap, navigate, test, and
 - **JDK 21**
 - **Android SDK** installed and `ANDROID_HOME` available to Gradle
 - **Git submodule initialized** for `core/proto`
-- A working `local.properties` file (copy from `secrets.defaults.properties` if needed)
+- `ANDROID_HOME` set, or an untracked `local.properties` containing only `sdk.dir=...`
 - A Meshtastic radio for end-to-end testing of preset switching and reconnect behavior
 
 ## Workspace Bootstrap
@@ -18,7 +18,6 @@ Run these commands from the repository root:
 
 ```bash
 git submodule update --init
-[ -f local.properties ] || cp secrets.defaults.properties local.properties
 ```
 
 If `ANDROID_HOME` is not already set, use the standard workspace bootstrap logic documented in `.skills/project-overview/SKILL.md`.
