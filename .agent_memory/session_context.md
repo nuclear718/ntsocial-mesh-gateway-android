@@ -1,4 +1,33 @@
 # Agent Session Context - Meshtastic Android
+
+## 2026-07-18 - Android Studio configuration-cache manifest guard fixed
+- Replaced the untyped `doLast` manifest verification closure with the typed build-logic task
+  `VerifyNoCloudRuntimeComponentsTask`. Its variant name, forbidden manifest entries, and merged manifest are now
+  declared Gradle inputs, so no task action captures the AGP variant object.
+- No application manifest content or forbidden-component policy changed. The existing fdroid/google finalizer wiring
+  still runs the same cloud-runtime manifest checks after assembly and bundle tasks.
+- `:app:assembleGoogleDebug --configuration-cache --configuration-cache-problems=fail` stored a configuration-cache
+  entry and an exact rerun reused it successfully. This verifies the Android Studio failure's two serialization
+  problems are fixed without disabling configuration cache.
+- The expanded baseline `spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile :app:lintFdroidDebug
+  :app:lintGoogleDebug --continue --no-configuration-cache` passed in 15m29s (1,829 actionable tasks).
+- Release-path verification `:app:verifyGoogleReleaseNoCloudRuntimeDependencies :app:bundleGoogleRelease
+  --no-configuration-cache` passed in 2m39s (753 actionable tasks), including
+  `verifyGoogleReleaseNoCloudRuntimeComponents`. This is artifact validation only; signing/Play-readiness status is
+  unchanged.
+
+## 2026-07-18 - Android Studio configuration-cache build failure diagnosed
+- The Android Studio Build Output failure at 20:13 was not a Kotlin/Java compilation error. The generated Gradle 9.5
+  configuration-cache report identified two serialization problems on
+  `:app:verifyGoogleDebugNoCloudRuntimeComponents`.
+- `app/build.gradle.kts` registers that verification task inside `androidComponents.onVariants` and its task action
+  directly captures the AGP `variant` object via `variant.name`. Configuration-cache storage therefore traverses the
+  Android variant graph and encounters an unsupported `JavaCompile` task plus a `DefaultLegacyConfiguration` (the
+  latter incidentally attempts `fdroidDebugCompileClasspath` resolution).
+- `gradle.properties` enables configuration cache globally. The immediate workaround is to run the desired Gradle task
+  with `--no-configuration-cache`, as used by the current passing validation baseline. A durable repair should make the
+  verification task configuration-cache-safe by snapshotting primitive/provider inputs or using a typed task instead
+  of capturing the AGP variant object. No production source or Gradle fix was changed during this diagnosis.
 # This is a dated, append-only handover log. Add new entries at the TOP.
 # Do NOT edit or remove previous entries — stale state claims cause agent confusion.
 # Format: ## YYYY-MM-DD — <summary>

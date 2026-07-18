@@ -17,6 +17,7 @@
 
 import com.android.build.api.artifact.SingleArtifact
 import com.android.build.api.dsl.ApplicationExtension
+import com.ntsocial.meshlink.buildlogic.VerifyNoCloudRuntimeComponentsTask
 import com.ntsocial.meshlink.buildlogic.configProperties
 import com.ntsocial.meshlink.buildlogic.resolveVersionInfo
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
@@ -203,23 +204,19 @@ androidComponents {
 
     onVariants { variant ->
         if (variant.flavorName == "google" || variant.flavorName == "fdroid") {
+            val variantName = variant.name
             val variantNameCapped = variant.name.replaceFirstChar { it.uppercase() }
             val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
             val verificationTask =
-                tasks.register("verify${variantNameCapped}NoCloudRuntimeComponents") {
+                tasks.register<VerifyNoCloudRuntimeComponentsTask>(
+                    "verify${variantNameCapped}NoCloudRuntimeComponents",
+                ) {
                     group = "verification"
                     description =
-                        "Fails if the ${variant.name} manifest contains Google cloud, Maps, ML Kit, or diagnostics components."
-                    inputs.file(mergedManifest)
-
-                    doLast {
-                        val manifestText = mergedManifest.get().asFile.readText()
-                        val detectedEntries = forbiddenCloudRuntimeManifestEntries.filter(manifestText::contains)
-                        check(detectedEntries.isEmpty()) {
-                            "Forbidden cloud runtime components found in ${variant.name}: " +
-                                detectedEntries.joinToString()
-                        }
-                    }
+                        "Fails if the $variantName manifest contains Google cloud, Maps, ML Kit, or diagnostics components."
+                    this.variantName.set(variantName)
+                    forbiddenEntries.set(forbiddenCloudRuntimeManifestEntries)
+                    this.mergedManifest.set(mergedManifest)
                 }
 
             tasks
