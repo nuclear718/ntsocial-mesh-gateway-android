@@ -1,5 +1,23 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-19 - Android Studio Kotlin compiler crash fixed and interrupted caches recovered
+- Diagnosed the red `:core:repository:compileKotlinJvm` failure as a Kotlin 2.3.21 compiler-internal concurrency
+  crash, not an application source error: FIR metadata serialization and asynchronous JVM code generation threw
+  `ArrayIndexOutOfBoundsException` while every Kotlin JVM task was forced to use one backend thread per CPU core.
+- Removed the global `-Xbackend-threads=0` advanced compiler argument from `KotlinAndroid.kt`. Gradle module/task
+  parallelism remains enabled, while Kotlin JVM compilation now uses its stable default single backend thread.
+- The abnormal computer interruption left two Gradle 9.5 transform locks with an invalid protocol byte. Moved only
+  their exact transform workspaces and lock files to the recoverable quarantine
+  `C:\Users\cth\.gradle\cache-quarantine-20260719-0658`; Gradle also isolated one corrupt local build-cache entry and
+  rebuilt it. No project source or user data was deleted.
+- Full baseline `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue
+  --no-configuration-cache` passed in 3m32s (1,589 actionable tasks). KMP/flavor validation `kmpSmokeCompile
+  :app:lintFdroidDebug :app:lintGoogleDebug --continue --no-configuration-cache` passed in 1m50s (920 actionable
+  tasks).
+- Reopened Android Studio 2026.1.2, completed project sync, and ran Build Project from the IDE. Its Build Output shows
+  `:app:assembleGoogleDebug` and `BUILD SUCCESSFUL in 2m 38s` (449 actionable tasks); only non-blocking yellow warnings
+  remain.
+
 ## 2026-07-18 - Android Studio configuration-cache manifest guard fixed
 - Replaced the untyped `doLast` manifest verification closure with the typed build-logic task
   `VerifyNoCloudRuntimeComponentsTask`. Its variant name, forbidden manifest entries, and merged manifest are now
