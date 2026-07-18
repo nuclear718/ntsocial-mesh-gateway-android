@@ -509,6 +509,12 @@
   reconnects, install both APKs with `adb install -r`, query the Provider as the debug parent, verify unauthorized
   shell denial, launch both apps, and monitor sanitized logs for the cross-app event/re-query path.
 
+## 2026-07-18 - Google Play launch plan documentation
+- Saved the complete Traditional Chinese Google Play first-launch plan at
+  `docs/google-play/06-first-play-launch-plan-zh-TW.md`.
+- This session was documentation-only; no application code, release credentials, Play Console state, or GCP
+  resources were changed, and no Gradle validation was required.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.
