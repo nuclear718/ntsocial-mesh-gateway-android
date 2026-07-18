@@ -211,7 +211,6 @@ private val SHARED_COMPILER_ARGS =
         "-Xcontext-parameters",
         "-Xannotation-default-target=param-property",
         "-Xskip-prerelease-check",
-        "-Xbackend-threads=0",
     )
 
 private const val PUBLISHED_MODULE_JDK = 17
