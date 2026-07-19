@@ -1,6 +1,6 @@
 # Google Play 首發 Go／No-Go 檢查表
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 `[x]` 是目前 repository 已驗證的狀態；`[ ]` 必須由發布者或後續程式修改完成。任何
 「送審阻擋」未勾選時，都不要送 Production。
@@ -45,6 +45,8 @@
 
 - [ ] 開發者帳號、發布者資料、聯絡資訊與必要身分驗證已完成；以 `LiberaNt LLC` 發布時
   使用 Organization 帳號並完成 D-U-N-S／組織驗證。
+- [ ] Play 公開開發者名稱、組織資料、網站、政策頁與支援信箱一致顯示 `LiberaNt LLC`，
+  不以個人名稱或其他帳號淡化實際發布與維護主體。
 - [ ] Play App Signing 已啟用，upload certificate 與 app-signing certificate 已保存。
 - [ ] Play **App signing certificate SHA-256** 已同步到 MeshLink／NTsocial 的正式 signer trust。
 - [ ] 2023-11-13 後建立的 personal 帳號已完成通常所需的 12 位 opt-in 測試者連續 14 天
@@ -54,6 +56,14 @@
 
 ## 商店與政策
 
+- [ ] 商店完整描述前段清楚說明 NTsocial MeshLink 由 LiberaNt LLC／NTsocial 團隊主導開發、
+  整合與持續維護，是 Android NTsocial App 的開源 companion app。
+- [ ] 公司權利陳述只涵蓋 NTsocial MeshLink 原創程式、可受著作權保護的修改、整合、文件與
+  品牌視覺成果；沒有宣稱 LiberaNt 獨占未修改上游或外部貢獻者著作權。
+- [ ] GPL-3.0-or-later、公開原始碼 URL、Meshtastic Android 上游來源及 Meshtastic／MeshCore
+  非官方、無贊助／背書關係均明確可見。
+- [ ] 已保存 `LICENSE`、`NOTICE.md`、`THIRD_PARTY_NOTICES.md`、fork point、第三方 commit
+  與 NTsocial 原創素材來源；若 Play 要求 IP 證明，可以提供可稽核資料。
 - [ ] 標題、短描述、完整描述與 release notes 使用目前無地圖、無遙測 SDK 的功能事實。
 - [ ] 512 × 512 icon、1024 × 500 feature graphic 與至少兩張手機截圖已準備；沒有真實位置、
   私人訊息、PSK、token、裝置序號或地圖畫面。
@@ -67,6 +77,8 @@
 - [ ] connectedDevice FGS 的功能、延遲／中斷影響及示範影片已提交；只有首發保留 location
   FGS 時才另填 location 聲明與影片，若移除則確認 Manifest 與 Console 都不再宣告。
 - [ ] 沒有宣稱「完全匿名」、「全部傳輸加密」、「保證送達」或「完全不接觸 Google」。
+- [ ] 圖示、feature graphic、截圖與影片以 NTsocial 蝴蝶及 LiberaNt／NTsocial 產品身分為主；
+  沒有使用 Meshtastic 山形標誌或 MeshCore 視覺造成官方關係混淆。
 
 ## Internal 測試
 

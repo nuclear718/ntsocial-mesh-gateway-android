@@ -1,6 +1,6 @@
 # NTsocial MeshLink 社群與通訊規範
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 > **送審前草稿：** App 內檢舉與 block／ignore 流程尚待完成及實測。完成後請移除本段，
 > 再把此規範發布成正式公開 HTTPS 頁面；目前不可直接拿本檔 URL 送審。
@@ -8,6 +8,10 @@
 本規範適用於透過 NTsocial MeshLink 建立、顯示或轉送的訊息、節點名稱、位置、遙測與
 其他使用者產生內容，並與[使用條款](TERMS_OF_USE.md)及
 [隱私權政策](PRIVACY_POLICY.md)一併適用。
+
+NTsocial MeshLink 由 LiberaNt LLC 發布，並由 LiberaNt LLC 與 NTsocial 團隊主導開發及
+維護。LiberaNt 對 App 與其可控制的支援／檢舉流程負責，但不控制整個去中心化 mesh，也
+不代表 Meshtastic 或 MeshCore 官方組織。
 
 ## 使用原則
 
@@ -50,3 +54,7 @@
 
 我們可因功能、濫用型態或法律變更更新本規範。重大變更會在 App、商店頁或公開網站
 提供適當通知。
+
+- 發布者：LiberaNt LLC
+- 開發與維護：LiberaNt LLC 與 NTsocial 團隊
+- 檢舉與支援：huangct_2025@liber-ant.com

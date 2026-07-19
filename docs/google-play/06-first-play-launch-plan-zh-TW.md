@@ -1,6 +1,6 @@
 # 最快完成第一版 Google Play 上架
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 這是首發的主流程。第一版採 Play Console 手動上傳，因此不需要 GCP、Maps billing、
 Firebase、Crashlytics、Datadog、ML Kit 或 Play service account。
@@ -18,6 +18,22 @@ Firebase、Crashlytics、Datadog、ML Kit 或 Play service account。
 這兩項是目前已由程式碼確認的功能／政策阻擋，不代表其餘發行工作已完成。正式 artifact
 仍可能因 Play signer trust、App 內政策 URL 或最終封裝稽核而需要再修改、提高 versionCode
 並重建。完成後再依下列七步進行。
+
+## 0. 固定對外產品身分與來源
+
+建立 Console App 前，先固定所有商店欄位與政策頁共用的產品身分：
+
+> NTsocial MeshLink 由 LiberaNt LLC 發布，並由 LiberaNt LLC 與 NTsocial 團隊主導開發、
+> 整合與持續維護。它是 Android NTsocial App 的核心開源 companion／radio gateway。
+> LiberaNt LLC 對本 fork 特有的原創程式、可受著作權保護的修改、整合與文件主張著作權；
+> 合併作品仍依 GPL-3.0-or-later 提供開源自由。Meshtastic Android 衍生部分、MeshCore
+> 參考材料與外部貢獻者保留各自權利。本 App 不是 Meshtastic 或 MeshCore 官方發行版，
+> 也不表示其贊助或背書。
+
+這段不是要逐字塞入每個短欄位，而是文案基準。標題保持產品名；短描述先說 LiberaNt／
+NTsocial companion 的價值；完整描述、審查備註與政策頁再展開公司貢獻、GPL 與上游來源。
+不要把母程式的 `All Rights Reserved`／EULA 搬入這個 GPL App，也不要只寫成「Meshtastic
+client」而隱去 LiberaNt 的產品與維護責任。
 
 ## 1. 建立正式 upload key
 
@@ -87,6 +103,8 @@ Crashlytics／Datadog 收集資料。這不表示相關 SDK 仍存在，但最�
 1. 使用已完成身分驗證的 Play 開發者帳號建立 App；
    若發布者是 `LiberaNt LLC`，帳號類型應為 Organization，並準備 D-U-N-S、組織與聯絡人
    驗證資料；不可只為省時間把公司 App 誤建成 personal account。既有帳號則核對驗證狀態。
+   Play 對外顯示的 developer name、網站、支援信箱與政策頁都應和 LiberaNt LLC 的真實
+   組織資料一致，不能隱藏或誤述 App 的發布與維護主體。
 2. 名稱填 `NTsocial MeshLink`，預設語言選繁體中文，類型選 App，免費；
 3. 接受 Play App Signing；
 4. 第一版採 Console 手動上傳，不設定 Fastlane service account；
@@ -121,6 +139,11 @@ Crashlytics／Datadog 收集資料。這不表示相關 SDK 仍存在，但最�
 - [App content 答案](02-app-content-zh-TW.md)
 - [Data safety](03-data-safety-zh-TW.md)
 - [審查存取、權限與前景服務](04-review-and-permissions-zh-TW.md)
+
+完整描述與審查補充說明必須包含第 0 節的核心事實：LiberaNt 主導與原創修改、GPL 開源、
+Meshtastic／MeshCore 必要來源及非官方關係。上傳前另核對 `NOTICE.md` 與
+`THIRD_PARTY_NOTICES.md`，並保存 fork point、第三方 commit 與 NTsocial 原創圖像來源，
+以便 Play 要求智慧財產權證明時提供。
 
 政策頁必須是穩定公開 HTTPS、無需登入、無地區限制、非 PDF、一般使用者不可編輯，App
 內也能開啟；GitHub blob 只作草稿與版本紀錄。Data safety 不能只因移除 Firebase 就回答「不收集」；
@@ -171,4 +194,6 @@ Android Vitals 是 Play 平台能力，不是 App 內嵌 Crashlytics，也不需
 - 已用正式 upload key 產生並驗證 AAB；
 - Play 配送版本完成 NTsocial signer pairing 與實機測試；
 - 商店素材、政策、Data safety 與實際 AAB 完全一致；
+- 商店頁正確呈現 LiberaNt LLC 的發布／維護主體、公司原創與修改、GPL 自由及必要上游
+  歸屬，且不暗示 Meshtastic／MeshCore 官方關係；
 - Production release 已被 Play Console 接受。

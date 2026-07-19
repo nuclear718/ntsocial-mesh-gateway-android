@@ -1,6 +1,6 @@
 # NTsocial MeshLink 使用條款
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 > **送審前草稿：** App 內條款接受、檢舉與 block／ignore 流程尚待完成及實測。完成後請
 > 移除本段，再把此條款發布成正式公開 HTTPS 頁面；目前不可直接拿本檔 URL 送審。
@@ -10,11 +10,24 @@
 [隱私權政策](PRIVACY_POLICY.md)及[社群與通訊規範](COMMUNITY_GUIDELINES.md)。使用者在
 App 顯示的接受流程中同意後，才可建立或傳送使用者產生內容。
 
-## 1. 開放原始碼
+## 1. 產品主導、著作權與開放原始碼
 
-本 App 是以 Meshtastic Android 為基礎的 GPL-3.0 開源分支，不是 Meshtastic 官方發行版。
-本條款規範已發布 App 與通訊服務的使用，不取代 GPL-3.0、上游或第三方開源授權所授予的
-原始碼權利。
+本 App 由 LiberaNt LLC 與 NTsocial 團隊主導開發、整合、發布及持續維護，是 Android
+NTsocial App 的核心開源 companion／radio gateway。
+
+LiberaNt LLC 對 NTsocial MeshLink 特有的原創程式、可受著作權保護的修改、Gateway／
+母程式整合、文件與品牌視覺成果主張著作權。除非另有書面權利移轉，個別貢獻者仍保有其貢獻
+的著作權；公司主導與維護責任不表示 LiberaNt 擁有未修改的上游內容。
+
+本 App 是以 Meshtastic Android 為基礎的 GPL-3.0-or-later 開源分支。GPL 授予使用者取得
+原始碼、使用、研究、修改及再散布的自由；LiberaNt 的著作權聲明不增加 `All Rights
+Reserved`、EULA 或其他專有程式限制。本條款只規範已發布 App 與發布者可控制功能的使用，
+不取代或縮減 GPL、MIT、上游或其他第三方開源授權所授予的權利。
+
+Meshtastic Android 衍生部分、MeshCore 參考材料與第三方內容仍屬各自作者並保留原授權。
+本 App 不是 Meshtastic 或 MeshCore 官方發行版，也不表示其贊助、背書或商標授權。完整
+來源、著作權與授權文字見原始碼 repository 的 `LICENSE`、`NOTICE.md` 與
+`THIRD_PARTY_NOTICES.md`。
 
 ## 2. 功能與使用者責任
 
@@ -84,6 +97,7 @@ Android 平台由各自提供者負責。本版本不內嵌第三方地圖、分
 功能、政策或法規重大改變時，我們可更新本條款與日期並提供適當通知。
 
 - 發布者：LiberaNt LLC
+- 開發與維護：LiberaNt LLC 與 NTsocial 團隊
 - 電子郵件：huangct_2025@liber-ant.com
 - 原始碼：https://github.com/nuclear718/ntsocial-mesh-gateway-android
 - 問題回報：https://github.com/nuclear718/ntsocial-mesh-gateway-android/issues

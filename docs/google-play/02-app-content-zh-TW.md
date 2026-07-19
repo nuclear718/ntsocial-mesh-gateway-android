@@ -1,6 +1,6 @@
 # Play Console App content 填寫稿
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 Console 欄位會隨帳號與政策調整；若畫面文字不同，以實際 AAB、App 行為與 Console
 最新問題為準。不要用這份稿件覆蓋已知的 runtime 差異。
@@ -22,6 +22,7 @@ Console 欄位會隨帳號與政策調整；若畫面文字不同，以實際 AA
 | News／Magazine | **No** |
 | Health／Financial／Government／COVID／VPN | **No** |
 | Payments | 無 Play Billing、訂閱、IAP 或付費數位內容 |
+| Developer identity／affiliation | LiberaNt LLC 發布並維護；GPL fork；不是 Meshtastic／MeshCore 官方版 |
 
 ## App access
 
@@ -35,6 +36,23 @@ Bluetooth、USB、TCP radio session 與真實 LoRa 收發需要相容的 Meshtas
 
 受保護的 NTsocial Gateway 只允許通過套件與簽章驗證的 NTsocial App 存取；這不影響審查人員直接操作 MeshLink 主介面。
 ```
+
+## 發布者、產品主導與開源來源補充說明
+
+若 Console 提供額外審查備註，或審查人員詢問 Meshtastic／MeshCore 名稱與權利來源，貼入：
+
+```text
+NTsocial MeshLink（com.ntsocial.meshlink）由 LiberaNt LLC 發布，並由 LiberaNt LLC 與 NTsocial 團隊主導開發、整合及持續維護。LiberaNt LLC 對本 fork 特有的 NTsocial Gateway、跨 App 信任、產品整合、原創程式與可受著作權保護的修改主張著作權；合併作品仍依 GPL-3.0-or-later 提供完整開源自由。
+
+本 App 以 meshtastic/Meshtastic-Android 為上游，並含依公開資料建立的獨立 MeshCore 相容層。適用的上游及第三方著作權與授權均保留於 repository 的 LICENSE、NOTICE 及 THIRD_PARTY_NOTICES。本 App 不是 Meshtastic 或 MeshCore 官方發行版，也不表示其贊助、背書或商標授權。
+
+原始碼與來源聲明：https://github.com/nuclear718/ntsocial-mesh-gateway-android
+```
+
+這段說明把「公司主導與原創修改」和「上游／貢獻者權利」分開，不能縮寫成 LiberaNt 擁有
+整個 Meshtastic 或 MeshCore 專案。若 Play 要求第三方名稱或素材的權利證據，提供 GPL／MIT
+授權、fork 歷史、`NOTICE.md`、`THIRD_PARTY_NOTICES.md` 與原創 NTsocial 素材來源；不要只
+依賴商店描述中的一句免責文字。
 
 ## 目標對象與內容分級
 
@@ -59,7 +77,11 @@ email、GitHub issue 或公開政策頁不滿足 UGC safeguard；這是 Producti
 - 本 App 不含廣告、Advertising ID、Play Billing 或訂閱；
 - 本 App 不允許建立發布者帳號，因此沒有帳號刪除 URL；本機資料可在 App／Android
   設定刪除，mesh 或第三方端點上的副本不受發布者控制；
-- 本 App 是 GPL-3.0 Meshtastic Android 分支，不是 Meshtastic 官方發行版。
+- 本 App 由 LiberaNt LLC 發布，並由 LiberaNt LLC／NTsocial 團隊主導開發與維護；
+- LiberaNt LLC 對 NTsocial MeshLink 原創內容與可受著作權保護的修改主張著作權，合併作品
+  仍依 GPL-3.0-or-later 開源；
+- 本 App 是 Meshtastic Android 的修改分支，不是 Meshtastic 或 MeshCore 官方發行版，
+  不表示其贊助或背書。
 
 ## Target API 與 Android 17 位置決策
 
@@ -85,3 +107,6 @@ FGS。送審前必須做明確產品決策：
 - [User Data](https://support.google.com/googleplay/android-developer/answer/10144311)
 - [Content ratings](https://support.google.com/googleplay/android-developer/answer/9859655)
 - [準備 App 審查](https://support.google.com/googleplay/android-developer/answer/9859455)
+- [Misrepresentation](https://support.google.com/googleplay/android-developer/answer/9888689)
+- [Impersonation](https://support.google.com/googleplay/android-developer/answer/9888374)
+- [Intellectual Property](https://support.google.com/googleplay/android-developer/answer/9888072)

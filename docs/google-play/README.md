@@ -1,10 +1,29 @@
 # NTsocial MeshLink：Google Play 首發文件
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 這個目錄是 `NTsocial MeshLink`（`com.ntsocial.meshlink`）第一版 Google Play 上架的唯一工作包。
 請從 [最快上架流程](06-first-play-launch-plan-zh-TW.md) 開始，不必另外建立 Google Cloud、
 Maps 或 Firebase 專案。
+
+## 對外產品身分與權利陳述
+
+所有 Play Console 欄位、審查備註、政策頁、截圖文字與支援回覆都使用同一套事實：
+
+- **發布與維護主體：** NTsocial MeshLink 由 **LiberaNt LLC 與 NTsocial 團隊主導開發、
+  整合、發布與持續維護**，是 Android NTsocial App 的核心開源 companion app；
+- **公司原創與修改：** LiberaNt LLC 對 NTsocial MeshLink 特有的原創程式、可受著作權保護
+  的修改、Gateway／母程式整合、文件與品牌視覺成果主張著作權；
+- **開源承諾：** 合併作品仍依 GPL-3.0-or-later 提供原始碼與使用、研究、修改、再散布的
+  自由。公司著作權與產品主導聲明不得被寫成 `All Rights Reserved` 或額外限制；
+- **上游與貢獻者：** Meshtastic Android 衍生部分、MeshCore 參考材料及個別貢獻者的權利
+  與 notice 繼續保留；LiberaNt 不主張擁有未修改的上游內容；
+- **無官方關係暗示：** 本 App 不是 Meshtastic 或 MeshCore 官方發行版，也不得暗示其贊助、
+  背書或商標授權。
+
+權利與來源的完整依據是根目錄 `NOTICE.md`、`THIRD_PARTY_NOTICES.md` 與
+`docs/copyright-and-attribution.md`。母程式的專有 EULA／`All Rights Reserved` 條款不適用
+於這個 GPL repository。
 
 ## 現況一覽
 
@@ -21,6 +40,7 @@ Maps 或 Firebase 專案。
 | 政策發布與 App 內 URL | 送審前阻擋 | 草稿警告須移除，正式公開 HTTPS URL 須寫回 App 並重建 |
 | 舊 `analytics_notice` 翻譯 | 待清理 | SDK 已移除，但最終封裝不得留下誤導性的舊收集聲明 |
 | 商店素材與 Console 表單 | 待人工完成 | 依本目錄提供的稿件填寫 |
+| 產品身分與開源來源文案 | 已完成 | LiberaNt 主導、GPL、上游權利與非官方關係已統一 |
 | Play 配送實測 | 待人工完成 | 必須從 Internal track 安裝，驗證正式簽章與 NTsocial pairing |
 | 新 personal 帳號測試門檻 | 依帳號判定 | 2023-11-13 後建立者通常需 12 位測試者連續 14 天 closed test |
 
@@ -71,3 +91,7 @@ Maps 或 Firebase 專案。
 - [開發者帳號類型與組織驗證](https://support.google.com/googleplay/android-developer/answer/13634885)
 - [Play Console 帳號與一次性註冊費](https://support.google.com/googleplay/android-developer/answer/6112435)
 - [前景服務聲明](https://support.google.com/googleplay/android-developer/answer/13392821)
+- [商店資訊最佳實務](https://support.google.com/googleplay/android-developer/answer/13393723)
+- [Misrepresentation](https://support.google.com/googleplay/android-developer/answer/9888689)
+- [Impersonation](https://support.google.com/googleplay/android-developer/answer/9888374)
+- [Intellectual Property](https://support.google.com/googleplay/android-developer/answer/9888072)

@@ -1,14 +1,20 @@
 # NTsocial MeshLink 隱私權政策
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 > **送審前草稿：** location 行為、App 內政策 URL 與最終 AAB 尚待核對。完成後請移除本段，
 > 再把此政策發布成正式公開 HTTPS 頁面；目前不可直接拿本檔 URL 送審。
 
 本政策適用於 LiberaNt LLC 發布的 **NTsocial MeshLink** Android App（套件名稱
-`com.ntsocial.meshlink`，以下稱「本 App」）。本 App 是以 Meshtastic Android 為基礎的
-GPL-3.0 開源分支，用於連接 Meshtastic 相容無線電，並在 NTsocial App 與 LoRa mesh 間
-提供受保護的傳輸閘道。
+`com.ntsocial.meshlink`，以下稱「本 App」）。本 App 由 LiberaNt LLC 與 NTsocial 團隊
+主導開發、整合及持續維護，是 Android NTsocial App 的核心開源 companion app，用於連接
+Meshtastic 相容無線電，並在 NTsocial App 與 LoRa mesh 間提供受保護的傳輸閘道。
+
+LiberaNt LLC 對本 App 特有的原創程式、可受著作權保護的修改、Gateway／母程式整合與
+文件主張著作權，並承擔本政策所述的發布者責任。合併作品依 GPL-3.0-or-later 開放原始碼；
+Meshtastic Android 衍生部分、MeshCore 參考材料與個別貢獻者仍保留各自權利。本 App 不是
+Meshtastic 或 MeshCore 官方發行版，也不表示其贊助或背書。完整來源見 repository 的
+`NOTICE.md` 與 `THIRD_PARTY_NOTICES.md`。
 
 ## 1. 最重要的隱私事實
 
@@ -114,6 +120,7 @@ Play 或使用者主動開啟的第三方網站。
 若資料行為或服務提供者改變，我們會更新本政策與日期，並同步更新 Play Data safety。
 
 - 發布者：LiberaNt LLC
+- 開發與維護：LiberaNt LLC 與 NTsocial 團隊
 - 隱私與支援信箱：huangct_2025@liber-ant.com
 - 原始碼：https://github.com/nuclear718/ntsocial-mesh-gateway-android
 - 問題回報：https://github.com/nuclear718/ntsocial-mesh-gateway-android/issues

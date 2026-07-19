@@ -1,10 +1,11 @@
 # Data safety 填寫稿
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 ## 先分清楚兩件事
 
-產品事實是：本版本沒有發布者分析／當機後端，也不內嵌 Firebase、Crashlytics、Datadog、
+產品與責任事實是：NTsocial MeshLink 由 LiberaNt LLC 發布，並由 LiberaNt LLC／NTsocial
+團隊主導開發與維護。本版本沒有發布者分析／當機後端，也不內嵌 Firebase、Crashlytics、Datadog、
 Maps、Play Services runtime 或 ML Kit；QR frame、偏好與本機資料庫也不會為了分析離開
 裝置。
 
@@ -86,4 +87,5 @@ Android Vitals 是 Google Play／Android 平台的品質處理，不是 App 內�
 6. 若任何舊 artifact 含診斷 SDK 且仍在其他 Play track 散布，將其納入 package 層級申報或
    先停止散布。
 
-本文件是依目前程式做的保守預填稿，不是法律意見。發布者對 Play 表單的完整性負責。
+本文件是依目前程式做的保守預填稿，不是法律意見。開放原始碼不會移轉 Play Console 的
+申報責任；LiberaNt LLC 作為發布者仍須以最終 AAB 與 runtime 證據確保表單完整、正確。

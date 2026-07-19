@@ -1,12 +1,14 @@
 # 審查存取、權限與前景服務
 
-最後更新：2026 年 7 月 18 日
+最後更新：2026 年 7 月 19 日
 
 ## 審查人員存取說明
 
 貼入 App access：
 
 ```text
+NTsocial MeshLink（com.ntsocial.meshlink）由 LiberaNt LLC 發布，並由 LiberaNt LLC 與 NTsocial 團隊主導開發、整合及維護。它是 Android NTsocial App 的開源 companion／radio gateway，不是 Meshtastic 或 MeshCore 官方發行版。
+
 本 App 不需帳號、密碼、OTP、會員資格、訂閱或付費。審查人員可略過非必要權限並直接進入連線、訊息、節點、MeshCore 與設定頁；本版本沒有地圖頁。
 
 實際 Bluetooth、USB、TCP radio session 與 LoRa 收發需要相容的 Meshtastic 無線電，但不需任何測試帳密。無硬體時仍可檢查主要 UI、設定及權限流程。若審查需要硬體流程，請聯絡 huangct_2025@liber-ant.com 取得可重現的測試安排。
@@ -16,6 +18,10 @@
 
 Release 版沒有 Demo Mode，也不需要 Firebase Test Lab、GCP 或審查伺服器。不要在審查說明
 中要求不存在的 Demo 選項。
+
+若審查詢問第三方名稱或來源，提供 repository 的 GPL `LICENSE`、`NOTICE.md`、
+`THIRD_PARTY_NOTICES.md` 與 fork／commit 紀錄。LiberaNt 對自己的 NTsocial MeshLink 原創、
+修改與整合負責；不要把這寫成 Meshtastic／MeshCore 的官方授權、贊助或背書。
 
 ## 權限用途
 
@@ -127,4 +133,6 @@ AppMeasurement、Firebase、Datadog、Maps 或 ML Kit 元件。
 
 官方參考：[FGS 聲明](https://support.google.com/googleplay/android-developer/answer/13392821)、
 [User Data](https://support.google.com/googleplay/android-developer/answer/10144311)、
-[敏感權限](https://support.google.com/googleplay/android-developer/answer/16558241)。
+[敏感權限](https://support.google.com/googleplay/android-developer/answer/16558241)、
+[Impersonation](https://support.google.com/googleplay/android-developer/answer/9888374)、
+[Intellectual Property](https://support.google.com/googleplay/android-developer/answer/9888072)。

@@ -1,5 +1,25 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-19 - Google Play stewardship and open-source copy audit
+- Audited and revised all ten `docs/google-play/` submission drafts after the LiberaNt-first repository copyright
+  migration. Every document now consistently identifies LiberaNt LLC as publisher and LiberaNt LLC / the NTsocial
+  team as the lead developer, integrator, and ongoing maintainer of NTsocial MeshLink.
+- Reworked the Traditional Chinese store listing so its first product identity is the LiberaNt-developed open-source
+  companion for Android NTsocial, followed by Meshtastic radio compatibility. The full description now names the
+  protected Gateway, cross-App trust, envelope/channel boundary, KMP maintenance, and release work as major
+  LiberaNt/NTsocial contributions.
+- Added a canonical public-identity and provenance statement to the Play work-package README, App-content/reviewer
+  notes, launch plan, release checklist, privacy policy, terms, and community guidelines. It claims LiberaNt
+  copyright only in NTsocial original work and copyrightable modifications, preserves GPL-3.0-or-later freedoms,
+  retains upstream/contributor rights, and disclaims official Meshtastic/MeshCore sponsorship or endorsement.
+- Kept all existing Production blockers intact: location FGS/minimum-scope work, first-send terms acceptance,
+  in-App UGC reporting and effective block/ignore, policy hosting and App URLs, final signing, signer pairing,
+  cloud-free device testing, and Console/account requirements remain incomplete until separately verified.
+- Verified Play field sizes: title 17/30 characters, short description 62/80, full description 1,526/4,000, and
+  release notes 166 characters. All 22 local Markdown links resolve; code fences are balanced; `git diff --check`
+  passes. With JDK 21 and the initialized proto submodule, `spotlessCheck detekt --continue
+  --no-configuration-cache` passed in 1m18s (168 actionable tasks).
+
 ## 2026-07-19 - LiberaNt-first copyright and attribution audit
 - Audited the fork history, the adjacent NTsocial parent repository, the MeshCore integration commits, and 2,090
   tracked files. The repository now states prominently that LiberaNt LLC leads NTsocial MeshLink development and
