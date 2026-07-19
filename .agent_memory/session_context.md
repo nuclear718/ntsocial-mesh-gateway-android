@@ -1,5 +1,23 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-19 - Google Release configuration-cache signing build fix
+- Replaced the remaining `doLast` implementation of
+  `verifyGoogleReleaseNoCloudRuntimeDependencies` with the typed build-logic task
+  `VerifyNoCloudRuntimeDependenciesTask`. The resolved forbidden-coordinate list is now a declared
+  task input, so the task action no longer captures Gradle script objects that configuration cache
+  cannot serialize.
+- Confirmed `:app:verifyGoogleReleaseNoCloudRuntimeDependencies --configuration-cache
+  --configuration-cache-problems=fail` both stores and reuses a configuration-cache entry. Confirmed
+  `:app:bundleGoogleRelease` also stores and reuses its entry without configuration-cache problems;
+  its `signGoogleReleaseBundle` task ran successfully.
+- Full validation passed with JDK 21, Android SDK, and English test locale:
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile
+  :app:lintFdroidDebug :app:lintGoogleDebug --continue --no-configuration-cache` (BUILD SUCCESSFUL,
+  16m20s, 1,895 actionable tasks).
+- This CLI workspace intentionally has no `keystore.properties`, so its local AAB is unsigned when
+  run without Android Studio's injected signing inputs. Do not treat that artifact as upload-ready;
+  retry Android Studio's Generate Signed Bundle flow with the user's selected upload key after sync.
+
 ## 2026-07-19 - Play PNG icon and feature graphic
 - Added the Play-ready PNGs under the valid no-density Android resource directory
   `app/src/main/res/drawable-nodpi/`: `ntsocial_meshlink_play_icon_512.png` (512 × 512 RGB PNG, 70,109 bytes)
