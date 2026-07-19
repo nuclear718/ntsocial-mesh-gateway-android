@@ -4,15 +4,21 @@ NTsocial MeshLink 的第一階段 MeshCore 整合採用「同一個 App、兩套
 Meshtastic radio/service/database/settings 行為保持不變；MeshCore 的模型、Companion Radio Protocol、
 狀態容器、畫面與導覽都位於新的 `core/meshcore` 與 `feature/meshcore` 模組。
 
-## 官方依據
+## 相容性依據與授權
 
-此實作在 2026-07-17 以各官方開源專案的預設分支為基準：
+此實作在 2026-07-17 以公開 MeshCore 專案、client 與協定文件的下列版本為相容性基準：
 
 - `meshcore-dev/MeshCore`：commit `219812b9f136744c3478908e9487afd0d6031b53`（firmware source 標示
   Companion `v1.16.0`）。
 - `meshcore-dev/meshcore.js`：commit `bbe1f9301b801cbd48a053687f16eea9634634cd`。
 - `meshcore-dev/meshcore_py`：commit `5bac3573b51c4298062881885b6d15a994109076`。
 - 官方 Companion Radio Protocol wiki。
+
+`core/meshcore` 與 `feature/meshcore` 是 LiberaNt LLC／NTsocial 在本倉庫建立的 Kotlin
+Multiplatform 相容實作，不是 MeshCore C++ firmware 或官方 client 的鏡像。協定與參考
+client 的權利仍屬各自作者；完整 MIT notice 與精確來源保存在
+[NOTICE](../NOTICE.md) 及 [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md)。這些名稱只表示
+相容性，並不表示 MeshCore 開發者對本 App 的背書。
 
 `MeshCoreCompanionProtocol` 依這些來源建立純 Kotlin Multiplatform codec，包含：
 

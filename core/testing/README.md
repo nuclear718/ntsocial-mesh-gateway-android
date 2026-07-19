@@ -1,5 +1,13 @@
 /*
+ * NTsocial MeshLink original work and modifications:
+ * Copyright (c) 2026 LiberaNt LLC
+ *
+ * Meshtastic Android-derived portions, where present:
  * Copyright (c) 2026 Meshtastic LLC
+ *
+ * Developed and/or modified for NTsocial MeshLink in 2026.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,12 +63,12 @@ Place your test logic in an abstract class in `src/commonTest`. Do NOT use `@Bef
 ```kotlin
 abstract class CommonMyViewModelTest {
     protected lateinit var viewModel: MyViewModel
-    
+
     // Call this from subclasses
     fun setupRepo() {
         // ... common setup logic
     }
-    
+
     @Test
     fun testLogic() { /* ... */ }
 }

@@ -1,23 +1,45 @@
 # `:app`
 
 ## Overview
-The `:app` module is the entry point for the Meshtastic Android application. It orchestrates the various feature modules, manages global state, and provides the main UI shell.
 
-## Key Components
+The `:app` module is the Android host for **NTsocial MeshLink**, led and maintained by LiberaNt LLC
+and the NTsocial team as the open-source companion app for Android NTsocial. It assembles the
+Meshtastic-derived radio foundation with the NTsocial Gateway, feature modules, dependency graph, and
+main UI shell. This fork is not an official Meshtastic or MeshCore release.
 
-### 1. `MainActivity` & `Main.kt`
-The single Activity of the application. It hosts the shared `MeshtasticNavDisplay` navigation shell and manages the root UI structure (Navigation Bar, Rail, etc.).
+Copyright and provenance rules are defined in the repository
+[NOTICE](../NOTICE.md) and [copyright policy](../docs/copyright-and-attribution.md).
+
+## Key components
+
+### 1. `MainActivity` and `Main.kt`
+
+The single Android Activity hosts the shared `MeshtasticNavDisplay` navigation shell and the
+adaptive root UI.
 
 ### 2. `MeshService`
-The core background service that manages long-running communication with the mesh radio. While it is declared in the `:app` manifest for system visibility, its implementation resides in the `:core:service` module. It runs as a **Foreground Service** to ensure reliable communication even when the app is in the background.
 
-### 3. Koin Application
-`MeshUtilApplication` is the Koin entry point, providing the global dependency injection container.
+The core background service manages long-running communication with the Meshtastic radio. It is
+declared in the app manifest for system visibility and implemented in `:core:service`.
+
+### 3. NTsocial Gateway host
+
+The app exposes the protected, versioned Provider/capability/command/event boundary used by the
+Android NTsocial parent app. New integrations must not bind directly to `IMeshService`.
+
+### 4. Koin application
+
+`MeshUtilApplication` creates the host DI graph and assembles core and feature modules.
 
 ## Architecture
-The module primarily serves as a "glue" layer, connecting:
-- `core:*` modules for shared logic.
-- `feature:*` modules for specific user-facing screens.
+
+The module is intentionally a thin host:
+
+- `core:*` owns shared data, transport, service, protocol, and UI contracts.
+- `feature:*` owns user-facing screens.
+- `:app` owns Android lifecycle, manifests, root DI, and navigation assembly.
+
+The generated dependency graph below is maintained by the project build tooling.
 
 ## Module dependency graph
 
@@ -65,6 +87,5 @@ classDef kmp-feature fill:#FFD6A5,stroke:#000,stroke-width:2px,color:#000;
 classDef kmp-library-compose fill:#FFC1CC,stroke:#000,stroke-width:2px,color:#000;
 classDef kmp-library fill:#FFC1CC,stroke:#000,stroke-width:2px,color:#000;
 classDef unknown fill:#FFADAD,stroke:#000,stroke-width:2px,color:#000;
-
 ```
 <!--endregion-->

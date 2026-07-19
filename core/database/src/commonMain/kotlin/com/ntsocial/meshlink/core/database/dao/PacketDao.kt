@@ -1,5 +1,13 @@
 /*
+ * NTsocial MeshLink original work and modifications:
+ * Copyright (c) 2026 LiberaNt LLC
+ *
+ * Meshtastic Android-derived portions, where present:
  * Copyright (c) 2026 Meshtastic LLC
+ *
+ * Developed and/or modified for NTsocial MeshLink in 2026.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -242,7 +250,7 @@ interface PacketDao {
 
     @Query(
         """
-        DELETE FROM reactions 
+        DELETE FROM reactions
         WHERE (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
         AND reply_id IN (:packetIds)
         """,
@@ -301,8 +309,8 @@ interface PacketDao {
     @Transaction
     @Query(
         """
-        SELECT * FROM packet 
-        WHERE packet_id = :packetId 
+        SELECT * FROM packet
+        WHERE packet_id = :packetId
         AND (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
         LIMIT 1
         """,
@@ -321,8 +329,8 @@ interface PacketDao {
 
     @Query(
         """
-        SELECT * FROM packet 
-        WHERE packet_id = :packetId 
+        SELECT * FROM packet
+        WHERE packet_id = :packetId
         AND (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
         """,
     )
@@ -331,7 +339,7 @@ interface PacketDao {
     @Transaction
     @Query(
         """
-        SELECT * FROM packet 
+        SELECT * FROM packet
         WHERE (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
         AND substr(sfpp_hash, 1, 8) = substr(:hash, 1, 8)
         """,
@@ -405,7 +413,7 @@ interface PacketDao {
 
     @Query(
         """
-        SELECT * FROM reactions 
+        SELECT * FROM reactions
         WHERE packet_id = :packetId
         AND (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
         """,
@@ -414,8 +422,8 @@ interface PacketDao {
 
     @Query(
         """
-        SELECT * FROM reactions 
-        WHERE packet_id = :packetId 
+        SELECT * FROM reactions
+        WHERE packet_id = :packetId
         AND (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
         LIMIT 1
         """,
@@ -425,7 +433,7 @@ interface PacketDao {
     @Transaction
     @Query(
         """
-        SELECT * FROM reactions 
+        SELECT * FROM reactions
         WHERE (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
         AND substr(sfpp_hash, 1, 8) = substr(:hash, 1, 8)
         """,

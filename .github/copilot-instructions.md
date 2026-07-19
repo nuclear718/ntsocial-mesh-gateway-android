@@ -1,7 +1,10 @@
 # NTsocial MeshLink Android - Copilot Instructions
 
-NTsocial MeshLink is a GPL-3.0 fork of Meshtastic Android. App identity is `NTsocial MeshLink`,
-application ID is `com.ntsocial.meshlink`, and project-owned packages use `com.ntsocial.meshlink.*`.
+NTsocial MeshLink is led and maintained by **LiberaNt LLC and the NTsocial team** as the core
+open-source companion app for Android NTsocial. It is a GPL-3.0-or-later fork of Meshtastic Android.
+App identity is `NTsocial MeshLink`, application ID is `com.ntsocial.meshlink`, and project-owned
+packages use `com.ntsocial.meshlink.*`. Governance does not erase upstream or contributor rights;
+follow `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and `docs/copyright-and-attribution.md`.
 Gateway v1 Provider/capability/IPC/cache/channel-provisioning behavior is concrete code. RF scheduler
 expansion, node policy, persistent/reliable delivery, MeshCore transport, and remote RF verification
 remain roadmap work.
@@ -136,6 +139,17 @@ launch Robolectric Activity/Compose infrastructure for registration-only asserti
 a coroutine-cleanup timeout flake under the full parallel baseline.
 
 ## Key Conventions
+
+### Copyright & Attribution
+
+- Use the synchronized `config/spotless/copyright.*` and Detekt templates; LiberaNt's NTsocial
+  original work/modifications appear first, while the Meshtastic LLC line is conditional on derived
+  portions and the header records the 2026 modification date.
+- Never remove applicable upstream GPL, copyright, warranty, MIT, or third-party notices.
+- Do not copy the adjacent parent App's proprietary `All Rights Reserved`/EULA text, private
+  business logic, assets, credentials, or secrets into this GPL repository.
+- Preserve Gradle wrapper, `core/proto`, generated, and third-party file headers instead of forcing
+  the project template onto them.
 
 ### Strings & Formatting
 

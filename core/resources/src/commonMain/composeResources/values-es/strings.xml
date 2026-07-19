@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
+  ~ NTsocial MeshLink original work and modifications:
+  ~ Copyright (c) 2026 LiberaNt LLC
+  ~
+  ~ Meshtastic Android-derived portions, where present:
   ~ Copyright (c) 2025 Meshtastic LLC
+  ~
+  ~ Developed and/or modified for NTsocial MeshLink in 2026.
+  ~
+  ~ SPDX-License-Identifier: GPL-3.0-or-later
   ~
   ~ This program is free software: you can redistribute it and/or modify
   ~ it under the terms of the GNU General Public License as published by
@@ -446,7 +454,7 @@ Rango de Valores 0 - 500.</string>
     <string name="map_purge_success">Caché SQL purgado para %1$s</string>
     <string name="map_reporting">Reportar Posición</string>
     <string name="map_reporting_consent_header">Consentimiento para compartir información del nodo sin encriptar por MQTT</string>
-    <string name="map_reporting_consent_text">Al habilitar esta función, reconoces y das tu consentimiento expreso para la transmisión de la ubicación geográfica en tiempo real de tu dispositivo a través del protocolo MQTT sin ser esta encriptada. 
+    <string name="map_reporting_consent_text">Al habilitar esta función, reconoces y das tu consentimiento expreso para la transmisión de la ubicación geográfica en tiempo real de tu dispositivo a través del protocolo MQTT sin ser esta encriptada.
 Estos datos de ubicación pueden ser utilizados para fines como aparecer en un mapa en directo, rastrear el dispositivo y funciones de telemetría relacionadas.</string>
     <string name="map_reporting_interval_seconds">Tiempo entre Reportes de Posición (en Segundos)</string>
     <string name="map_reporting_summary">Tu nodo enviará periódicamente un paquete sin encriptar de posición en el mapa al servidor MQTT configurado. Esto incluye id, nombre largo y corto, ubicación aproximada, modelo de hardware, rol, versión del firmware, región LoRa, pre-ajuste del módem y nombre del canal principal.</string>

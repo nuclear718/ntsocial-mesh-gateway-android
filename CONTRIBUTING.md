@@ -1,94 +1,104 @@
-# Contributing to Meshtastic-Android
+# Contributing to NTsocial MeshLink
 
-Thank you for your interest in contributing to Meshtastic-Android! We welcome contributions from everyone. Please take a moment to review these guidelines to help us maintain a high-quality, collaborative project.
+感謝你參與 NTsocial MeshLink。本專案目前由 **LiberaNt LLC 與 NTsocial 團隊主導開發與維護**，
+是 Android NTsocial App 的核心開源 companion app；它同時也是 Meshtastic Android 的 GPL
+fork，而不是 Meshtastic LLC 或 MeshCore 專案的官方發行版。
 
-## How to Contribute
+在開始前請閱讀 [AGENTS.md](AGENTS.md)、[NOTICE.md](NOTICE.md) 與
+[著作權與來源政策](docs/copyright-and-attribution.md)。技術變更必須保留既有
+Meshtastic radio/service/database/settings 相容性與 NTsocial Gateway 邊界。
 
-- **Fork the repository** and create your branch from `main` or the appropriate feature branch.
-- **Make your changes** in a logical, atomic manner.
-- **Test your changes** thoroughly before submitting a pull request.
-- **Submit a pull request** (PR) with a clear description of your changes and the problem they solve.
-- If you are addressing an existing issue, please reference it in your PR (e.g., `Fixes #123`).
+## License、著作權與來源
 
-## Code Style
+提交貢獻代表你確認有權依本專案的 GPL-3.0-or-later 條款提供該內容。
 
-- Follow the [Kotlin Coding Conventions](https://kotlinlang.org/docs/coding-conventions.html) for Kotlin code.
-- Use Android Studio's default formatting settings.
-- We use [spotless](https://github.com/diffplug/spotless) for automated code formatting. You can run `./gradlew spotlessApply` to format your code automatically.
-  - You can also run `./gradlew spotlessInstallGitPrePushHook --no-configuration-cache` to install a pre-push Git hook that will run a `spotlessCheck`.
-- Write clear, descriptive variable and function names.
-- Add comments where necessary, especially for complex logic.
-- Keep methods and classes focused and concise.
-- **Strings:** Use localised strings via the **Compose Multiplatform Resource** library in `:core:resources`.
-  - Do **not** use the legacy `app/src/main/res/values/strings.xml`.
-  - **Definition:** Add strings to `core/resources/src/commonMain/composeResources/values/strings.xml`.
-  - **Usage:**
-    ```kotlin
-    import org.jetbrains.compose.resources.stringResource
-    import com.ntsocial.meshlink.core.resources.Res
-    import com.ntsocial.meshlink.core.resources.your_string_key
+- NTsocial MeshLink 原創與 LiberaNt LLC 的修改使用標準 LiberaNt-first 檔頭。
+- Meshtastic Android 衍生檔案必須保留 Meshtastic LLC 的適用 copyright、GPL 與免責。
+- 不得刪除或弱化第三方 license、notice、作者或修改日期。
+- 不得把相鄰 `NTsocial_release` 的專有程式、`All Rights Reserved` 限制、私有資產、
+  production credentials 或秘密搬進本 GPL 倉庫。
+- 除非另有書面 CLA／assignment，個別貢獻者保留其貢獻的著作權。
+- 新增或直接翻譯實質第三方程式時，必須同步更新
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-    Text(text = stringResource(Res.string.your_string_key))
-    ```
+不要手動發明另一套檔頭。Kotlin／KTS／XML 的標準來源位於 `config/spotless/`，並由
+Spotless 與 Detekt 驗證。
 
-### Linting
+## How to contribute
 
-Meshtastic-Android uses [Detekt](https://detekt.dev/) for static code analysis and linting of Kotlin code.
+- 從本 repository 的 `main` 或指定 feature branch 建立範圍清楚的分支。
+- 先搜尋既有 issue／PR，避免重複工作。
+- 以小而完整的 commit 實作，保留上游相容行為。
+- 新功能與 bug fix 必須附上相稱的測試。
+- PR 描述應說明「改了什麼、為什麼、如何驗證」，並標示任何上游來源。
+- 若問題只存在於官方 Meshtastic Android、且未涉及本 fork，請同時考慮回報 upstream。
 
-- Run `./gradlew detekt` before submitting your pull request to ensure your code passes all lint checks.
-- Fix any Detekt warnings or errors reported in your code.
-- It is possible to suppress warnings individually, but this should be used very sparingly.
-- You can find Detekt configuration in the `config/detekt` directory. If you believe a rule should be changed or suppressed, discuss it in your PR.
+## Code style and architecture
 
-Consistent linting helps keep the codebase clean and maintainable.
+- Kotlin 遵循 [Kotlin Coding Conventions](https://kotlinlang.org/docs/coding-conventions.html)。
+- 使用 Compose Multiplatform、Navigation 3、Koin annotations、Ktor、Room KMP 與 Okio 的
+  專案既有模式。
+- `commonMain` 不得引入 `android.*` 或 `java.*`。
+- project-owned package 使用 `com.ntsocial.meshlink.*`；生成的 Meshtastic protobuf 維持
+  `org.meshtastic.proto`。
+- shared string 放在 `core:resources`；新增後執行 `python3 scripts/sort-strings.py`。
+- 不新增 Google Cloud、Maps、Play services、Firebase、Crashlytics、Datadog、ML Kit 或廣告
+  runtime；`google` flavor 只是既有 Play 發布名稱。
+- 用 `safeCatching {}` 保護 coroutine cancellation，避免 suspend path 的 `runCatching {}`。
+- 請使用清楚命名、聚焦函式與必要註解，不使用 placeholder code。
 
-### Testing
+完整規則以 [AGENTS.md](AGENTS.md) 與 `.skills/` playbooks 為準。
 
-Meshtastic-Android uses unit tests, Robolectric JVM tests, and instrumented UI tests to ensure code quality and reliability.
+## Formatting, lint and tests
 
-- **Unit tests** are located in the `src/test/` directory of each module.
-- **Compose UI Tests (JVM)** are preferred for component testing and are also located in `src/test/` using **Robolectric**. 
-    - Note: If using Java 21, pin your Robolectric tests to `@Config(sdk = [34])` to avoid SDK 35 compatibility issues.
-- **Instrumented tests** (including full E2E UI tests) are located in `src/androidTest/`. For Compose UI, use the [Jetpack Compose Testing APIs](https://developer.android.com/jetpack/compose/testing).
+建置前先完成專案 bootstrap：
 
-#### Guidelines for Testing
+```bash
+git submodule update --init
+```
 
-- Add or update tests for any new features or bug fixes.
-- Ensure all tests pass by running:
-  - `./gradlew test` for unit and Robolectric tests
-  - `./gradlew connectedAndroidTest` for instrumented tests
-- For UI components, write Robolectric Compose tests where possible for faster execution.
-- If your change is difficult to test, explain why in your pull request.
+JDK 21 與有效 `ANDROID_HOME` 是必要條件。一般 implementation 變更至少執行：
 
-Comprehensive testing helps prevent regressions and ensures a stable experience for all users.
+```bash
+./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests
+```
 
+KMP、flavor、Navigation、dependency 或 host wiring 變更另執行：
 
-## Pull Requests
+```bash
+./gradlew kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug
+```
 
-- branches should start with:
-    - bugfix
-    - enhancement
-    - dependencies
-    - repo
-    - reserved (release, automation)
-- Ensure your branch is up to date with the latest `main` branch before submitting a PR.
-- Provide a meaningful title and description for your PR.
-- Include information on how to test and/or replicate if it is not obvious.
-- Include screenshots or logs if your change affects the UI or user experience.
-- Be responsive to feedback and make requested changes promptly.
-- Squash commits if requested by a maintainer.
+若測試依賴英文資源，設定：
 
-## Issue Reporting
+```text
+JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"
+```
 
-- Search existing issues before opening a new one to avoid duplicates.
-- Provide a clear and descriptive title.
-- Include steps to reproduce, expected behavior, and actual behavior.
-- Attach logs, screenshots, or other helpful context if applicable.
+新增 Android dependency、manifest、signing、store-facing resource 或 release path 時，還要依
+[AGENTS.md](AGENTS.md) 執行 Google release cloud-runtime guard 與 bundle 驗證。成功產生本機
+bundle 不代表已簽章或 Play-ready。
 
-## Community Standards
+## Pull requests
 
-- Be respectful and considerate in all interactions.
-- The Meshtastic Android project is subject to the code of conduct for the parent project, which can be [found here:](https://meshtastic.org/docs/legal/conduct/)
-- Help others by reviewing pull requests and answering questions when possible.
+- 使用 conventional commit 風格標題，例如 `feat(scope):`、`fix(scope):`、
+  `refactor(scope):`、`chore(scope):`。
+- 保持 PR 聚焦；修正／polish commit 在送審前整理成合理的邏輯單位。
+- UI 變更附上 screenshot 或清楚的視覺驗證說明。
+- 說明任何無法執行的測試與原因，不得把未驗證功能描述成已完成。
+- 不提交 APK、AAB、keystore、token、裝置 log 中的私訊／位置／密鑰或其他敏感資料。
 
-Thank you for helping make Meshtastic-Android better! 
+## Issue reporting
+
+請提供可重現步驟、預期行為、實際行為、版本／flavor 與已去識別化的必要 log。切勿公開貼出
+private message、精確位置、PSK、token、signer digest 或 pairing credential。
+
+安全漏洞請依 [SECURITY.md](SECURITY.md) 私下回報。
+
+## Community standards
+
+本 fork 的協作規範見 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。尊重原作者、上游社群、
+NTsocial 使用者與其他貢獻者，是技術品質的一部分。
+
+感謝你協助 LiberaNt LLC／NTsocial 團隊把 NTsocial MeshLink 建成可信、可審查、可長期協作的
+開源通訊平台。

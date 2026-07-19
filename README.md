@@ -1,18 +1,42 @@
 # NTsocial MeshLink
 
 > [!IMPORTANT]
-> This repository is a GPL-3.0 fork of
-> [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android).
-> Gateway v1 is implemented, but this fork is not an official Meshtastic release. A
-> locally tested Debug APK is not a Play-ready release: Google Play publication still
-> requires a production upload key, Play Console credentials, a validated AAB,
-> Play-signing interoperability checks, and completed Play policy declarations.
+> **NTsocial MeshLink 目前由 LiberaNt LLC 與 NTsocial 團隊主導開發、整合與維護**，是
+> Android [NTsocial App](https://github.com/nuclear718/NTsocial_release) 的核心
+> companion app。它仍是完整開源的 GPL-3.0-or-later 專案，並以
+> [meshtastic/Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android)
+> 為上游基礎；本 fork 不是 Meshtastic LLC 或 MeshCore 專案的官方發行版。
+>
+> Gateway v1 已實作，但本機測試過的 Debug APK 不等於 Play-ready release。正式發行仍需
+> production upload key、Play Console 權限、簽章互通驗證與完整政策聲明。
+
+## 主導、著作權與開源承諾
+
+這個 repository 自 2026 年起由 **LiberaNt LLC／NTsocial 團隊**負責產品方向、fork 架構、
+NTsocial Gateway、母程式互通、品牌整合、測試與長期維護。這項主導身分應在文件、程式檔頭
+與發行資訊中清楚可見。
+
+NTsocial MeshLink 特有的原創程式與修改：
+
+**Copyright (c) 2026 LiberaNt LLC.**
+
+開源不表示無作者、無著作權，也不表示公眾領域。GPL 讓任何人可以使用、研究、修改與散布
+本專案；準確保留 LiberaNt、NTsocial 團隊、個別貢獻者與必要上游來源，正是開源協作的一部分。
+本專案不使用 `All Rights Reserved` 或母程式專有 EULA 來限制 GPL 所授予的自由。
+
+Meshtastic Android 衍生部分仍保留 Meshtastic LLC 與其貢獻者的必要著作權、GPL 與免責聲明；
+MeshCore 相容層則保留公開規格與 MIT client 實作的來源致謝。這些上游聲明只適用於各自內容，
+不改變本專案目前由 LiberaNt LLC 主導開發與維護的事實。
+
+完整來源、權利邊界與第三方許可文字請見 [NOTICE.md](NOTICE.md)、
+[著作權與來源政策](docs/copyright-and-attribution.md) 及
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 專案使命
 
-`NTsocial MeshLink` 的目標，是把官方 Meshtastic Android App 的
-radio controller、service、database、settings 與 KMP 架構保留下來，並在其上打造一個
-開源的 NTsocial LoRa 傳輸底座。
+`NTsocial MeshLink` 在保留 Meshtastic Android 的 radio controller、service、database、
+settings 與 KMP 架構相容性的同時，已由 LiberaNt LLC／NTsocial 團隊擴充為 NTsocial 的
+開源 LoRa 傳輸底座與 companion app。
 
 這個 App 是 NTsocial App 與 Meshtastic 網路之間的橋樑：
 
@@ -142,21 +166,28 @@ history compare、Packet Inspector、node policy 與 MeshCore transport。
 新 NTsocial 功能會優先放在清楚分層的模組中，例如 protocol、cache、transport、bridge 與 feature UI。
 共同邏輯應放在 `commonMain`，Android-only IPC 或 service binding 才放在 Android source set。
 
-## License and openness
+## 著作權、授權與來源
 
-This project remains licensed under the
-[GNU General Public License v3.0](LICENSE), following the upstream Meshtastic Android license.
+NTsocial MeshLink 的合併作品依
+[GNU General Public License v3.0 或後續版本](LICENSE) 散布：
 
-Planned openness boundary:
+- LiberaNt LLC 對 NTsocial MeshLink 的原創程式與可受保護的修改主張著作權，並以 GPL
+  授權社群使用、研究、修改與散布。
+- Meshtastic Android 衍生部分保留 Meshtastic LLC 與貢獻者的原宣告；這不是官方
+  Meshtastic release。
+- MeshCore 相容層是本倉庫建立的 Kotlin 實作，但協定語意與參考 client 的權利仍屬各自
+  上游作者；必要 MIT notice 已集中保存。
+- 除非另有書面權利移轉，外部貢獻者仍保有其貢獻的著作權。
 
-- This Gateway App: open source under GPL-3.0.
-- NTsocial transport protocol/schema: intended to be open.
-- NTsocial Gateway IPC contract: intended to be open.
-- NTsocial App product/business logic: stays outside this GPL fork.
-- Meshtastic firmware changes, if needed for NTsocial node profiles: should remain open source.
+開放邊界：
 
-Upstream attribution matters. This project stands on the work of the Meshtastic Android contributors.
-Fork-specific changes should remain clearly marked so bugs are not attributed to upstream maintainers by mistake.
+- 本 Gateway App、NTsocial transport schema 與 Gateway IPC：在本倉庫依 GPL 開源。
+- NTsocial App 的封閉產品／業務邏輯：留在母程式，不進入這個 GPL fork。
+- Meshtastic 或 MeshCore 的上游程式：保留各自來源與授權，不以 NTsocial 檔頭覆蓋。
+- 私有資產、production credentials、秘密與第三方受限素材：不得進入本倉庫。
+
+詳細規則見 [NOTICE.md](NOTICE.md) 與
+[docs/copyright-and-attribution.md](docs/copyright-and-attribution.md)。
 
 ## Development setup
 
@@ -183,9 +214,13 @@ On Unix-like shells, use `./gradlew` instead of `.\gradlew.bat`.
 
 ## English summary
 
-`NTsocial MeshLink` is a GPL-3.0 fork of
-[Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android). Its goal is to become an
-open-source transport gateway between the NTsocial App and Meshtastic radios.
+`NTsocial MeshLink` is led and maintained by **LiberaNt LLC and the NTsocial team** as the core
+open-source companion app for Android NTsocial. It is a GPL-3.0-or-later fork of
+[Meshtastic-Android](https://github.com/meshtastic/Meshtastic-Android) and provides the transport
+gateway between the NTsocial App and Meshtastic radios.
+
+Copyright (c) 2026 LiberaNt LLC for NTsocial MeshLink original work and modifications. Applicable
+Meshtastic and MeshCore-origin notices remain preserved in [NOTICE.md](NOTICE.md).
 
 The NTsocial App will own social UX and canonical history. This Gateway will own Meshtastic radio
 control, `PRIVATE_APP / port 256` transport, overlay cache, duplicate matching, node policy, RF lane

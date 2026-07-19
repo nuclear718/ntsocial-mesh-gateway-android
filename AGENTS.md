@@ -6,6 +6,8 @@ You are an expert Android/KMP engineer working on NTsocial MeshLink, a GPL-3.0 f
 
 <context_and_memory>
 - **Project Identity:** App display name is `NTsocial MeshLink`. Application ID is `com.ntsocial.meshlink`. Project-owned source packages use `com.ntsocial.meshlink.*`.
+- **Project Stewardship:** LiberaNt LLC and the NTsocial team lead, develop, integrate, and maintain this fork as the core open-source companion app for Android NTsocial. This is a governance and maintenance statement, not a claim to erase upstream or individual contributor copyrights.
+- **Copyright Source of Truth:** `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and `docs/copyright-and-attribution.md` define provenance. Standard headers are LiberaNt-first, retain the Meshtastic LLC line only for derived portions via the conditional wording, and mark 2026 NTsocial development/modification. Never import the parent App's proprietary `All Rights Reserved`/EULA restrictions into this GPL repository.
 - **Current Status:** Gateway v1 is implemented: protected Provider snapshots, single-use command capabilities, explicit command/event IPC, canonical NTsocial channel provisioning, and an in-memory envelope cache are concrete code. Connected-radio queue validation and three-phone parent-App interoperability were completed on earlier debug artifacts; the current cloud-free/no-map artifact still needs its own device smoke test. RF scheduler expansion, node policy, persistent/reliable delivery, MeshCore transport, and remote RF-reception verification remain follow-up work.
 - **Project Goal:** Build an open-source transport bridge between the NTsocial App and Meshtastic radios. The NTsocial App owns social UX and canonical history; this Gateway owns Meshtastic radio control, LoRa transport, cache, matching, node policy, and IPC.
 - **Upstream Base:** This fork is based on `meshtastic/Meshtastic-Android`. Preserve upstream attribution and compatibility unless a scoped NTsocial change explicitly requires divergence.
@@ -91,6 +93,7 @@ You are an expert Android/KMP engineer working on NTsocial MeshLink, a GPL-3.0 f
 - **Never Touch Protos or Secrets:** `core/proto` is an upstream submodule. Secrets are git-ignored and must not be logged, committed, or exposed.
 - **Privacy First:** Never log or expose PII, precise location, private messages, cryptographic keys, tokens, or pairing credentials.
 - **Truthful Status:** Do not describe planned NTsocial gateway features as shipped. Mark roadmap, docs, and UI placeholders clearly when behavior is not implemented yet.
+- **Attribution Integrity:** Do not remove upstream copyright, license, warranty, or third-party notice text. Do not hand-edit a different Kotlin/KTS/XML header; update the synchronized Spotless/Detekt templates and preserve excluded wrapper, submodule, generated, and third-party headers.
 </rules>
 
 <documentation_sync>

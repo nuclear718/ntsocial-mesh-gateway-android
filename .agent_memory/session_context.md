@@ -1,5 +1,24 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-19 - LiberaNt-first copyright and attribution audit
+- Audited the fork history, the adjacent NTsocial parent repository, the MeshCore integration commits, and 2,090
+  tracked files. The repository now states prominently that LiberaNt LLC leads NTsocial MeshLink development and
+  maintenance and that MeshLink is the open-source companion/gateway for the NTsocial Android App.
+- Replaced the blanket Meshtastic-only Spotless/Detekt header with a dual-attribution GPL header: LiberaNt LLC for
+  NTsocial original work and modifications, and Meshtastic LLC only for Meshtastic-derived portions where present.
+  Migrated 1,323 files to explicit LiberaNt notices; 1,325 files carry GPL SPDX and Meshtastic-derived notices.
+- Added `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and `docs/copyright-and-attribution.md`; rewrote the main governance
+  documents and documented the pinned MeshCore, meshcore.js, and meshcore_py sources. Exact MIT license texts for
+  the two vendored/client-derived MeshCore libraries are preserved in the third-party notices.
+- Deliberately did not copy the parent App's proprietary `All Rights Reserved` terms into this GPL repository.
+  Contributor copyright remains with contributors unless separately assigned, while project stewardship and
+  release authority are documented as LiberaNt-led. Root `LICENSE`, wrappers, and `core/proto` were not modified.
+- Validation passed: `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue
+  --no-configuration-cache` completed successfully in 17m (1,589 actionable tasks), and `kmpSmokeCompile
+  :app:lintFdroidDebug :app:lintGoogleDebug --continue --no-configuration-cache` completed successfully in 2m09s
+  (920 actionable tasks). Final scans found no source-template `$YEAR`, no missing AIDL notices, no corrupt docs,
+  no broken local Markdown links, no `core/proto` diff, and a clean `git diff --check` result.
+
 ## 2026-07-19 - Android Studio Kotlin compiler crash fixed and interrupted caches recovered
 - Diagnosed the red `:core:repository:compileKotlinJvm` failure as a Kotlin 2.3.21 compiler-internal concurrency
   crash, not an application source error: FIR metadata serialization and asynchronous JVM code generation threw

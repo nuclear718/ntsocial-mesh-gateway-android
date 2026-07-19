@@ -1,5 +1,13 @@
 /*
+ * NTsocial MeshLink original work and modifications:
+ * Copyright (c) 2026 LiberaNt LLC
+ *
+ * Meshtastic Android-derived portions, where present:
  * Copyright (c) 2026 Meshtastic LLC
+ *
+ * Developed and/or modified for NTsocial MeshLink in 2026.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,7 +46,7 @@ interface MeshLogDao {
      */
     @Query(
         """
-        SELECT * FROM log 
+        SELECT * FROM log
         WHERE from_num = :fromNum AND (:portNum = -1 OR port_num = :portNum)
         ORDER BY received_date DESC LIMIT :maxItem
         """,
