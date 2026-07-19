@@ -1,5 +1,22 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-19 - Explicit manual Android version configuration
+- Replaced the normal local Git-derived version defaults with the two explicit, user-editable root settings
+  `VERSION_CODE=1` and `VERSION_NAME=1.0.0` in `config.properties`. Android Studio and Desktop builds now resolve
+  those values by default; injected Gradle/CI and environment overrides retain higher precedence for automation.
+- Removed the flavor-specific version-name rewrite, so the Google release manifest now preserves the exact configured
+  user-visible name instead of appending `(<code>) google`. Updated the Maven publishing fallback and release process
+  documentation/workflow references from the retired `VERSION_NAME_BASE` key to `VERSION_NAME`.
+- Kept `VERSION_CODE_OFFSET` only as a documented legacy fallback for builds that intentionally omit
+  `VERSION_CODE`; existing release CI continues to inject its calculated values explicitly and is not changed.
+- Validation passed with JDK 21, Android SDK, and English test locale: full baseline
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue --no-configuration-cache` (18m38s,
+  1,589 actionable tasks); `kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug --continue
+  --no-configuration-cache` (1m20s, 920 tasks); and
+  `:app:verifyGoogleReleaseNoCloudRuntimeDependencies :app:bundleGoogleRelease --no-configuration-cache`
+  (1m58s, 753 tasks). Bundletool validation passed and the generated `googleRelease` AAB manifest reports
+  `versionCode=1` and `versionName=1.0.0`.
+
 ## 2026-07-19 - Google Play stewardship and open-source copy audit
 - Audited and revised all ten `docs/google-play/` submission drafts after the LiberaNt-first repository copyright
   migration. Every document now consistently identifies LiberaNt LLC as publisher and LiberaNt LLC / the NTsocial

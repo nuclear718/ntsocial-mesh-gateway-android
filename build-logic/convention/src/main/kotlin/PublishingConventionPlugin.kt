@@ -37,9 +37,9 @@ class PublishingConventionPlugin : Plugin<Project> {
 
             if (version == "unspecified") {
                 version =
-                    providers.environmentVariable("VERSION").orNull
+                        providers.environmentVariable("VERSION").orNull
                         ?: providers.environmentVariable("VERSION_NAME").orNull
-                        ?: configProperties.getProperty("VERSION_NAME_BASE")
+                        ?: configProperties.getProperty("VERSION_NAME")
                         ?: "0.0.0-SNAPSHOT"
             }
 

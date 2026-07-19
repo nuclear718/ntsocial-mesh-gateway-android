@@ -186,12 +186,6 @@ configure<ApplicationExtension> {
         }
     }
 
-    // Keep both flavor task names for existing release channels. Their runtime dependency sets are intentionally
-    // cloud-free and equivalent with respect to maps, diagnostics, and barcode decoding.
-    productFlavors {
-        configureEach { versionName = "${defaultConfig.versionName} (${defaultConfig.versionCode}) $name" }
-    }
-
     buildTypes {
         release {
             if (keystoreProperties["storeFile"] != null) {

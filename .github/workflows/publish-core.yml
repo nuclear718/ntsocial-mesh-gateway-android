@@ -38,10 +38,9 @@ jobs:
           if [[ "$EVENT_NAME" == "release" ]]; then
             echo "VERSION_NAME=$RELEASE_TAG" >> $GITHUB_ENV
           else
-             # Use a timestamp-based version for manual/branch builds to avoid collisions
-             # or use the base version + suffix
-             BASE_VERSION=$(grep "VERSION_NAME_BASE" config.properties | cut -d'=' -f2)
-             echo "VERSION_NAME=${BASE_VERSION}${VERSION_SUFFIX}" >> $GITHUB_ENV
+             # Use the configured version plus a suffix for manual/branch builds to avoid collisions.
+             CONFIG_VERSION=$(grep '^VERSION_NAME=' config.properties | cut -d'=' -f2)
+             echo "VERSION_NAME=${CONFIG_VERSION}${VERSION_SUFFIX}" >> $GITHUB_ENV
           fi
 
       - name: Publish to GitHub Packages

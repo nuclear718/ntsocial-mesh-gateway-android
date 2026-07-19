@@ -27,8 +27,9 @@ package com.ntsocial.meshlink.buildlogic
 import org.gradle.api.Project
 
 /**
- * Shared version metadata resolved from config.properties, environment variables, Gradle properties, and git commit
- * count. Used by both the Android app and Desktop host shells to avoid duplicating resolution logic.
+ * Shared version metadata resolved from config.properties, environment variables, Gradle properties, and a legacy
+ * git commit-count fallback. Used by both the Android app and Desktop host shells to avoid duplicating resolution
+ * logic.
  */
 data class VersionInfo(
     val versionCode: Int,
@@ -41,23 +42,26 @@ data class VersionInfo(
  * Resolves version information using the following precedence:
  * 1. Gradle properties injected by the IDE or CI (`android.injected.version.code`, etc.)
  * 2. Environment variables (`VERSION_CODE`, `VERSION_NAME`)
- * 3. Git commit count + offset from `config.properties`
- * 4. Fallback defaults
+ * 3. Explicit `VERSION_CODE` / `VERSION_NAME` values in `config.properties`
+ * 4. Git commit count + offset for version code when `VERSION_CODE` is intentionally absent
+ * 5. Fallback defaults
  */
 fun Project.resolveVersionInfo(): VersionInfo {
     val gitVersionProvider = providers.of(GitVersionValueSource::class.java) {}
     val vcOffset = configProperties.getProperty("VERSION_CODE_OFFSET")?.toInt() ?: 0
+    val configuredVersionCode = configProperties.getProperty("VERSION_CODE")?.toInt()
 
     val versionCode =
         findProperty("android.injected.version.code")?.toString()?.toInt()
             ?: System.getenv("VERSION_CODE")?.toInt()
+            ?: configuredVersionCode
             ?: (gitVersionProvider.get().toInt() + vcOffset)
 
     val versionName =
         findProperty("android.injected.version.name")?.toString()
             ?: findProperty("appVersionName")?.toString()
             ?: System.getenv("VERSION_NAME")
-            ?: configProperties.getProperty("VERSION_NAME_BASE")
+            ?: configProperties.getProperty("VERSION_NAME")
             ?: "1.0.0"
 
     val minFwVersion = configProperties.getProperty("MIN_FW_VERSION") ?: ""

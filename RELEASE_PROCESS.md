@@ -14,7 +14,7 @@ The entire release process is managed by a single, manually-triggered GitHub Act
 -   **Automation:** The workflow handles everything automatically:
     -   **Syncs Assets:** Fetches the latest firmware/hardware lists, protobuf definitions, and translations (Crowdin).
     -   **Generates Changelog:** Creates a clean changelog from commits since the last production release and commits it to the repo.
-    -   **Updates Config:** Automatically bumps the `VERSION_NAME_BASE` in `config.properties`.
+    -   **Updates Config:** Automatically bumps the `VERSION_NAME` in `config.properties`.
     -   **Verifies & Tags:** Runs lint checks, builds the app, and *only* tags the release if successful.
     -   **Deploys Android:** Uploads the build to the correct Google Play track and attaches artifacts (`.aab`/`.apk`) to a GitHub Release.
     -   **Deploys Desktop** *(when enabled)*: Builds native installers (DMG, MSI, EXE, DEB, RPM, AppImage) on a matrix of runners and attaches them to the GitHub Release.
@@ -90,7 +90,10 @@ Without these secrets, macOS builds are produced unsigned. Unsigned DMGs will tr
 
 ### Version Alignment
 
-Desktop uses the same version resolution chain as Android — both read `VERSION_CODE_OFFSET` and `VERSION_NAME_BASE` from `config.properties`, with CI passing the resolved values as environment variables. Version names are sanitized to strict `X.Y.Z` format for native installer compatibility.
+Desktop uses the same version resolution chain as Android — both read `VERSION_CODE` and `VERSION_NAME` from
+`config.properties`, with CI passing release overrides as environment variables. `VERSION_CODE_OFFSET` remains a
+legacy fallback only when `VERSION_CODE` is intentionally absent. Version names are sanitized to strict `X.Y.Z`
+format for native installer compatibility.
 
 ### Flatpak
 
