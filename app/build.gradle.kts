@@ -26,6 +26,7 @@
 import com.android.build.api.artifact.SingleArtifact
 import com.android.build.api.dsl.ApplicationExtension
 import com.ntsocial.meshlink.buildlogic.VerifyNoCloudRuntimeComponentsTask
+import com.ntsocial.meshlink.buildlogic.VerifyNoCloudRuntimeDependenciesTask
 import com.ntsocial.meshlink.buildlogic.configProperties
 import com.ntsocial.meshlink.buildlogic.resolveVersionInfo
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
@@ -229,33 +230,29 @@ androidComponents {
 }
 
 val verifyGoogleReleaseNoCloudRuntimeDependencies =
-    tasks.register("verifyGoogleReleaseNoCloudRuntimeDependencies") {
+    tasks.register<VerifyNoCloudRuntimeDependenciesTask>("verifyGoogleReleaseNoCloudRuntimeDependencies") {
         group = "verification"
         description = "Rejects Google cloud/Maps/ML Kit and Datadog artifacts from the Play release runtime graph."
 
-        doLast {
-            val configuration = configurations.getByName("googleReleaseRuntimeClasspath")
-            val forbidden =
-                configuration.incoming.resolutionResult.allComponents
-                    .mapNotNull { component ->
-                        val id = component.id as? ModuleComponentIdentifier ?: return@mapNotNull null
-                        val group = id.group
-                        val blocked =
-                            forbiddenCloudRuntimeGroups.any { prefix ->
-                                group == prefix || group.startsWith("$prefix.")
-                            }
-                        if (blocked) {
-                            "${id.group}:${id.module}:${id.version}"
-                        } else {
-                            null
+        val configuration = configurations.getByName("googleReleaseRuntimeClasspath")
+        val forbidden =
+            configuration.incoming.resolutionResult.allComponents
+                .mapNotNull { component ->
+                    val id = component.id as? ModuleComponentIdentifier ?: return@mapNotNull null
+                    val group = id.group
+                    val blocked =
+                        forbiddenCloudRuntimeGroups.any { prefix ->
+                            group == prefix || group.startsWith("$prefix.")
                         }
+                    if (blocked) {
+                        "${id.group}:${id.module}:${id.version}"
+                    } else {
+                        null
                     }
-                    .distinct()
-                    .sorted()
-            check(forbidden.isEmpty()) {
-                "Forbidden cloud runtime dependencies found in googleRelease:\n${forbidden.joinToString("\n")}"
-            }
-        }
+                }
+                .distinct()
+                .sorted()
+        forbiddenDependencies.set(forbidden)
     }
 
 tasks

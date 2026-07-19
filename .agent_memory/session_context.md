@@ -1,5 +1,19 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-19 - Play PNG icon and feature graphic
+- Added the Play-ready PNGs under the valid no-density Android resource directory
+  `app/src/main/res/drawable-nodpi/`: `ntsocial_meshlink_play_icon_512.png` (512 × 512 RGB PNG, 70,109 bytes)
+  and `ntsocial_meshlink_play_feature_graphic_1024x500.png` (1024 × 500 RGB PNG, 509,855 bytes).
+- The icon preserves the established NTsocial butterfly silhouette in green on black. The feature graphic identifies
+  `NTsocial MeshLink` first and `LiberaNt` second, with an original green optical-fiber/radio-network background;
+  it contains no map, real location, personal data, third-party logo, or unimplemented feature claim.
+- Used the current project green launcher foreground as the exact butterfly source and an ImageGen-created original
+  background; both final artifacts are 24-bit PNGs. `:app:verifyGoogleReleaseNoCloudRuntimeDependencies
+  :app:bundleGoogleRelease --no-configuration-cache` passed with JDK 21 (BUILD SUCCESSFUL, 2m44s).
+- A connected authorized `SM-S9280` phone and matching Google arm64 debug APK are available for authentic store
+  screenshots, but screenshots were intentionally not generated or captured in this task because they must show
+  truthful current UI and device installation/interaction requires user confirmation.
+
 ## 2026-07-19 - Explicit manual Android version configuration
 - Replaced the normal local Git-derived version defaults with the two explicit, user-editable root settings
   `VERSION_CODE=1` and `VERSION_NAME=1.0.0` in `config.properties`. Android Studio and Desktop builds now resolve
