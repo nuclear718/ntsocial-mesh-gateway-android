@@ -46,9 +46,9 @@ git submodule update --init
 
 ### Current Build and Release Status
 
-- On 2026-07-18, the cloud-free baseline passed: the formatting/static/build/test command completed
-  in 4m41s (1,569 actionable tasks), and KMP smoke compilation plus both flavor lint tasks completed
-  in 1m18s (932 actionable tasks).
+- On 2026-07-23, the cloud-free, Bluetooth-only Connections UI baseline passed: the
+  formatting/static/build/test command completed in 21m9s (1,589 actionable tasks), and KMP smoke
+  compilation plus both flavor lint tasks completed in 2m32s (920 actionable tasks).
 - The prior F-Droid arm64 debug APK passed `zipalign -c -P 16` and was clean-installed with the
   NTsocial parent on three Android 16 phones. Parent Provider status/launch, primary screens,
   lifecycle switching, English-keyboard text entry, cross-phone parent sync, and relevant crash/ANR
@@ -191,6 +191,10 @@ a coroutine-cleanup timeout flake under the full parallel baseline.
   gray surfaces, and mixed monospace typography for compact metadata.
 - Preserve `AppTheme`, Dynamic Color behavior, Material 3 Expressive, and the existing adaptive
   Navigation 3 shell unless a UI redesign is explicitly requested.
+- Keep the shared first-release Connections UI Bluetooth-only: retain the connection-status card,
+  BLE scan/device list, region warning, and disconnect/navigation behavior, but do not restore
+  transport filter chips, USB/TCP sections, manual TCP controls, or screen-driven network scanning.
+  Preserve USB/TCP discovery, models, transports, handlers, preferences, and tests as backend code.
 - Use the established NTsocial butterfly for primary branding. MeshLink launcher, store, splash,
   and in-app variants keep that silhouette and use Meshtastic green `#67EA94` on black.
 - Use upstream Meshtastic design patterns when preserving existing Meshtastic screens, but do not

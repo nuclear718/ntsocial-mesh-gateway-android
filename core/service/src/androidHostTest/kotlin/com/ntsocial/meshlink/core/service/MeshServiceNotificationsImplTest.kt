@@ -31,11 +31,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
+import com.ntsocial.meshlink.core.resources.R.color
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
@@ -89,7 +91,8 @@ class MeshServiceNotificationsImplTest {
             )
 
         canonicalChannelIds.forEach { channelId ->
-            assertNotNull(systemNotificationManager.getNotificationChannel(channelId))
+            val channel = assertNotNull(systemNotificationManager.getNotificationChannel(channelId))
+            assertEquals(context.getColor(color.ntsocial_notification_green), channel.lightColor)
         }
     }
 

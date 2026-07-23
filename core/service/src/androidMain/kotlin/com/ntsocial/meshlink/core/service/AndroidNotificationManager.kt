@@ -31,6 +31,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import com.ntsocial.meshlink.core.repository.Notification
 import com.ntsocial.meshlink.core.repository.NotificationManager
+import com.ntsocial.meshlink.core.resources.R.color
 import com.ntsocial.meshlink.core.resources.R.drawable
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.getString
@@ -84,7 +85,9 @@ class AndroidNotificationManager(private val context: Context) : NotificationMan
         nameRes: org.jetbrains.compose.resources.StringResource,
     ): NotificationChannel {
         val channelConfig = category.channelConfig()
-        return NotificationChannel(channelConfig.id, getString(nameRes), channelConfig.importance)
+        return NotificationChannel(channelConfig.id, getString(nameRes), channelConfig.importance).apply {
+            lightColor = context.getColor(color.ntsocial_notification_green)
+        }
     }
 
     // Keep category-to-channel mapping aligned with MeshServiceNotificationsImpl.NotificationType IDs.
@@ -120,7 +123,8 @@ class AndroidNotificationManager(private val context: Context) : NotificationMan
             NotificationCompat.Builder(context, notification.category.channelConfig().id)
                 .setContentTitle(notification.title)
                 .setContentText(notification.message)
-                .setSmallIcon(drawable.meshtastic_ic_notification)
+                .setSmallIcon(drawable.ntsocial_ic_notification)
+                .setColor(context.getColor(color.ntsocial_notification_green))
                 .setAutoCancel(true)
                 .setSilent(notification.isSilent)
 

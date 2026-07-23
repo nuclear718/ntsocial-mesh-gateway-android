@@ -1,5 +1,23 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-23 - NTsocial butterfly foreground-service notification branding
+- Replaced the remaining Meshtastic mountain notification small-icon resource with a dedicated 24dp NTsocial
+  butterfly vector. The simplified segmented-wing silhouette is derived from the established NTsocial butterfly
+  visual language and remains legible as an Android monochrome notification mask.
+- Renamed the resource from `meshtastic_ic_notification` to `ntsocial_ic_notification` and updated the main mesh
+  service foreground notification, the expedited keep-alive worker fallback, notification summaries, and the generic
+  notification manager. No source reference to the retired mountain icon remains.
+- Added the official `#67EA94` NTsocial green as the shared Android notification accent and channel light color. The
+  notification drawer may show this accent, while Android/OEM status bars still system-tint small icons (normally
+  white); the top-bar glyph shape is now the NTsocial butterfly regardless of that platform-controlled tint.
+- Added Robolectric regressions for the posted notification icon/color and every canonical notification channel's
+  light color. Targeted `spotlessApply :core:service:testAndroidHostTest` passed.
+- Full validation passed with JDK 21, the initialized proto submodule, Android SDK, and English test locale:
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue --no-configuration-cache` (`BUILD
+  SUCCESSFUL`, 7m7s, 1,589 actionable tasks) and `kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug
+  --continue --no-configuration-cache` (`BUILD SUCCESSFUL`, 2m39s, 920 actionable tasks). No device/OEM status-bar
+  smoke test was performed.
+
 ## 2026-07-19 - Google Release configuration-cache signing build fix
 - Replaced the remaining `doLast` implementation of
   `verifyGoogleReleaseNoCloudRuntimeDependencies` with the typed build-logic task
@@ -723,6 +741,26 @@
   `docs/google-play/06-first-play-launch-plan-zh-TW.md`.
 - This session was documentation-only; no application code, release credentials, Play Console state, or GCP
   resources were changed, and no Gradle validation was required.
+
+## 2026-07-23 - Bluetooth-only first-release connections UI
+- Simplified the shared `ConnectionsScreen` presentation to a single Bluetooth device section. Removed the BLE/TCP/USB
+  transport filter chips, the TCP/network and USB list sections and empty states, the manual TCP address sheet, and the
+  screen-level network auto-scan/permission trigger. The connection status card, BLE scan action, BLE devices, region
+  warning, and disconnect/navigation behavior remain.
+- Narrowed `bleDevicesForUi`, `BluetoothDeviceList`, and `DeviceListItem` to `DeviceListEntry.Ble`, so USB/TCP icons and
+  actions cannot be rendered through this UI. Because the screen is in `commonMain`, the simplified presentation is
+  shared by the Android and desktop hosts.
+- Preserved all TCP/USB backend code: Android/JVM discovery, `ScannerViewModel` TCP/USB flows and scan/select handlers,
+  device models, transports, preferences, and tests remain. Existing connection tests confirmed BLE, TCP, and USB
+  backend behavior still passes.
+- Validation passed with JDK 21, Android SDK, and English test locale: targeted
+  `:feature:connections:allTests` (`BUILD SUCCESSFUL`, 10m35s); required full
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue --no-configuration-cache`
+  (`BUILD SUCCESSFUL`, 21m9s; 1,589 actionable tasks); and
+  `kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug --continue --no-configuration-cache`
+  (`BUILD SUCCESSFUL`, 2m32s; 920 actionable tasks). No device UI smoke test was performed in this session.
+- Synchronized `AGENTS.md` and `.github/copilot-instructions.md` with the Bluetooth-only first-release Connections UI
+  rule, retained USB/TCP backend boundary, current build evidence, and outstanding device-smoke limitation.
 
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.

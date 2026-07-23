@@ -26,7 +26,6 @@ package com.ntsocial.meshlink.feature.connections.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,162 +35,62 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextFieldLabelPosition
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.ntsocial.meshlink.core.common.util.isValidAddress
 import com.ntsocial.meshlink.core.model.ConnectionState
-import com.ntsocial.meshlink.core.network.repository.NetworkConstants
 import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.add_network_device
-import com.ntsocial.meshlink.core.resources.add_network_device_manually
-import com.ntsocial.meshlink.core.resources.address
 import com.ntsocial.meshlink.core.resources.bluetooth
-import com.ntsocial.meshlink.core.resources.cancel
-import com.ntsocial.meshlink.core.resources.ip_port
-import com.ntsocial.meshlink.core.resources.network
 import com.ntsocial.meshlink.core.resources.no_bluetooth_devices_hint
 import com.ntsocial.meshlink.core.resources.no_bluetooth_devices_seen
-import com.ntsocial.meshlink.core.resources.no_network_devices_hint
-import com.ntsocial.meshlink.core.resources.no_network_devices_seen
-import com.ntsocial.meshlink.core.resources.no_usb_devices_hint
-import com.ntsocial.meshlink.core.resources.no_usb_devices_seen
-import com.ntsocial.meshlink.core.resources.recent_network_devices
 import com.ntsocial.meshlink.core.resources.scan_bluetooth_devices
-import com.ntsocial.meshlink.core.resources.scan_network_devices
 import com.ntsocial.meshlink.core.resources.scanning_bluetooth
-import com.ntsocial.meshlink.core.resources.scanning_network
-import com.ntsocial.meshlink.core.resources.usb
-import com.ntsocial.meshlink.core.ui.icon.Add
 import com.ntsocial.meshlink.core.ui.icon.Bluetooth
 import com.ntsocial.meshlink.core.ui.icon.Close
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.Search
-import com.ntsocial.meshlink.core.ui.icon.Usb
-import com.ntsocial.meshlink.core.ui.icon.Wifi
 import com.ntsocial.meshlink.feature.connections.model.DeviceListEntry
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
-/**
- * Unified device list: BLE / USB / Network sections rendered as one scrollable [LazyColumn].
- *
- * Replaces the previous tab-based UI. Every section uses the same M3 header template ([DeviceSectionHeader]); empty
- * sections are hidden. Stable per-transport keys (e.g. `"ble:<fullAddress>"`) keep LazyColumn's recomposition scope
- * tight to the actual item that changed when a user taps a device card.
- *
- * BLE / network scanning is user-triggered — the header's trailing toggle calls back to the caller.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Suppress("LongParameterList")
+/** Bluetooth-only device list for the first-release connection UI. */
 @Composable
-fun DeviceList(
+fun BluetoothDeviceList(
     connectionState: ConnectionState,
     selectedDevice: String,
-    bleDevices: List<DeviceListEntry>,
-    usbDevices: List<DeviceListEntry>,
-    discoveredTcpDevices: List<DeviceListEntry>,
-    recentTcpDevices: List<DeviceListEntry>,
+    bleDevices: List<DeviceListEntry.Ble>,
     isBleScanning: Boolean,
-    isNetworkScanning: Boolean,
-    onSelectDevice: (DeviceListEntry) -> Unit,
+    onSelectDevice: (DeviceListEntry.Ble) -> Unit,
     onToggleBleScan: () -> Unit,
-    onToggleNetworkScan: () -> Unit,
-    onAddManualAddress: (address: String, fullAddress: String) -> Unit,
-    onRemoveRecentAddress: (DeviceListEntry) -> Unit,
     modifier: Modifier = Modifier,
-    showBleSection: Boolean = true,
-    showNetworkSection: Boolean = true,
-    showUsbSection: Boolean = true,
 ) {
-    var showAddDialog by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-
-    val hideAndDismiss: () -> Unit = {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { if (!sheetState.isVisible) showAddDialog = false }
-    }
-
-    if (showAddDialog) {
-        AddDeviceDialog(
-            sheetState = sheetState,
-            onHideDialog = hideAndDismiss,
-            onClickAdd = { address, fullAddress ->
-                onAddManualAddress(address, fullAddress)
-                hideAndDismiss()
-            },
-        )
-    }
-
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (showBleSection) {
-            bluetoothSection(
-                bleDevices = bleDevices,
-                connectionState = connectionState,
-                selectedDevice = selectedDevice,
-                isBleScanning = isBleScanning,
-                onSelectDevice = onSelectDevice,
-                onToggleBleScan = onToggleBleScan,
-            )
-        }
-
-        if (showNetworkSection) {
-            networkSection(
-                discoveredTcpDevices = discoveredTcpDevices,
-                recentTcpDevices = recentTcpDevices,
-                connectionState = connectionState,
-                selectedDevice = selectedDevice,
-                isNetworkScanning = isNetworkScanning,
-                onSelectDevice = onSelectDevice,
-                onToggleNetworkScan = onToggleNetworkScan,
-                onAddManually = { showAddDialog = true },
-                onRemoveRecentAddress = onRemoveRecentAddress,
-            )
-        }
-
-        if (showUsbSection) {
-            usbSection(
-                usbDevices = usbDevices,
-                connectionState = connectionState,
-                selectedDevice = selectedDevice,
-                onSelectDevice = onSelectDevice,
-            )
-        }
+        bluetoothSection(
+            bleDevices = bleDevices,
+            connectionState = connectionState,
+            selectedDevice = selectedDevice,
+            isBleScanning = isBleScanning,
+            onSelectDevice = onSelectDevice,
+            onToggleBleScan = onToggleBleScan,
+        )
+        item(key = "spacer:bottom", contentType = "spacer") { Spacer(Modifier.height(16.dp)) }
     }
 }
 
 @Suppress("LongParameterList")
 private fun LazyListScope.bluetoothSection(
-    bleDevices: List<DeviceListEntry>,
+    bleDevices: List<DeviceListEntry.Ble>,
     connectionState: ConnectionState,
     selectedDevice: String,
     isBleScanning: Boolean,
-    onSelectDevice: (DeviceListEntry) -> Unit,
+    onSelectDevice: (DeviceListEntry.Ble) -> Unit,
     onToggleBleScan: () -> Unit,
 ) {
     item(key = "header:ble", contentType = "header") {
@@ -228,137 +127,14 @@ private fun LazyListScope.bluetoothSection(
     }
 }
 
-private fun LazyListScope.usbSection(
-    usbDevices: List<DeviceListEntry>,
-    connectionState: ConnectionState,
-    selectedDevice: String,
-    onSelectDevice: (DeviceListEntry) -> Unit,
-) {
-    item(key = "header:usb", contentType = "header") { DeviceSectionHeader(title = stringResource(Res.string.usb)) }
-    items(usbDevices, key = { device -> "usb:${device.fullAddress}" }, contentType = { "device" }) { device ->
-        DeviceCard(
-            device = device,
-            connectionState = connectionState,
-            selectedDevice = selectedDevice,
-            onSelect = onSelectDevice,
-        )
-    }
-    if (usbDevices.isEmpty()) {
-        item(key = "empty:usb", contentType = "empty") {
-            SectionEmptyState(
-                text = stringResource(Res.string.no_usb_devices_seen),
-                supportingText = stringResource(Res.string.no_usb_devices_hint),
-                imageVector = MeshtasticIcons.Usb,
-            )
-        }
-    }
-}
-
-@Suppress("LongParameterList")
-private fun LazyListScope.networkSection(
-    discoveredTcpDevices: List<DeviceListEntry>,
-    recentTcpDevices: List<DeviceListEntry>,
-    connectionState: ConnectionState,
-    selectedDevice: String,
-    isNetworkScanning: Boolean,
-    onSelectDevice: (DeviceListEntry) -> Unit,
-    onToggleNetworkScan: () -> Unit,
-    onAddManually: () -> Unit,
-    onRemoveRecentAddress: (DeviceListEntry) -> Unit,
-) {
-    item(key = "header:tcp-discovered", contentType = "header") {
-        DeviceSectionHeader(
-            title = stringResource(Res.string.network),
-            showProgress = isNetworkScanning,
-            trailing = {
-                ScanToggleAction(
-                    isScanning = isNetworkScanning,
-                    scanLabel = stringResource(Res.string.scan_network_devices),
-                    scanningLabel = stringResource(Res.string.scanning_network),
-                    onToggle = onToggleNetworkScan,
-                )
-            },
-        )
-    }
-    items(
-        discoveredTcpDevices,
-        key = { device -> "tcp-discovered:${device.fullAddress}" },
-        contentType = { "device" },
-    ) { device ->
-        DeviceCard(
-            device = device,
-            connectionState = connectionState,
-            selectedDevice = selectedDevice,
-            onSelect = onSelectDevice,
-        )
-    }
-
-    if (discoveredTcpDevices.isEmpty() && recentTcpDevices.isEmpty()) {
-        item(key = "empty:tcp", contentType = "empty") {
-            SectionEmptyState(
-                text = stringResource(Res.string.no_network_devices_seen),
-                supportingText = stringResource(Res.string.no_network_devices_hint),
-                imageVector = MeshtasticIcons.Wifi,
-            )
-        }
-    }
-
-    recentNetworkSection(
-        recentTcpDevices = recentTcpDevices,
-        connectionState = connectionState,
-        selectedDevice = selectedDevice,
-        onSelectDevice = onSelectDevice,
-        onRemoveRecentAddress = onRemoveRecentAddress,
-    )
-
-    item(key = "action:add-network", contentType = "action") {
-        ConnectionActionButton(
-            onClick = onAddManually,
-            icon = MeshtasticIcons.Add,
-            text = stringResource(Res.string.add_network_device_manually),
-            modifier = Modifier.fillMaxWidth(),
-            style = ConnectionActionButtonStyle.Tonal,
-        )
-    }
-
-    item(key = "spacer:bottom", contentType = "spacer") { Spacer(Modifier.height(16.dp)) }
-}
-
-private fun LazyListScope.recentNetworkSection(
-    recentTcpDevices: List<DeviceListEntry>,
-    connectionState: ConnectionState,
-    selectedDevice: String,
-    onSelectDevice: (DeviceListEntry) -> Unit,
-    onRemoveRecentAddress: (DeviceListEntry) -> Unit,
-) {
-    if (recentTcpDevices.isEmpty()) return
-    item(key = "header:tcp-recent", contentType = "header") {
-        DeviceSectionHeader(title = stringResource(Res.string.recent_network_devices))
-    }
-    items(
-        recentTcpDevices,
-        key = { device -> "tcp-recent:${device.fullAddress}" },
-        contentType = { "device" },
-    ) { device ->
-        DeviceCard(
-            device = device,
-            connectionState = connectionState,
-            selectedDevice = selectedDevice,
-            onSelect = onSelectDevice,
-            onDelete = onRemoveRecentAddress,
-        )
-    }
-}
-
 /** Single device row: card + [DeviceListItem]. Factored out so every section renders items identically. */
 @Composable
 private fun DeviceCard(
-    device: DeviceListEntry,
+    device: DeviceListEntry.Ble,
     connectionState: ConnectionState,
     selectedDevice: String,
-    onSelect: (DeviceListEntry) -> Unit,
+    onSelect: (DeviceListEntry.Ble) -> Unit,
     modifier: Modifier = Modifier,
-    onDelete: ((DeviceListEntry) -> Unit)? = null,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -370,8 +146,7 @@ private fun DeviceCard(
             connectionState.takeIf { device.fullAddress == selectedDevice } ?: ConnectionState.Disconnected,
             device = device,
             onSelect = { onSelect(device) },
-            onDelete = onDelete?.let { delete -> { delete(device) } },
-            rssi = (device as? DeviceListEntry.Ble)?.device?.rssi,
+            rssi = device.device.rssi,
         )
     }
 }
@@ -423,72 +198,6 @@ private fun SectionEmptyState(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-        }
-    }
-}
-
-/** Dialog for manually adding a TCP device by IP address and port. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AddDeviceDialog(
-    sheetState: SheetState,
-    onHideDialog: () -> Unit,
-    onClickAdd: (address: String, fullAddress: String) -> Unit,
-) {
-    val addressState = rememberTextFieldState("")
-    val portState = rememberTextFieldState(NetworkConstants.SERVICE_PORT.toString())
-
-    @Suppress("MagicNumber")
-    ModalBottomSheet(onDismissRequest = onHideDialog, sheetState = sheetState) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    state = addressState,
-                    labelPosition = TextFieldLabelPosition.Above(),
-                    lineLimits = TextFieldLineLimits.SingleLine,
-                    label = { Text(stringResource(Res.string.address)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
-                    modifier = Modifier.weight(.7f),
-                )
-
-                OutlinedTextField(
-                    state = portState,
-                    labelPosition = TextFieldLabelPosition.Above(),
-                    placeholder = { Text(NetworkConstants.SERVICE_PORT.toString()) },
-                    lineLimits = TextFieldLineLimits.SingleLine,
-                    label = { Text(stringResource(Res.string.ip_port)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                    modifier = Modifier.weight(.3f),
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(modifier = Modifier.weight(1f), onClick = { onHideDialog() }) {
-                    Text(stringResource(Res.string.cancel))
-                }
-
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        val address = addressState.text.toString()
-                        if (address.isValidAddress()) {
-                            val portString = portState.text.toString()
-                            val port = portString.toIntOrNull()
-
-                            val combinedString =
-                                if (port != null && port != NetworkConstants.SERVICE_PORT) {
-                                    "$address:$portString"
-                                } else {
-                                    address
-                                }
-
-                            onClickAdd(combinedString, "t$combinedString")
-                        }
-                    },
-                ) {
-                    Text(stringResource(Res.string.add_network_device))
-                }
-            }
         }
     }
 }

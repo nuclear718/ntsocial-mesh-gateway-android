@@ -76,19 +76,15 @@ import com.ntsocial.meshlink.core.ui.component.MainAppBar
 import com.ntsocial.meshlink.core.ui.icon.Language
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.NoDevice
-import com.ntsocial.meshlink.core.ui.util.isLocalNetworkPermissionGranted
-import com.ntsocial.meshlink.core.ui.util.rememberRequestLocalNetworkPermission
 import com.ntsocial.meshlink.core.ui.viewmodel.ConnectionStatus
 import com.ntsocial.meshlink.core.ui.viewmodel.ConnectionsViewModel
 import com.ntsocial.meshlink.feature.connections.MOCK_DEVICE_PREFIX
 import com.ntsocial.meshlink.feature.connections.NO_DEVICE_SELECTED
 import com.ntsocial.meshlink.feature.connections.ScannerViewModel
-import com.ntsocial.meshlink.feature.connections.TCP_DEVICE_PREFIX
 import com.ntsocial.meshlink.feature.connections.model.DeviceListEntry
+import com.ntsocial.meshlink.feature.connections.ui.components.BluetoothDeviceList
 import com.ntsocial.meshlink.feature.connections.ui.components.ConnectingDeviceInfo
 import com.ntsocial.meshlink.feature.connections.ui.components.CurrentlyConnectedInfo
-import com.ntsocial.meshlink.feature.connections.ui.components.DeviceList
-import com.ntsocial.meshlink.feature.connections.ui.components.TransportFilterChips
 import com.ntsocial.meshlink.feature.settings.navigation.ConfigRoute
 import com.ntsocial.meshlink.feature.settings.navigation.getNavRouteFrom
 import com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel
@@ -106,7 +102,7 @@ import kotlin.uuid.ExperimentalUuidApi
 private val CardMinHeight = 100.dp
 private val NtsocialConnectionBlue = Color(0xFF3DA8FF)
 
-/** Composable screen for managing device connections (BLE, TCP, USB). It displays connection status. */
+/** Simple Bluetooth-first screen for managing the radio connection and displaying its current status. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalUuidApi::class)
 @Suppress("CyclomaticComplexMethod", "LongMethod", "MagicNumber", "ModifierMissing", "ComposableParamOrder")
 @Composable
@@ -129,27 +125,9 @@ fun ConnectionsScreen(
     val persistedDeviceName by scanModel.persistedDeviceName.collectAsStateWithLifecycle()
 
     val bleDevices by scanModel.bleDevicesForUi.collectAsStateWithLifecycle()
-    val discoveredTcpDevices by scanModel.discoveredTcpDevicesForUi.collectAsStateWithLifecycle()
-    val recentTcpDevices by scanModel.recentTcpDevicesForUi.collectAsStateWithLifecycle()
-    val usbDevices by scanModel.usbDevicesForUi.collectAsStateWithLifecycle()
     val isBleScanning by scanModel.isBleScanning.collectAsStateWithLifecycle()
-    val isNetworkScanning by scanModel.isNetworkScanning.collectAsStateWithLifecycle()
 
     val bleAutoScan by scanModel.bleAutoScan.collectAsStateWithLifecycle()
-    val networkAutoScan by scanModel.networkAutoScan.collectAsStateWithLifecycle()
-    val showBleTransport by scanModel.showBleTransport.collectAsStateWithLifecycle()
-    val showNetworkTransport by scanModel.showNetworkTransport.collectAsStateWithLifecycle()
-    val showUsbTransport by scanModel.showUsbTransport.collectAsStateWithLifecycle()
-    val localNetworkPermissionGranted = isLocalNetworkPermissionGranted()
-
-    // Android 17 (API 37) gates NSD/mDNS behind ACCESS_LOCAL_NETWORK. Without this prompt the platform
-    // falls back to the system "Choose a device to connect" picker on every discoverServices() call.
-    // Granting the permission upfront lets discovery run silently in-app.
-    val requestLocalNetworkPermission =
-        rememberRequestLocalNetworkPermission(
-            onGranted = { scanModel.startNetworkScan() },
-            onDenied = { scanModel.stopNetworkScan() },
-        )
 
     // Auto-start BLE scan on screen entry when the user has previously opted in. Stop on screen exit to save battery.
     // We use `Unit` as the key so the effect is stable across recompositions — the toggle button manages scan
@@ -158,11 +136,6 @@ fun ConnectionsScreen(
     // `false` (disk read latency), without triggering a dispose/restart cycle that kills an in-progress scan.
     LaunchedEffect(bleAutoScan) { if (bleAutoScan && !scanModel.isBleScanning.value) scanModel.startBleScan() }
     DisposableEffect(Unit) { onDispose { scanModel.stopBleScan() } }
-
-    DisposableEffect(networkAutoScan, localNetworkPermissionGranted) {
-        if (networkAutoScan && localNetworkPermissionGranted) scanModel.startNetworkScan()
-        onDispose { scanModel.stopNetworkScan() }
-    }
 
     /* Animate waiting for the configurations */
     var isWaiting by remember { mutableStateOf(false) }
@@ -249,9 +222,6 @@ fun ConnectionsScreen(
                                                 selectedDevice = selectedDevice,
                                                 persistedDeviceName = persistedDeviceName,
                                                 bleDevices = bleDevices,
-                                                discoveredTcpDevices = discoveredTcpDevices,
-                                                recentTcpDevices = recentTcpDevices,
-                                                usbDevices = usbDevices,
                                                 connectionStatus = connectionStatus,
                                                 connectionProgress = connectionProgress,
                                                 onClickDisconnect = { scanModel.disconnect() },
@@ -282,53 +252,17 @@ fun ConnectionsScreen(
                                 )
                             }
                         }
-
-                        // Inclusive transport-visibility filter chips. Sit between the connection card and the
-                        // device list so users can hide entire transports they're not using.
-                        TransportFilterChips(
-                            showBle = showBleTransport,
-                            showNetwork = showNetworkTransport,
-                            showUsb = showUsbTransport,
-                            onToggleBle = { scanModel.setShowBleTransport(!showBleTransport) },
-                            onToggleNetwork = { scanModel.setShowNetworkTransport(!showNetworkTransport) },
-                            onToggleUsb = { scanModel.setShowUsbTransport(!showUsbTransport) },
-                        )
                     },
                     second = {
-                        // ── Unified device list ──
+                        // Bluetooth is the only connection method exposed in the first-release UI.
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            DeviceList(
+                            BluetoothDeviceList(
                                 connectionState = connectionState,
                                 selectedDevice = selectedDevice,
                                 bleDevices = bleDevices,
-                                usbDevices = usbDevices,
-                                discoveredTcpDevices = discoveredTcpDevices,
-                                recentTcpDevices = recentTcpDevices,
                                 isBleScanning = isBleScanning,
-                                isNetworkScanning = isNetworkScanning,
-                                showBleSection = showBleTransport,
-                                showNetworkSection = showNetworkTransport,
-                                showUsbSection = showUsbTransport,
                                 onSelectDevice = { scanModel.onSelected(it) },
                                 onToggleBleScan = { scanModel.toggleBleScan() },
-                                onToggleNetworkScan = {
-                                    if (isNetworkScanning || localNetworkPermissionGranted) {
-                                        scanModel.toggleNetworkScan()
-                                    } else {
-                                        // Prefer requesting the runtime grant over letting the platform fall
-                                        // back to the system NSD picker. Persist the user's intent so that if
-                                        // they grant after the prompt, the scan starts via the launcher's
-                                        // onGranted callback and stays on for next session.
-                                        scanModel.persistNetworkAutoScanIntent(true)
-                                        requestLocalNetworkPermission()
-                                    }
-                                },
-                                onAddManualAddress = { _, fullAddress ->
-                                    val displayAddress = fullAddress.removePrefix(TCP_DEVICE_PREFIX)
-                                    scanModel.addRecentAddress(fullAddress, displayAddress)
-                                    scanModel.changeDeviceAddress(fullAddress)
-                                },
-                                onRemoveRecentAddress = { scanModel.removeRecentAddress(it.fullAddress) },
                             )
                         }
                     },
@@ -343,14 +277,14 @@ fun ConnectionsScreen(
 private fun ConnectedDeviceContent(
     ourNode: com.ntsocial.meshlink.core.model.Node?,
     selectedDevice: String,
-    bleDevices: List<DeviceListEntry>,
+    bleDevices: List<DeviceListEntry.Ble>,
     onNavigateToNodeDetails: (Int) -> Unit,
     onClickDisconnect: () -> Unit,
 ) {
     ourNode?.let { node ->
         CurrentlyConnectedInfo(
             node = node,
-            bleDevice = bleDevices.find { it.fullAddress == selectedDevice } as DeviceListEntry.Ble?,
+            bleDevice = bleDevices.find { it.fullAddress == selectedDevice },
             onNavigateToNodeDetails = onNavigateToNodeDetails,
             onClickDisconnect = onClickDisconnect,
         )
@@ -362,19 +296,12 @@ private fun ConnectedDeviceContent(
 private fun ConnectingDeviceContent(
     selectedDevice: String,
     persistedDeviceName: String?,
-    bleDevices: List<DeviceListEntry>,
-    discoveredTcpDevices: List<DeviceListEntry>,
-    recentTcpDevices: List<DeviceListEntry>,
-    usbDevices: List<DeviceListEntry>,
+    bleDevices: List<DeviceListEntry.Ble>,
     connectionStatus: ConnectionStatus,
     connectionProgress: String?,
     onClickDisconnect: () -> Unit,
 ) {
-    val selectedEntry =
-        bleDevices.find { it.fullAddress == selectedDevice }
-            ?: discoveredTcpDevices.find { it.fullAddress == selectedDevice }
-            ?: recentTcpDevices.find { it.fullAddress == selectedDevice }
-            ?: usbDevices.find { it.fullAddress == selectedDevice }
+    val selectedEntry = bleDevices.find { it.fullAddress == selectedDevice }
 
     // Use the entry name if found in scan lists, otherwise fall back to the persisted name
     // from the last successful selection, and only show "Unknown Device" as a last resort.

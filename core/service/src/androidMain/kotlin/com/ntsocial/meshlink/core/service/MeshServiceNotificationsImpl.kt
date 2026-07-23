@@ -33,7 +33,6 @@ import android.content.ContentResolver.SCHEME_ANDROID_RESOURCE
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.media.AudioAttributes
 import android.media.RingtoneManager
@@ -56,6 +55,7 @@ import com.ntsocial.meshlink.core.repository.MeshServiceNotifications
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.SERVICE_NOTIFY_ID
+import com.ntsocial.meshlink.core.resources.R.color
 import com.ntsocial.meshlink.core.resources.R.drawable
 import com.ntsocial.meshlink.core.resources.R.raw
 import com.ntsocial.meshlink.core.resources.Res
@@ -123,9 +123,10 @@ class MeshServiceNotificationsImpl(
     private val notificationManager =
         checkNotNull(context.getSystemService<NotificationManager>()) { "NotificationManager not found" }
 
+    private val notificationColor = context.getColor(color.ntsocial_notification_green)
+
     companion object {
         const val MAX_BATTERY_LEVEL = 100
-        private val NOTIFICATION_LIGHT_COLOR = Color.BLUE
         private const val MAX_HISTORY_MESSAGES = 10
         private const val MIN_CONTEXT_MESSAGES = 3
         private const val SNIPPET_LENGTH = 30
@@ -245,7 +246,7 @@ class MeshServiceNotificationsImpl(
         val channelName = getString(type.channelNameRes)
         val channel =
             NotificationChannel(type.channelId, channelName, type.importance).apply {
-                lightColor = NOTIFICATION_LIGHT_COLOR
+                lightColor = notificationColor
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC // Default, can be overridden
 
                 // Type-specific configurations
@@ -493,7 +494,7 @@ class MeshServiceNotificationsImpl(
 
         val summaryNotification =
             commonBuilder(NotificationType.DirectMessage)
-                .setSmallIcon(drawable.meshtastic_ic_notification)
+                .setSmallIcon(drawable.ntsocial_ic_notification)
                 .setStyle(messagingStyle)
                 .setGroup(GROUP_KEY_MESSAGES)
                 .setGroupSummary(true)
@@ -852,11 +853,11 @@ class MeshServiceNotificationsImpl(
         type: NotificationType,
         contentIntent: PendingIntent? = null,
     ): NotificationCompat.Builder {
-        val smallIcon = drawable.meshtastic_ic_notification
+        val smallIcon = drawable.ntsocial_ic_notification
 
         return NotificationCompat.Builder(context, type.channelId)
             .setSmallIcon(smallIcon)
-            .setColor(NOTIFICATION_LIGHT_COLOR)
+            .setColor(notificationColor)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(contentIntent ?: openAppIntent)
     }

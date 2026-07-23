@@ -169,7 +169,7 @@ open class ScannerViewModel(
      * by name), followed by unbonded scanned devices in the order they were first discovered. RSSI updates are
      * reflected on the cards but do not trigger a re-sort.
      */
-    val bleDevicesForUi: StateFlow<List<DeviceListEntry>> =
+    val bleDevicesForUi: StateFlow<List<DeviceListEntry.Ble>> =
         combine(discoveredDevicesFlow, scannedBleDevices, discoveryOrder) { discovered, scannedMap, order ->
             val bonded = discovered.bleDevices.filterIsInstance<DeviceListEntry.Ble>()
             val bondedAddresses = bonded.mapTo(mutableSetOf()) { it.address }

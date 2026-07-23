@@ -30,6 +30,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ntsocial.meshlink.core.repository.Notification
+import com.ntsocial.meshlink.core.resources.R.color
+import com.ntsocial.meshlink.core.resources.R.drawable
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -91,6 +93,17 @@ class AndroidNotificationManagerTest {
 
         val posted = shadowOf(systemNotificationManager).allNotifications.last()
         assertEquals(NotificationChannels.NEW_NODES, posted.channelId)
+    }
+
+    @Test
+    fun `dispatch uses the NTsocial butterfly icon and green accent`() {
+        val manager = AndroidNotificationManager(context)
+
+        manager.dispatch(Notification(title = "Node", message = "Seen", category = Notification.Category.NodeEvent))
+
+        val posted = shadowOf(systemNotificationManager).allNotifications.last()
+        assertEquals(drawable.ntsocial_ic_notification, posted.smallIcon.resId)
+        assertEquals(context.getColor(color.ntsocial_notification_green), posted.color)
     }
 
     @Test

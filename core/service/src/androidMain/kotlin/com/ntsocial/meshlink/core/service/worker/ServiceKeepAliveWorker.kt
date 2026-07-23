@@ -35,6 +35,7 @@ import androidx.work.WorkerParameters
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.repository.MeshServiceNotifications
 import com.ntsocial.meshlink.core.repository.SERVICE_NOTIFY_ID
+import com.ntsocial.meshlink.core.resources.R.color
 import com.ntsocial.meshlink.core.resources.R.drawable
 import com.ntsocial.meshlink.core.service.MeshService
 import com.ntsocial.meshlink.core.service.startService
@@ -89,7 +90,8 @@ class ServiceKeepAliveWorker(
         // We use "my_service" which matches NotificationType.ServiceState.channelId in MeshServiceNotificationsImpl
 
         return NotificationCompat.Builder(applicationContext, "my_service")
-            .setSmallIcon(drawable.meshtastic_ic_notification)
+            .setSmallIcon(drawable.ntsocial_ic_notification)
+            .setColor(applicationContext.getColor(color.ntsocial_notification_green))
             .setContentTitle("Resuming Mesh Service")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)

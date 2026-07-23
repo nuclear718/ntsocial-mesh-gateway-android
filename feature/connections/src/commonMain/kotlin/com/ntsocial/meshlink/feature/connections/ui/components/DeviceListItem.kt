@@ -24,8 +24,6 @@
  */
 package com.ntsocial.meshlink.feature.connections.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,41 +48,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.action_select_device
-import com.ntsocial.meshlink.core.resources.add
 import com.ntsocial.meshlink.core.resources.bluetooth
-import com.ntsocial.meshlink.core.resources.network
-import com.ntsocial.meshlink.core.resources.serial
 import com.ntsocial.meshlink.core.ui.component.NodeChip
 import com.ntsocial.meshlink.core.ui.component.Rssi
-import com.ntsocial.meshlink.core.ui.icon.Add
 import com.ntsocial.meshlink.core.ui.icon.Bluetooth
 import com.ntsocial.meshlink.core.ui.icon.BluetoothConnected
 import com.ntsocial.meshlink.core.ui.icon.BluetoothSearching
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
-import com.ntsocial.meshlink.core.ui.icon.Usb
-import com.ntsocial.meshlink.core.ui.icon.Wifi
 import com.ntsocial.meshlink.feature.connections.model.DeviceListEntry
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 
 private const val RSSI_UPDATE_RATE_MS = 2000L
 
-@OptIn(ExperimentalFoundationApi::class)
-@Suppress("LongMethod", "CyclomaticComplexMethod")
+@Suppress("LongMethod")
 @Composable
 fun DeviceListItem(
     connectionState: ConnectionState,
-    device: DeviceListEntry,
+    device: DeviceListEntry.Ble,
     onSelect: () -> Unit,
     modifier: Modifier = Modifier,
-    onDelete: (() -> Unit)? = null,
     rssi: Int? = null,
 ) {
     // Throttle the RSSI updates to match the connected device polling rate
@@ -98,45 +85,17 @@ fun DeviceListItem(
     }
 
     val icon =
-        when (device) {
-            is DeviceListEntry.Ble ->
-                if (connectionState is ConnectionState.Connected) {
-                    MeshtasticIcons.BluetoothConnected
-                } else if (connectionState is ConnectionState.Connecting) {
-                    MeshtasticIcons.BluetoothSearching
-                } else {
-                    MeshtasticIcons.Bluetooth
-                }
-
-            is DeviceListEntry.Usb -> MeshtasticIcons.Usb
-
-            is DeviceListEntry.Tcp -> MeshtasticIcons.Wifi
-
-            is DeviceListEntry.Mock -> MeshtasticIcons.Add
-        }
-
-    val contentDescription =
-        when (device) {
-            is DeviceListEntry.Ble -> stringResource(Res.string.bluetooth)
-            is DeviceListEntry.Usb -> stringResource(Res.string.serial)
-            is DeviceListEntry.Tcp -> stringResource(Res.string.network)
-            is DeviceListEntry.Mock -> stringResource(Res.string.add)
-        }
-
-    val selectLabel = stringResource(Res.string.action_select_device)
-    val isSelected = connectionState is ConnectionState.Connected
-    val clickableModifier =
-        if (onDelete != null) {
-            Modifier.semantics { selected = isSelected }
-                .combinedClickable(
-                    onClickLabel = selectLabel,
-                    role = Role.RadioButton,
-                    onClick = onSelect,
-                    onLongClick = onDelete,
-                )
+        if (connectionState is ConnectionState.Connected) {
+            MeshtasticIcons.BluetoothConnected
+        } else if (connectionState is ConnectionState.Connecting) {
+            MeshtasticIcons.BluetoothSearching
         } else {
-            Modifier.selectable(selected = isSelected, role = Role.RadioButton, onClick = onSelect)
+            MeshtasticIcons.Bluetooth
         }
+
+    val contentDescription = stringResource(Res.string.bluetooth)
+    val isSelected = connectionState is ConnectionState.Connected
+    val clickableModifier = Modifier.selectable(selected = isSelected, role = Role.RadioButton, onClick = onSelect)
 
     val iconTint =
         if (connectionState is ConnectionState.Connected) {
@@ -180,7 +139,7 @@ fun DeviceListItem(
  * identify the device at a glance. Otherwise fall back to the raw advertised device name.
  */
 @Composable
-private fun DeviceHeadline(device: DeviceListEntry) {
+private fun DeviceHeadline(device: DeviceListEntry.Ble) {
     val node = device.node
     if (node != null) {
         NodeChip(node = node)
