@@ -238,12 +238,13 @@ open class ScannerViewModel(
                         .collect { device ->
                             scannedBleDevices.update { current ->
                                 val existing = current[device.address]
+                                val merged = mergeScannedBleDevice(existing, device)
                                 // Replace if RSSI changed so the UI reflects the latest advertisement. Keep the same
                                 // instance otherwise to avoid unnecessary recomposition.
-                                if (existing != null && existing.rssi == device.rssi) {
+                                if (existing != null && existing.rssi == merged.rssi && existing.name == merged.name) {
                                     current
                                 } else {
-                                    current + (device.address to device)
+                                    current + (device.address to merged)
                                 }
                             }
                             if (device.address !in discoveryOrder.value) {
@@ -366,4 +367,24 @@ open class ScannerViewModel(
         radioPrefs.setDevName(null)
         changeDeviceAddress(NO_DEVICE_SELECTED)
     }
+}
+
+/**
+ * Keeps the last useful local name while still accepting fresher RSSI/advertisement state.
+ *
+ * Windows commonly emits alternating advertisement updates with and without a local name. Replacing a named device with
+ * the nameless update makes the UI regress to `unnamed-{address}` even though it identified the same radio a moment
+ * earlier.
+ */
+internal fun mergeScannedBleDevice(existing: BleDevice?, update: BleDevice): BleDevice {
+    val previousName = existing?.name?.takeIf { it.isNotBlank() }
+    return if (update.name.isNullOrBlank() && previousName != null) {
+        NamePreservingBleDevice(delegate = update, preservedName = previousName)
+    } else {
+        update
+    }
+}
+
+private class NamePreservingBleDevice(private val delegate: BleDevice, preservedName: String) : BleDevice by delegate {
+    override val name: String = preservedName
 }

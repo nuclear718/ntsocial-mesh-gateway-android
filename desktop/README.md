@@ -1,109 +1,65 @@
-# `:desktop` — Meshtastic Desktop
+# NTsocial MeshLink Desktop
 
-A Compose Desktop application target — the first full non-Android target for the shared KMP module graph. This module serves as:
+`:desktop` 是可獨立運作的 Compose Desktop Meshtastic 用戶端，直接使用本專案的 KMP service、Room、
+DataStore、Koin、Navigation 3 與共用功能畫面。
 
-1. **First multi-target milestone** — Proves the KMP architecture supports real application targets beyond Android.
-2. **Build smoke-test** — Validates that all `core:*` KMP modules compile and link on a JVM Desktop target.
-3. **Shared navigation proof** — Uses the same Navigation 3 routes from `core:navigation` and the same `NavDisplay` + `entryProvider` pattern as the Android app, proving the shared backstack architecture works cross-target.
-4. **Desktop app scaffold** — A working Compose Desktop application with a `NavigationRail` for top-level destinations and placeholder screens for each feature.
+## Windows 產品
 
-## Quick Start
+Windows 發行版本的正式產品名稱為 **NTsocial MeshLink**，品牌與安裝識別如下：
+
+- 藍色 NTsocial 蝴蝶視窗、工作列、系統匣、通知與 installer 圖示。
+- 深色纖維蝴蝶背景、主題感知遮罩及約 90–94% 不透明度的 Material 3 面板。
+- `#5B63EB` 主色、`#3730A3` 強調色、`#10B981` 次色與 `#F59E0B` 狀態色。
+- Segoe UI Variable／Segoe UI 文字與 Cascadia Mono／Consolas 技術資訊字型 fallback。
+- 每次程序冷啟動播放一次三秒品牌動畫；從系統匣重新顯示視窗不會重播。
+- installer vendor 為 `LiberaNt LLC`、開始選單群組為 `NTsocial`，穩定 upgrade UUID 為
+  `6784A2DD-CE59-518B-AA15-C26302D6FA85`。
+
+application ID 保持 `com.ntsocial.meshlink.desktop`。新的 Windows upgrade UUID 讓本產品可與舊
+Meshtastic Desktop 並存，後續 NTsocial MeshLink Windows 版本則可原地升級。
+
+這次品牌化不改變 Meshtastic 協定、radio/service/database/settings 行為，也不加入
+`NTsocial_Windows` IPC、Windows Service、Authenticator 或簽章功能。共享 Connections UI 仍遵守
+Bluetooth-only 首發契約；USB/TCP/Serial backend 仍保留但不重新暴露於共享畫面。
+
+macOS 與 Linux 的名稱、vendor、圖示與 installer metadata 維持原 Meshtastic Desktop 行為。
+Android 仍使用既定的 `#67EA94` 綠色 NTsocial 蝴蝶和原有主題流程。
+
+## 品牌素材
+
+Windows 專用圖示由使用者明確授權，從唯讀相鄰專案 `NTsocial_Windows` 複製。完整來源 commit、
+原始檔名與 SHA-256 記錄於 [BRANDING_ASSETS.md](BRANDING_ASSETS.md)。
+
+共用的纖維蝴蝶背景已與參考專案逐位元比對相同，因此直接重用
+`core:resources` 的 `img_ntsocial_background_butterfly.png`，沒有加入重複檔案。
+
+## 執行與測試
 
 ```bash
-# Run the desktop app
+# 執行桌面程式
 ./gradlew :desktop:run
 
-# Run tests
+# 桌面測試
 ./gradlew :desktop:test
 
-# Package native distribution (DMG/MSI/DEB) — debug (no ProGuard)
-./gradlew :desktop:packageDistributionForCurrentOS
-
-# Package native distribution (DMG/MSI/DEB) — release (ProGuard minified)
+# 目前作業系統的 release installer
 ./gradlew :desktop:packageReleaseDistributionForCurrentOS
 ```
 
-## ProGuard / Minification
+Windows 原生打包需要包含 `jpackage.exe` 的完整 JDK 21。Compose Desktop release 使用 ProGuard
+tree-shaking，但不混淆開放原始碼；規則位於 `desktop/proguard-rules.pro`。
 
-Release builds use ProGuard for tree-shaking (unused code removal), significantly reducing distribution size. Obfuscation is disabled since the project is open-source. Rules are aligned with the Android R8 rules in `app/proguard-rules.pro` — both targets share the same anti-class-merging philosophy.
+## 架構界線
 
-**Configuration:**
-- `build.gradle.kts` — `buildTypes.release.proguard` block enables ProGuard with `optimize.set(true)` and `obfuscate.set(false)`.
-- `proguard-rules.pro` — Keep-rules for reflection/JNI-sensitive dependencies (Koin, kotlinx-serialization, Wire protobuf, Room KMP `androidx.room3`, Ktor, Kable BLE, Coil, SQLite JNI, Compose Multiplatform resources) and an anti-merge rule for Compose animation classes.
+- `Main.kt` 只負責 Koin/service lifecycle、locale/theme、視窗、系統匣與 host branding。
+- `branding/` 集中管理 Windows 產品識別、色盤、字型、資源選擇與 splash phase。
+- `ui/DesktopMainScreen.kt` 保留 `MeshtasticAppShell`、`MeshtasticNavigationSuite` 與
+  `MeshtasticNavDisplay`。
+- `navigation/DesktopNavigation.kt` 組裝現有共用 feature graph。
+- `radio/DesktopRadioTransportFactory.kt` 與 service/repository 路徑不因品牌化改變。
+- 共用 `AppTheme(darkTheme, dynamicColor, content)` API、Material Expressive、Dynamic Color 與
+  theme preference flow 保持相容；Windows host 僅透過可選 CompositionLocal 注入 override。
+- event firmware branding 永遠優先於 host 預設品牌圖示。
 
-**Key rules:**
-- **Compose animation anti-merge** (`-keep class androidx.compose.animation.** { *; }`) — Prevents ProGuard's optimizer from incorrectly tree-shaking or merging animation class hierarchies (e.g. `EnterTransition`/`ExitTransition` into `*Impl`), which causes animations to silently snap. Same rule as Android.
-- **Room KMP** — Uses `androidx.room3` package path (Room KMP 3.x).
-
-**Troubleshooting ProGuard issues:**
-- If the release build crashes at runtime with `ClassNotFoundException` or `NoSuchMethodError`, a library is loading classes via reflection that ProGuard stripped. Add a `-keep` rule in `proguard-rules.pro` **and** the corresponding rule in `app/proguard-rules.pro` to keep both targets aligned.
-- To debug which classes ProGuard removes, temporarily add `-printusage proguard-usage.txt` to the rules file and inspect the output in `desktop/proguard-usage.txt`.
-- To see the full mapping of optimizations applied, add `-printseeds proguard-seeds.txt`.
-- Run `./gradlew :desktop:runRelease` for a quick smoke-test of the minified app before packaging.
-
-## Architecture
-
-The module depends on the JVM variants of KMP modules:
-
-- `core:common`, `core:model`, `core:di`, `core:navigation`, `core:repository`
-- `core:domain`, `core:data`, `core:database`, `core:datastore`, `core:prefs`
-- `core:network`, `core:resources`, `core:ui`
-
-**Navigation:** Uses JetBrains multiplatform forks of Navigation 3 (`org.jetbrains.androidx.navigation3:navigation3-ui`) and Lifecycle (`org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose`, `lifecycle-runtime-compose`). A unified `SavedStateConfiguration` with polymorphic `SerializersModule` is provided centrally by `core:navigation` for non-Android NavKey serialization. Desktop utilizes the exact same navigation graph wiring (`settingsGraph`, `nodesGraph`, `contactsGraph`, `connectionsGraph`) directly from the `commonMain` of their respective feature modules, maintaining full UI parity.
-
-**Coroutines:** Requires `kotlinx-coroutines-swing` for `Dispatchers.Main` on JVM/Desktop. Without it, any code using `lifecycle.coroutineScope` or `Dispatchers.Main` (e.g., `NodeRepositoryImpl`, `RadioConfigRepositoryImpl`) will crash at runtime.
-
-**DI:** A Koin DI graph is bootstrapped in `Main.kt` with platform-specific implementations injected.
-
-**UI:** JetBrains Compose for Desktop with Material 3 theming. Desktop acts as a thin host shell, delegating almost entirely to fully shared KMP UI modules. Includes native macOS notification support (via `TrayState` and `bundleID` identification) and a monochrome SVG tray icon for a native look and feel.
-
-**Notifications:** Implements the common `NotificationManager` interface via `DesktopNotificationManager`. Repository-level notifications (messages, node events, alerts) are collected in `Main.kt` and forwarded to the system tray. macOS requires a consistent `bundleID` (configured in `build.gradle.kts`) and the `NSUserNotificationAlertStyle` key in `Info.plist` for notifications to appear correctly in the distributable.
-
-**Localization:** Desktop exposes a language picker, persisting the selected BCP-47 tag in `UiPreferencesDataSource.locale`. `Main.kt` applies the override to the JVM default `Locale` and uses a `staticCompositionLocalOf`-backed recomposition trigger so Compose Multiplatform `stringResource()` calls update immediately without recreating the Navigation 3 backstack.
-
-## Key Files
-
-| File | Purpose |
-|---|---|
-| `Main.kt` | App entry point — Koin bootstrap, Compose Desktop window, theme + locale application |
-| `DemoScenario.kt` | Offline demo data for testing without a connected device |
-| `ui/DesktopMainScreen.kt` | Navigation 3 shell — `NavigationRail` + `NavDisplay` |
-| `navigation/DesktopNavigation.kt` | Nav graph entry registrations for all top-level destinations (delegates to shared feature graphs) |
-| `radio/DesktopRadioTransportFactory.kt` | Provides TCP, Serial/USB, and BLE transports |
-| `notification/DesktopMeshServiceNotifications.kt` | Real implementation of notification triggers for Desktop |
-| `DesktopNotificationManager.kt` | Bridge between repository notifications and Compose `TrayState` |
-| `radio/DesktopMeshServiceController.kt` | Mesh service lifecycle — orchestrates `want_config` handshake chain |
-| `radio/DesktopMessageQueue.kt` | Message queue for outbound mesh packets |
-| `di/DesktopKoinModule.kt` | Koin module with stub implementations |
-| `di/DesktopPlatformModule.kt` | Platform-specific Koin bindings |
-| `stub/NoopStubs.kt` | No-op implementations for all repository interfaces |
-
-## What This Validates
-
-| Module | What's Tested |
-|---|---|
-| `core:common` | `Base64Factory`, `NumberFormatter`, `UrlUtils`, `DateFormatter`, `CommonUri` |
-| `core:model` | `DeviceVersion`, `Capabilities`, `SfppHasher`, `platformRandomBytes`, `getShortDateTime`, `Channel.getRandomKey` |
-| `core:ui` | Shared Compose components compile and render on Desktop |
-| Build graph | All core modules compile and link without Android SDK |
-
-## Roadmap
-
-- [x] Implement real navigation with shared `core:navigation` routes (Navigation 3 shell)
-- [x] Adopt JetBrains multiplatform forks for lifecycle and navigation3
-- [x] Implement native macOS/Desktop notification support with `TrayState` and system tray
-- [x] Wire `feature:settings` composables into the nav graph (first real feature — ~30 screens)
-- [x] Wire `feature:node` composables into the nav graph (node list with shared ViewModel + NodeItem)
-- [x] Wire `feature:messaging` composables into the nav graph (contacts list with shared ViewModel)
-- [x] Add JetBrains Material 3 Adaptive `ListDetailPaneScaffold` to node and messaging screens
-- [x] Implement TCP transport (`DesktopRadioTransportFactory`) with auto-reconnect and backoff retry
-- [x] Implement mesh service controller (`DesktopMeshServiceController`) with full `want_config` handshake
-- [x] Create connections screen using shared `feature:connections` with dynamic transport detection
-- [x] Replace 5 placeholder config screens with real desktop implementations (Device, Position, Network, Security, ExtNotification)
-- [x] Add desktop language picker backed by shared `UiPreferencesDataSource.locale` with live translation updates
-- [x] Wire remaining `feature:*` composables (map) into the nav graph
-- [x] Move remaining node detail and message composables from `androidMain` to `commonMain`
-- [x] Add serial/USB transport for direct radio connection on Desktop
-- [x] Add BLE transport (via Kable) for direct radio connection on Desktop
-- [x] Add MQTT transport for cloud-connected operation
-- [x] Package as native distributions (DMG, MSI, DEB) via CI release pipeline
+本模組仍受根目錄 `NOTICE.md`、`THIRD_PARTY_NOTICES.md` 與
+`docs/copyright-and-attribution.md` 所定義的上游歸屬與 GPL-3.0-or-later 條款約束。

@@ -50,6 +50,9 @@ data class BleExceptionInfo(val isPermanent: Boolean, val gattStatus: Int? = nul
  * exceptions without depending on Kable directly.
  */
 fun Throwable.classifyBleException(): BleExceptionInfo? = when (this) {
+    is BlePairingException ->
+        BleExceptionInfo(isPermanent = true, message = message ?: "Bluetooth pairing did not complete")
+
     is GattStatusException ->
         BleExceptionInfo(
             isPermanent = false,

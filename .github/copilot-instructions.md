@@ -1,13 +1,19 @@
-# NTsocial MeshLink Android - Copilot Instructions
+# NTsocial MeshLink Android & Windows - Copilot Instructions
 
-NTsocial MeshLink is led and maintained by **LiberaNt LLC and the NTsocial team** as the core
-open-source companion app for Android NTsocial. It is a GPL-3.0-or-later fork of Meshtastic Android.
-App identity is `NTsocial MeshLink`, application ID is `com.ntsocial.meshlink`, and project-owned
-packages use `com.ntsocial.meshlink.*`. Governance does not erase upstream or contributor rights;
-follow `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and `docs/copyright-and-attribution.md`.
-Gateway v1 Provider/capability/IPC/cache/channel-provisioning behavior is concrete code. RF scheduler
-expansion, node policy, persistent/reliable delivery, MeshCore transport, and remote RF verification
-remain roadmap work.
+NTsocial MeshLink is led and maintained by **LiberaNt LLC and the NTsocial team** as two first-class
+open-source radio companions: Android `NTsocial MeshLink` in `app/`, and Microsoft Windows
+`NTsocial MeshLink` in `desktop/`, intended to serve the separate `NTsocial_Windows` product. It is a
+GPL-3.0-or-later fork of Meshtastic Android. Both products display `NTsocial MeshLink`; Android uses
+application ID `com.ntsocial.meshlink`, Desktop uses `com.ntsocial.meshlink.desktop`, and
+project-owned packages use `com.ntsocial.meshlink.*`. Governance does not erase upstream or
+contributor rights; follow `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and
+`docs/copyright-and-attribution.md`.
+
+Android Gateway v1 Provider/capability/IPC/cache/channel-provisioning behavior is concrete code.
+Windows branding, installer identity, theme, and cold-start splash are concrete code, but
+`NTsocial_Windows` IPC, Windows Service, Authenticator, code signing, and parent-App interoperability
+are not implemented. RF scheduler expansion, node policy, persistent/reliable delivery, MeshCore
+transport, and remote RF verification remain roadmap work.
 
 ## Build, Test & Lint
 
@@ -40,6 +46,12 @@ git submodule update --init
 
 # Play publication candidate (still verify signing and Play-installed artifact separately)
 ./gradlew :app:verifyGoogleReleaseNoCloudRuntimeDependencies :app:bundleGoogleRelease
+
+# Windows/Desktop tests
+./gradlew :desktop:test
+
+# Windows release packaging (requires a complete JDK 21 containing jpackage.exe)
+./gradlew :desktop:packageReleaseDistributionForCurrentOS
 ```
 
 > Both `test` and `allTests` are needed. `allTests` covers KMP modules; `test` covers pure-Android modules.
@@ -57,6 +69,12 @@ git submodule update --init
   0x4000 alignment audit; repeat this on the final signed delivery artifact.
 - This confirms compilation, lint/static checks, tests, and debug packaging only. It is not proof of
   Google Play release readiness or remote RF delivery.
+- On 2026-07-23, the branded Windows host passed `:desktop:test`, the full cross-platform baseline,
+  KMP smoke compilation and Android lint, plus `:desktop:packageReleaseDistributionForCurrentOS`.
+  Packaging produced unsigned `NTsocial MeshLink-1.0.0.exe` and `.msi` artifacts with vendor
+  `LiberaNt LLC`, menu group `NTsocial`, and upgrade UUID
+  `6784A2DD-CE59-518B-AA15-C26302D6FA85`. Coexistence/upgrade was checked from metadata only; actual
+  install/upgrade, light theme, 100/150/200% scaling, and tray replay behavior still require manual QA.
 - `:app:bundleGoogleRelease` passes R8, Lint Vital, cloud-runtime guards, and AAB packaging. The local
   artifact is unsigned and therefore not Play-uploadable; the release workflow still requires an
   authorized upload keystore and Play Console setup. Neither flavor should require or package Google
@@ -88,6 +106,10 @@ Kotlin Multiplatform project targeting Android, Desktop (JVM), and iOS. Business
 `commonMain`; platform shells (`app/`, `desktop/`) wire DI and host UI. Preserve the upstream
 Meshtastic radio/service/database/settings foundation while adding NTsocial-specific gateway
 behavior in scoped modules.
+
+Treat Android and Microsoft Windows as separate product tracks on the shared KMP foundation.
+Plans, status, validation, and release claims must identify the affected track. Changes to shared
+resources, UI, navigation, service/database contracts, or features must preserve both hosts.
 
 ### Module Layers
 
@@ -123,6 +145,8 @@ behavior in scoped modules.
 ### Namespacing Boundaries
 
 - New project-owned code uses `com.ntsocial.meshlink.*`.
+- Android host identity is `com.ntsocial.meshlink`; Desktop host identity is
+  `com.ntsocial.meshlink.desktop`.
 - Keep generated upstream Meshtastic protobufs under `org.meshtastic.proto`.
 - Do not create new `org.meshtastic.*` or `com.geeksville.mesh` project packages.
 - Existing semantic names such as `MeshtasticNavDisplay`, `MeshtasticBleConstants`, and
@@ -190,13 +214,19 @@ a coroutine-cleanup timeout flake under the full parallel baseline.
 - Current NTsocial skinning is token-based: non-Dynamic themes use NTsocial indigo, emerald, amber,
   gray surfaces, and mixed monospace typography for compact metadata.
 - Preserve `AppTheme`, Dynamic Color behavior, Material 3 Expressive, and the existing adaptive
-  Navigation 3 shell unless a UI redesign is explicitly requested.
+  Navigation 3 shell unless a UI redesign is explicitly requested. Optional shared theme,
+  typography, or brand-painter overrides must preserve the existing no-override behavior.
 - Keep the shared first-release Connections UI Bluetooth-only: retain the connection-status card,
   BLE scan/device list, region warning, and disconnect/navigation behavior, but do not restore
   transport filter chips, USB/TCP sections, manual TCP controls, or screen-driven network scanning.
   Preserve USB/TCP discovery, models, transports, handlers, preferences, and tests as backend code.
-- Use the established NTsocial butterfly for primary branding. MeshLink launcher, store, splash,
-  and in-app variants keep that silhouette and use Meshtastic green `#67EA94` on black.
+- Use the established NTsocial butterfly for primary branding. Android launcher, store, splash, and
+  in-app variants use Meshtastic green `#67EA94` on black. Windows uses the authorized blue
+  butterfly and fiber background documented in `desktop/BRANDING_ASSETS.md`; never swap one
+  platform's approved colorway into the other.
+- Windows dark mode uses `#5B63EB`, `#3730A3`, `#10B981`, `#F59E0B`, and
+  `#0E1420`/`#161E2C`/`#212B3B`, with translucent surfaces and Segoe UI/Cascadia Mono fallbacks.
+  Preserve the three-second process-cold-start splash and do not replay it after tray re-show.
 - Use upstream Meshtastic design patterns when preserving existing Meshtastic screens, but do not
   treat the upstream mountain logo or palette as primary NTsocial branding.
 - Known branding debt: `feature/widget/src/main/res/drawable/widget_app_icon.xml` still uses the upstream mountain and
@@ -204,6 +234,19 @@ a coroutine-cleanup timeout flake under the full parallel baseline.
 
 ### Gateway Roadmap Boundaries
 
+- The implemented ContentProvider/capability/broadcast Gateway is Android-only. It is not the
+  Windows IPC contract.
+- Windows is currently an independent Meshtastic desktop client. Before connecting it to
+  `NTsocial_Windows`, define an explicit IPC/protocol, authentication, lifecycle, versioning, and
+  threat model. Do not import proprietary parent-App code or expose internal database/service
+  objects.
+- Windows packaging identity is `NTsocial MeshLink`, vendor `LiberaNt LLC`, menu group `NTsocial`,
+  application ID `com.ntsocial.meshlink.desktop`, and upgrade UUID
+  `6784A2DD-CE59-518B-AA15-C26302D6FA85`. Keep macOS/Linux branding unchanged unless explicitly in
+  scope.
+- Treat `C:\Users\cth\Documents\GitHub\NTsocial_Windows` as read-only. Copy only explicitly
+  authorized brand assets, record provenance and SHA-256 in `desktop/BRANDING_ASSETS.md`, and never
+  import secrets, credentials, unrelated data, or proprietary business logic.
 - Planned NTsocial overlay transport is `PRIVATE_APP / port 256`; legacy `497` is receive-only.
 - NTsocial `channelId` is the logical route; Meshtastic `channelIndex` is the RF lane.
 - NTsocial MeshLink must bundle and automatically register the canonical public NTsocial Meshtastic

@@ -53,6 +53,7 @@ import com.ntsocial.meshlink.core.resources.img_ntsocial_butterfly_logo
 import com.ntsocial.meshlink.core.resources.navigate_back
 import com.ntsocial.meshlink.core.ui.icon.ArrowBack
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
+import com.ntsocial.meshlink.core.ui.util.LocalDefaultBrandingPainter
 import com.ntsocial.meshlink.core.ui.util.LocalEventBranding
 import com.ntsocial.meshlink.core.ui.util.SnackbarManager
 import kotlinx.coroutines.launch
@@ -135,8 +136,10 @@ private fun EventAwareBranding() {
             },
         )
     } else {
+        val defaultBrandingPainter =
+            LocalDefaultBrandingPainter.current ?: painterResource(Res.drawable.img_ntsocial_butterfly_logo)
         Image(
-            painter = painterResource(Res.drawable.img_ntsocial_butterfly_logo),
+            painter = defaultBrandingPainter,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(32.dp).clip(CircleShape),

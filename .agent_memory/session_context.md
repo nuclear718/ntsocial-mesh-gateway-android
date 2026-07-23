@@ -762,6 +762,74 @@
 - Synchronized `AGENTS.md` and `.github/copilot-instructions.md` with the Bluetooth-only first-release Connections UI
   rule, retained USB/TCP backend boundary, current build evidence, and outstanding device-smoke limitation.
 
+## 2026-07-23 - NTsocial MeshLink Windows full branding
+- Rebranded only the Windows `:desktop` product as `NTsocial MeshLink`: window/taskbar/tray/default app-bar imagery,
+  toast identity, MSI/EXE/start-menu name, `LiberaNt LLC` vendor, `NTsocial` menu group, and stable upgrade UUID
+  `6784A2DD-CE59-518B-AA15-C26302D6FA85`. macOS/Linux metadata and icons remain unchanged; application ID remains
+  `com.ntsocial.meshlink.desktop`.
+- Copied the authorized blue NTsocial ICO and 24/48/512 PNG marks from the read-only adjacent `NTsocial_Windows`
+  repository at HEAD `84c6f8c4349eaecff741a09d4e77a7c3e9d04b68`. Exact source paths, introduction commits, and SHA-256 values are
+  recorded in `desktop/BRANDING_ASSETS.md`. The reference repository remained clean. The shared butterfly fiber
+  background already had an identical SHA-256, so it is reused without duplication.
+- Added optional shared color-scheme, typography, and default-brand-painter CompositionLocals while preserving the
+  `AppTheme(darkTheme, dynamicColor, content)` API, Material Expressive, Dynamic Color fallback, Android green
+  butterfly, and event-edition branding priority. The shared navigation scaffold gained an optional container color
+  whose default preserves all existing hosts.
+- Added the Windows indigo/emerald/amber translucent palette, Segoe UI Variable/Segoe UI plus Cascadia Mono/Consolas
+  resolution, full-window butterfly background, transparent navigation host, and a fixed three-second cold-start
+  overlay. Koin, Mesh service, and data initialization still start immediately; process-level state prevents a tray
+  re-show from replaying the splash.
+- Added desktop tests for Windows/non-Windows identity selection, application/notification IDs, exact splash phase
+  boundaries, one-shot cold-launch consumption, and classpath resource availability. Updated the Windows notification
+  sender test and rewrote `desktop/README.md` to describe the truthful current architecture and product boundary.
+- Validation passed with full JBR JDK 21, Android SDK, and English locale: targeted `:desktop:test` (`BUILD SUCCESSFUL`,
+  4m33s); required full `spotlessApply spotlessCheck detekt assembleDebug test allTests --continue
+  --no-configuration-cache` (`BUILD SUCCESSFUL`, 11m; 1,589 actionable tasks); and `kmpSmokeCompile
+  :app:lintFdroidDebug :app:lintGoogleDebug --continue --no-configuration-cache` (`BUILD SUCCESSFUL`, 5m17s; 920
+  actionable tasks).
+- Windows release packaging also passed with the complete JetBrains JDK 21 (`BUILD SUCCESSFUL`, 7m42s). It produced
+  `NTsocial MeshLink-1.0.0.exe` and `.msi`; MSI properties read back as ProductName `NTsocial MeshLink`, Manufacturer
+  `LiberaNt LLC`, and the planned UpgradeCode. The MSI start-menu directory is `NTsocial`, and both shortcuts are named
+  `NTsocial MeshLink`. Install/upgrade/coexistence was verified structurally from installer metadata, not by changing
+  the machine's installed applications.
+- A dark-theme Windows smoke launch rendered the branded title, blue taskbar/app-bar mark, palette, and Bluetooth-only
+  Connections screen without crash. Computer Use was stopped by the user before further interaction; 100/150/200%
+  scaling, light-theme, tray re-show, and the final post-transparency visual should still receive manual release QA.
+
+## 2026-07-23 - Android and Windows dual-track agent guidance
+- Updated `AGENTS.md` so the repository explicitly has two first-class product tracks: Android `NTsocial MeshLink`
+  in `app/` and Microsoft Windows `NTsocial MeshLink` in `desktop/`, with shared KMP changes requiring impact review
+  against both hosts.
+- Added separate product IDs, current status, architecture/integration boundaries, platform brand systems, Windows
+  installer identity, automated validation, and manual release-QA requirements. The guide explicitly records that
+  Windows branding and packaging are implemented while `NTsocial_Windows` IPC, Windows Service, Authenticator, code
+  signing, and parent-App interoperability are not.
+- Synchronized `.github/copilot-instructions.md` because the change affects day-to-day scope, naming, build commands,
+  and release claims. This follow-up changed guidance only; it did not modify product code or rerun Gradle validation.
+
+## 2026-07-23 - Windows Bluetooth discovery UI smoke test
+- Launched the current Windows `NTsocial MeshLink` development application with `:desktop:run` on the user's laptop.
+- The Bluetooth-only Connections UI automatically entered its scanning state and displayed the nearby
+  `Meshtastic_fe66` node at approximately RSSI -81 dBm. The same node remained visible after a five-second refresh.
+- This validates local Windows UI discovery of the nearby BLE advertisement in this environment. The session did not
+  select/connect to the device, exchange Meshtastic data, alter radio configuration, or prove reconnect behavior.
+- The application was left running on the Connections screen.
+
+## 2026-07-23 - Windows BLE first-pairing blocker diagnosis
+- Follow-up device selection failed before the Meshtastic handshake with Windows HRESULT `0x80650005`
+  (`E_BLUETOOTH_ATT_INSUFFICIENT_AUTHENTICATION`). The nearby node is healthy and had just been disconnected from the
+  user's phone; discovery remained functional.
+- Root cause: the JVM `KableBluetoothRepository` always reports unbonded and implements `bond()` as a no-op, while the
+  common and JVM Connections paths incorrectly assume Desktop Kable/Windows will pair automatically during GATT
+  connection. Kable 0.42.0's JVM btleplug FFI exposes connect/read/write/subscribe but no pairing operation, so the
+  app reaches a protected Meshtastic characteristic without triggering Windows pairing/PIN UI.
+- The `unnamed-...` regression is separate: scan aggregation replaces the stored device whenever RSSI changes even if
+  the newer advertisement has no name; `DeviceListEntry.Ble` then falls back to `unnamed-{address}`. Preserve the last
+  non-blank name for an address when merging advertisements.
+- No product code was changed in this diagnostic turn. A proper fix needs a Windows-only pairing service/API before
+  selecting the radio, actionable authentication error mapping, stable scan-name merging, focused tests, and an
+  on-device pairing/PIN/connection validation.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.

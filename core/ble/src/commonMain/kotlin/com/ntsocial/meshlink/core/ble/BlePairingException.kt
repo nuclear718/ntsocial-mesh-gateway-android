@@ -24,25 +24,23 @@
  */
 package com.ntsocial.meshlink.core.ble
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import org.koin.core.annotation.Single
-
-@Single(binds = [BluetoothRepository::class])
-class KableBluetoothRepository(private val pairingService: DesktopBluetoothPairingService) : BluetoothRepository {
-    // Desktop Kable doesn't currently expose much state tracking easily, assume true.
-    private val _state = MutableStateFlow(BluetoothState(hasPermissions = true, enabled = true))
-    override val state: StateFlow<BluetoothState> = _state
-
-    override fun refreshState() {
-        // No-op for now on desktop
-    }
-
-    override fun isValid(bleAddress: String): Boolean = bleAddress.isNotEmpty()
-
-    override fun isBonded(address: String): Boolean = !pairingService.isExplicitPairingRequired
-
-    override suspend fun bond(device: BleDevice) {
-        pairingService.ensurePaired(device.address)
-    }
+/** User-actionable failures raised before a protected BLE GATT session can be opened. */
+enum class BlePairingFailure {
+    DEVICE_NOT_FOUND,
+    NOT_READY,
+    CANCELED,
+    REJECTED,
+    AUTHENTICATION_FAILED,
+    ACCESS_DENIED,
+    TIMED_OUT,
+    PLATFORM_FAILURE,
 }
+
+/**
+ * Signals that explicit platform pairing did not complete.
+ *
+ * Pairing failures are intentionally distinct from connection failures so the reconnect loop does not repeatedly open a
+ * PIN prompt or continue into protected GATT characteristics after the user cancels.
+ */
+class BlePairingException(val failure: BlePairingFailure, message: String, cause: Throwable? = null) :
+    Exception(message, cause)

@@ -53,6 +53,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DeviceType
@@ -82,6 +83,7 @@ fun MeshtasticNavigationSuite(
     multiBackstack: MultiBackstack,
     uiViewModel: UIViewModel,
     modifier: Modifier = Modifier,
+    containerColor: Color = NavigationSuiteScaffoldDefaults.containerColor,
     content: @Composable () -> Unit,
 ) {
     val connectionState by uiViewModel.connectionState.collectAsStateWithLifecycle()
@@ -99,6 +101,7 @@ fun MeshtasticNavigationSuite(
     NavigationSuiteScaffold(
         modifier = modifier,
         layoutType = layoutType,
+        containerColor = containerColor,
         navigationSuiteItems = {
             TopLevelDestination.entries.forEach { destination ->
                 val isSelected = destination == topLevelDestination

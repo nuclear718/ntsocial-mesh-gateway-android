@@ -58,6 +58,7 @@ import com.ntsocial.meshlink.core.service.DirectRadioControllerImpl
 import com.ntsocial.meshlink.core.service.ServiceRepositoryImpl
 import com.ntsocial.meshlink.desktop.DesktopBuildConfig
 import com.ntsocial.meshlink.desktop.DesktopNotificationManager
+import com.ntsocial.meshlink.desktop.branding.NtsocialWindowsBranding
 import com.ntsocial.meshlink.desktop.notification.DesktopMeshServiceNotifications
 import com.ntsocial.meshlink.desktop.notification.DesktopOS
 import com.ntsocial.meshlink.desktop.notification.LinuxNotificationSender
@@ -184,7 +185,7 @@ private fun desktopPlatformStubsModule() = module {
         when (DesktopOS.current()) {
             DesktopOS.Linux -> LinuxNotificationSender()
             DesktopOS.MacOS -> MacOSNotificationSender()
-            DesktopOS.Windows -> WindowsNotificationSender()
+            DesktopOS.Windows -> WindowsNotificationSender(appName = NtsocialWindowsBranding.notificationAppId)
         }
     }
     single { DesktopNotificationManager(prefs = get(), nativeSender = get()) }

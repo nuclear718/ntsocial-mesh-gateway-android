@@ -27,13 +27,16 @@
 package com.ntsocial.meshlink.core.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MotionScheme.Companion.expressive
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 private val lightScheme =
@@ -119,6 +122,18 @@ data class ColorFamily(val color: Color, val onColor: Color, val colorContainer:
 
 val unspecified_scheme = ColorFamily(Color.Unspecified, Color.Unspecified, Color.Unspecified, Color.Unspecified)
 
+/**
+ * Optional host-level color scheme override.
+ *
+ * Android and hosts that do not provide an override continue to use Dynamic Color and the existing NTsocial schemes.
+ */
+@Suppress("CompositionLocalAllowlist")
+val LocalAppColorSchemeOverride = staticCompositionLocalOf<ColorScheme?> { null }
+
+/** Optional host-level typography override; the existing shared typography remains the default. */
+@Suppress("CompositionLocalAllowlist")
+val LocalAppTypographyOverride = staticCompositionLocalOf<Typography?> { null }
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AppTheme(
@@ -128,16 +143,13 @@ fun AppTheme(
     @Composable()
     () -> Unit,
 ) {
-    val colorScheme =
-        if (dynamicColor) {
-            dynamicColorScheme(darkTheme)
-        } else {
-            null
-        } ?: if (darkTheme) darkScheme else lightScheme
+    val hostColorScheme = LocalAppColorSchemeOverride.current
+    val resolvedDynamicColorScheme = if (dynamicColor) dynamicColorScheme(darkTheme) else null
+    val colorScheme = hostColorScheme ?: resolvedDynamicColorScheme ?: if (darkTheme) darkScheme else lightScheme
 
     MaterialExpressiveTheme(
         colorScheme = colorScheme,
-        typography = AppTypography,
+        typography = LocalAppTypographyOverride.current ?: AppTypography,
         motionScheme = expressive(),
         content = content,
     )

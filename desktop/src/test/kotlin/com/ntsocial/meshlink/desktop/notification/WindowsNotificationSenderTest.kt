@@ -35,6 +35,14 @@ class WindowsNotificationSenderTest {
     private val sender = WindowsNotificationSender(appName = "TestApp")
 
     @Test
+    fun `default notification app id uses NTsocial MeshLink product name`() {
+        val cmd = WindowsNotificationSender().buildCommand(Notification(title = "Hi", message = "There"))
+        val script = cmd[cmd.indexOf("-Command") + 1]
+
+        assertTrue(script.contains("CreateToastNotifier('NTsocial MeshLink')"))
+    }
+
+    @Test
     fun `command starts with powershell`() {
         val notification = Notification(title = "Hi", message = "There")
         val cmd = sender.buildCommand(notification)

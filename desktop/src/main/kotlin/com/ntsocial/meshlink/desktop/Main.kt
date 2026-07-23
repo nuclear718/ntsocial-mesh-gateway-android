@@ -25,6 +25,8 @@
 package com.ntsocial.meshlink.desktop
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -36,6 +38,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.decodeToImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -79,12 +84,22 @@ import com.ntsocial.meshlink.core.resources.desktop_tray_show
 import com.ntsocial.meshlink.core.resources.desktop_tray_tooltip
 import com.ntsocial.meshlink.core.service.MeshServiceOrchestrator
 import com.ntsocial.meshlink.core.ui.theme.AppTheme
+import com.ntsocial.meshlink.core.ui.theme.LocalAppColorSchemeOverride
+import com.ntsocial.meshlink.core.ui.theme.LocalAppTypographyOverride
+import com.ntsocial.meshlink.core.ui.util.LocalDefaultBrandingPainter
 import com.ntsocial.meshlink.core.ui.util.LocalEventBranding
 import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
+import com.ntsocial.meshlink.desktop.branding.ColdLaunchSplashPlayback
+import com.ntsocial.meshlink.desktop.branding.DesktopBranding
+import com.ntsocial.meshlink.desktop.branding.NtsocialWindowsTypography
+import com.ntsocial.meshlink.desktop.branding.desktopBrandingFor
+import com.ntsocial.meshlink.desktop.branding.ntsocialWindowsColorScheme
 import com.ntsocial.meshlink.desktop.data.DesktopPreferencesDataSource
 import com.ntsocial.meshlink.desktop.di.desktopModule
 import com.ntsocial.meshlink.desktop.di.desktopPlatformModule
+import com.ntsocial.meshlink.desktop.notification.DesktopOS
 import com.ntsocial.meshlink.desktop.ui.DesktopMainScreen
+import com.ntsocial.meshlink.desktop.ui.WindowsBrandSplashOverlay
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.first
 import okio.Path.Companion.toPath
@@ -119,19 +134,32 @@ private fun svgPainterResource(path: String, density: Density): Painter = rememb
     bytes.decodeToSvgPainter(density)
 }
 
+/** Loads a raster image from JVM classpath resources. */
+@Composable
+private fun pngPainterResource(path: String): Painter = remember(path) {
+    val classLoader =
+        requireNotNull(Thread.currentThread().contextClassLoader) {
+            "Missing context class loader while loading resource: $path"
+        }
+    val bytes =
+        requireNotNull(classLoader.getResourceAsStream(path)) { "Missing classpath resource: $path" }
+            .use { it.readAllBytes() }
+    BitmapPainter(bytes.decodeToImageBitmap())
+}
+
 @OptIn(ExperimentalCoilApi::class)
 fun main(args: Array<String>) = application(exitProcessOnExit = false) {
+    val desktopOs = remember { DesktopOS.current() }
+    val branding = remember(desktopOs) { desktopBrandingFor(desktopOs) }
     val koinApp = remember {
-        Logger.i { "Meshtastic Desktop — Starting" }
+        Logger.i { "${branding.productName} — Starting" }
         startKoin { modules(desktopPlatformModule(), desktopModule()) }
     }
-    val systemLocale = remember { Locale.getDefault() }
     val uiViewModel = remember { koinApp.koin.get<UIViewModel>() }
-    val httpClient = remember { koinApp.koin.get<HttpClient>() }
 
     DeepLinkHandler(args, uiViewModel)
     MeshServiceLifecycle()
-    ThemeAndLocaleProvider(uiViewModel)
+    ThemeAndLocaleProvider(uiViewModel, desktopOs, branding)
 }
 
 // ----- Deep link handling -----
@@ -181,7 +209,11 @@ private fun MeshServiceLifecycle() {
 @Suppress("ViewModelForwarding")
 @Composable
 @OptIn(ExperimentalCoilApi::class)
-private fun ApplicationScope.ThemeAndLocaleProvider(uiViewModel: UIViewModel) {
+private fun ApplicationScope.ThemeAndLocaleProvider(
+    uiViewModel: UIViewModel,
+    desktopOs: DesktopOS,
+    branding: DesktopBranding,
+) {
     val systemLocale = remember { Locale.getDefault() }
     val uiPrefs = koinInject<UiPrefs>()
     val themePref by uiPrefs.theme.collectAsState(initial = -1)
@@ -195,7 +227,7 @@ private fun ApplicationScope.ThemeAndLocaleProvider(uiViewModel: UIViewModel) {
             else -> isSystemInDarkTheme()
         }
 
-    MeshtasticDesktopApp(uiViewModel, isDarkTheme)
+    MeshtasticDesktopApp(uiViewModel, isDarkTheme, desktopOs, branding)
 }
 
 // ----- Application chrome (tray, window, navigation) -----
@@ -204,15 +236,29 @@ private fun ApplicationScope.ThemeAndLocaleProvider(uiViewModel: UIViewModel) {
 @Suppress("ViewModelForwarding")
 @Composable
 @OptIn(ExperimentalCoilApi::class)
-private fun ApplicationScope.MeshtasticDesktopApp(uiViewModel: UIViewModel, isDarkTheme: Boolean) {
+private fun ApplicationScope.MeshtasticDesktopApp(
+    uiViewModel: UIViewModel,
+    isDarkTheme: Boolean,
+    desktopOs: DesktopOS,
+    branding: DesktopBranding,
+) {
     var isAppVisible by remember { mutableStateOf(true) }
     var isWindowReady by remember { mutableStateOf(false) }
+    val splashPlayback = remember { ColdLaunchSplashPlayback() }
+    var showBrandSplash by remember { mutableStateOf(splashPlayback.shouldPlay(desktopOs)) }
     val trayState = rememberTrayState()
     val density = LocalDensity.current
-    val appIcon = svgPainterResource("tray_icon_black.svg", density)
+    val appIcon =
+        if (branding.isNtsocialWindows) {
+            pngPainterResource(branding.windowIconResource)
+        } else {
+            svgPainterResource(branding.windowIconResource, density)
+        }
+    val appBarBrandPainter = branding.appBarIconResource?.let { pngPainterResource(it) }
 
     val trayIcon =
-        svgPainterResource(if (isSystemInDarkTheme()) "tray_icon_white.svg" else "tray_icon_black.svg", density)
+        branding.trayIconResource?.let { pngPainterResource(it) }
+            ?: svgPainterResource(if (isSystemInDarkTheme()) "tray_icon_white.svg" else "tray_icon_black.svg", density)
 
     val notificationManager = koinInject<DesktopNotificationManager>()
     val desktopPrefs = koinInject<DesktopPreferencesDataSource>()
@@ -236,7 +282,20 @@ private fun ApplicationScope.MeshtasticDesktopApp(uiViewModel: UIViewModel, isDa
     )
 
     if (isWindowReady && isAppVisible) {
-        MeshtasticWindow(uiViewModel, isDarkTheme, appIcon, windowState) { isAppVisible = false }
+        MeshtasticWindow(
+            uiViewModel = uiViewModel,
+            isDarkTheme = isDarkTheme,
+            branding = branding,
+            appIcon = appIcon,
+            appBarBrandPainter = appBarBrandPainter,
+            showBrandSplash = showBrandSplash,
+            windowState = windowState,
+            onSplashFinish = { showBrandSplash = false },
+            onCloseRequest = {
+                showBrandSplash = false
+                isAppVisible = false
+            },
+        )
     }
 }
 
@@ -285,8 +344,12 @@ private fun WindowBoundsManager(
 private fun ApplicationScope.MeshtasticWindow(
     uiViewModel: UIViewModel,
     isDarkTheme: Boolean,
+    branding: DesktopBranding,
     appIcon: Painter,
+    appBarBrandPainter: Painter?,
+    showBrandSplash: Boolean,
     windowState: WindowState,
+    onSplashFinish: () -> Unit,
     onCloseRequest: () -> Unit,
 ) {
     val multiBackstack =
@@ -301,7 +364,7 @@ private fun ApplicationScope.MeshtasticWindow(
 
     Window(
         onCloseRequest = onCloseRequest,
-        title = "Meshtastic Desktop",
+        title = branding.productName,
         icon = appIcon,
         state = windowState,
         onPreviewKeyEvent = { event -> handleKeyboardShortcut(event, multiBackstack, ::exitApplication) },
@@ -309,8 +372,27 @@ private fun ApplicationScope.MeshtasticWindow(
         val eventEdition by uiViewModel.eventEdition.collectAsState()
 
         CoilImageLoaderSetup()
-        CompositionLocalProvider(LocalEventBranding provides eventEdition) {
-            AppTheme(darkTheme = isDarkTheme) { DesktopMainScreen(uiViewModel, multiBackstack) }
+        val colorSchemeOverride = if (branding.isNtsocialWindows) ntsocialWindowsColorScheme(isDarkTheme) else null
+        val typographyOverride = if (branding.isNtsocialWindows) NtsocialWindowsTypography else null
+        CompositionLocalProvider(
+            LocalEventBranding provides eventEdition,
+            LocalDefaultBrandingPainter provides appBarBrandPainter,
+            LocalAppColorSchemeOverride provides colorSchemeOverride,
+            LocalAppTypographyOverride provides typographyOverride,
+        ) {
+            AppTheme(darkTheme = isDarkTheme) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    DesktopMainScreen(
+                        uiViewModel = uiViewModel,
+                        multiBackstack = multiBackstack,
+                        useWindowsBranding = branding.isNtsocialWindows,
+                        darkTheme = isDarkTheme,
+                    )
+                    if (showBrandSplash && branding.isNtsocialWindows) {
+                        WindowsBrandSplashOverlay(brandPainter = appIcon, onFinish = onSplashFinish)
+                    }
+                }
+            }
         }
     }
 }

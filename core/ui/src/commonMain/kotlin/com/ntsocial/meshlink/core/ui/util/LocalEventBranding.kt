@@ -25,6 +25,8 @@
 package com.ntsocial.meshlink.core.ui.util
 
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.painter.Painter
 import com.ntsocial.meshlink.core.model.EventEdition
 
 /**
@@ -35,3 +37,12 @@ import com.ntsocial.meshlink.core.model.EventEdition
  */
 @Suppress("CompositionLocalAllowlist")
 val LocalEventBranding = compositionLocalOf<EventEdition?> { null }
+
+/**
+ * Optional host-provided default brand mark.
+ *
+ * Event firmware branding still has priority. When no override is provided, shared UI uses the established green
+ * NTsocial butterfly.
+ */
+@Suppress("CompositionLocalAllowlist")
+val LocalDefaultBrandingPainter = staticCompositionLocalOf<Painter?> { null }

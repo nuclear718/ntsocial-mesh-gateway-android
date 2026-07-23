@@ -137,7 +137,10 @@ compose.desktop {
         }
 
         nativeDistributions {
-            packageName = "Meshtastic Desktop"
+            val currentOs = providers.systemProperty("os.name").get().lowercase()
+            val isWindowsHost = currentOs.contains("win")
+
+            packageName = if (isWindowsHost) "NTsocial MeshLink" else "Meshtastic Desktop"
 
             // Ensure critical JVM modules are included in the custom JRE bundled with the app.
             // jdeps might miss some of these if they are loaded via reflection or JNI.
@@ -205,13 +208,13 @@ compose.desktop {
             }
             windows {
                 iconFile.set(project.file("src/main/resources/icon.ico"))
-                menuGroup = "Meshtastic"
+                menuGroup = "NTsocial"
                 shortcut = true
                 menu = true
                 dirChooser = true
-                // Stable UUID ensures MSI upgrades replace the previous installation
-                // rather than installing side-by-side. NEVER change this value.
-                upgradeUuid = "4974EA87-98AA-470E-B590-0BD5CF9FAE8E"
+                // NTsocial MeshLink has its own stable upgrade identity so it can coexist with Meshtastic Desktop.
+                // Never change this value after the first Windows release.
+                upgradeUuid = "6784A2DD-CE59-518B-AA15-C26302D6FA85"
             }
             linux {
                 iconFile.set(project.file("src/main/resources/icon.png"))
@@ -223,7 +226,6 @@ compose.desktop {
 
             // Define target formats based on the current host OS to avoid configuration errors
             // (e.g., trying to configure Linux AppImage notarization on macOS).
-            val currentOs = providers.systemProperty("os.name").get().lowercase()
             when {
                 currentOs.contains("mac") -> targetFormats(TargetFormat.Dmg)
                 currentOs.contains("win") -> targetFormats(TargetFormat.Msi, TargetFormat.Exe)
@@ -235,8 +237,8 @@ compose.desktop {
             val sanitizedVersion = Regex("^\\d+\\.\\d+\\.\\d+").find(versionInfo.versionName)?.value ?: "1.0.0"
             packageVersion = sanitizedVersion
 
-            description = "Meshtastic Desktop Application"
-            vendor = "Meshtastic LLC"
+            description = if (isWindowsHost) "NTsocial MeshLink for Windows" else "Meshtastic Desktop Application"
+            vendor = if (isWindowsHost) "LiberaNt LLC" else "Meshtastic LLC"
         }
     }
 }

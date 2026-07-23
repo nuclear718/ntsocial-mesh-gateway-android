@@ -31,6 +31,7 @@ import com.ntsocial.meshlink.core.ble.BleConnection
 import com.ntsocial.meshlink.core.ble.BleConnectionFactory
 import com.ntsocial.meshlink.core.ble.BleConnectionState
 import com.ntsocial.meshlink.core.ble.BleDevice
+import com.ntsocial.meshlink.core.ble.BlePairingException
 import com.ntsocial.meshlink.core.ble.BleScanner
 import com.ntsocial.meshlink.core.ble.BleWriteType
 import com.ntsocial.meshlink.core.ble.BluetoothRepository
@@ -258,6 +259,9 @@ class BleRadioTransport(
                 bluetoothRepository.bond(device)
                 Logger.i { "[$address] Bonding successful" }
             } catch (e: CancellationException) {
+                throw e
+            } catch (e: BlePairingException) {
+                Logger.w(e) { "[$address] Explicit Bluetooth pairing did not complete" }
                 throw e
             } catch (e: Exception) {
                 Logger.w(e) { "[$address] Bonding failed, attempting connection anyway" }

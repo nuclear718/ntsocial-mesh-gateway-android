@@ -256,11 +256,12 @@ class ScannerViewModelTest {
             assertEquals(device1.address, (itemsAfterDevice1[1] as DeviceListEntry.Ble).address)
             assertEquals(device2.address, (itemsAfterDevice2[2] as DeviceListEntry.Ble).address)
 
-            // 4. Device 1 RSSI updates to -20dBm (strongest) - should NOT re-sort
-            scanFlow.value = FakeBleDevice(address = device1.address, name = device1.name, rssi = -20)
+            // 4. Device 1 RSSI updates to -20dBm without a local name. Keep its known name and discovery position.
+            scanFlow.value = FakeBleDevice(address = device1.address, name = null, rssi = -20)
             val itemsAfterRssiUpdate = awaitItem()
             assertEquals(3, itemsAfterRssiUpdate.size)
             assertEquals(device1.address, (itemsAfterRssiUpdate[1] as DeviceListEntry.Ble).address)
+            assertEquals(device1.name, itemsAfterRssiUpdate[1].name)
             assertEquals(-20, (itemsAfterRssiUpdate[1] as DeviceListEntry.Ble).device.rssi)
 
             cancelAndIgnoreRemainingEvents()
