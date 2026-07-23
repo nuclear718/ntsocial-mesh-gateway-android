@@ -1,4 +1,4 @@
-# NTsocial MeshLink Windows BLE 配對失敗：根因分析與修改規格
+# NTsocial MeshLink Windows BLE 配對失敗：失敗邊界分析與條件式修改規格
 
 - 報告版本：2.0（取代原 2026-07-23 探索性報告）
 - 報告日期：2026-07-23（Asia/Taipei）
@@ -7,12 +7,12 @@
 - Fork 基準：`ce20e086cd0f10686e071b57335837eaadfaf755`
 - 上游比對基準：`bb7508a4f256450df90fd6c363788c7cbf5b4834`
 - 原始失敗記錄基準：`8ae1bd4e72d8` 加上當時尚未提交的 Windows 配對實驗
-- 結論狀態：**已確認設計層根因；替代 Windows 配對架構仍須通過真機 viability gate**
+- 結論狀態：**已確認現行 production 設計不成立；本次原生失敗原因與替代架構仍須通過診斷／真機 gate**
 - 本報告變更範圍：分析與工程修改規格；未修改 Kotlin、Gradle、Windows 配對狀態或節點設定
 
 ## 1. 執行摘要
 
-目前問題不是 Logo、主題、Splash 或其他視覺品牌變更破壞 BLE。根因有兩層：
+目前沒有證據顯示 Logo、主題、Splash 或其他視覺品牌變更破壞 BLE。已確認的設計事實有兩層：
 
 1. 官方 Meshtastic Desktop 上游提供 Windows BLE 掃描與 Kable GATT 路徑，但**沒有完成或證明可靠的
    Windows first-pair、PIN 與 bonding 實作**。上游 JVM `BluetoothRepository.bond()` 原本就是
@@ -21,28 +21,31 @@
    `DeviceInformation.Pairing.PairAsync()` 被 Microsoft 明確列為 **Desktop apps 不支援的方法**。
    因此這條 helper 只能視為診斷實驗，不能作為可發布的 Windows 配對實作。
 
-這兩層問題完整解釋目前症狀：
+這兩層事實與目前症狀一致，並已足以判定現行 helper 不可發布；但不能據此聲稱已解析這一次
+`PAIRING_STATUS=Failed` 的原生直接原因：
 
 - BLE advertisement scan 正常，因此能看到正確名稱、address 與 RSSI。
 - 舊路徑未先取得受保護 GATT attribute 所需的 authentication，收到
   `HRESULT 0x80650005 / E_BLUETOOTH_ATT_INSUFFICIENT_AUTHENTICATION`。
-- 新路徑在 Kable GATT 之前改呼叫 Desktop 不支援的 basic `PairAsync()`，因此回傳
-  `PAIRING_STATUS=Failed`，也沒有可依賴的 PIN ceremony。
+- 新路徑在 Kable GATT 之前呼叫 Desktop 不支援的 basic `PairAsync()`；helper 隨後只輸出
+  `PAIRING_STATUS=Failed`。現有 log 無法區分 WinRT result failure、PowerShell projection／wait exception
+  或其他 broker 失敗，所以「unsupported API」是已確認的設計缺陷，不是這次 native status 的完整鑑識。
 - 專案中沒有 `DeviceInformationCustomPairing`、`PairingRequested`、`ProvidePin` 或 Compose PIN
   UI，因此 helper 沒有顯示 Windows UI 時，App 內也不存在第二條輸入 PIN 的路徑。
-- 現行失敗發生在 `bleConnection.connectAndAwait()` 之前；本次不是 Meshtastic service UUID、
-  characteristic subscription、Stage 1/2 config handshake 或封包交換問題。
+- 現行失敗發生在 `bleConnection.connectAndAwait()` 之前；service UUID、characteristic subscription、
+  Stage 1/2 config handshake 與封包交換不是**最先出現的失敗邊界**，但也因未執行而尚未由本次測試驗證。
 
 工程決策如下：
 
-> **停止把互動式配對放在 `BleRadioTransport`／reconnect loop。使用者點選裝置後，必須先以受支援的
-> Windows 流程完成配對，再提交 radio address、建立 Kable transport 並進入 GATT。**
+> **停止把互動式配對放在 `BleRadioTransport`／reconnect loop。使用者點選裝置後，先解析該節點的
+> connection prerequisite；需要配對時才走經驗證的 Windows 流程。通過 association 與受保護 GATT
+> readiness 檢查後，才提交 radio address 並建立持久 transport。**
 
 建議分兩階段恢復：
 
-- **第一階段（可較快發布）：**移除 PowerShell basic `PairAsync()`，引導使用者到 Windows Bluetooth
-  設定手動配對，App 驗證 `IsPaired=true` 後才連線。
-- **第二階段（完整 App 內 PIN）：**先以小型原生 C#／C++ prototype 驗證
+- **Phase 0 候選 A（外部 Settings）：**移除 PowerShell basic `PairAsync()`，驗證 Windows Bluetooth
+  Settings 能替同一節點配對，且預配對後 Kable 能完成受保護 GATT；兩項通過後才可升格為 Phase 1。
+- **Phase 0 候選 B（App 內 PIN）：**先以小型原生 C#／C++ prototype 驗證
   `DeviceInformation.Pairing.Custom` 在選定 Desktop app model 上可用；通過後才整合 versioned broker
   IPC、`PairingRequested` 與 Compose PIN／確認 UI。
 
@@ -101,15 +104,16 @@ App 關閉後的唯讀 WinRT metadata 查詢對兩個位址均返回：
 真實 Windows first-pairing 可用**。目前配對測試沒有執行真正的 PowerShell、WinRT pairing broker、
 Windows system consent、PIN ceremony 或 BLE 硬體。
 
-## 3. 根因判定
+## 3. 已確認的設計缺陷與未解析的執行期失敗
 
-### 3.1 根因一：上游 Desktop bonding 本來就未完成
+### 3.1 設計缺口一：調查範圍內的上游 Desktop bonding 未完成
 
 官方 Desktop BLE 是在 2026 年 3 月的上游 PR
 [#4818](https://github.com/meshtastic/Meshtastic-Android/pull/4818) 引入 Kable backend。
 該實作提供掃描與 GATT 操作，但沒有 Windows PIN callback 或 bonding 實作。
 
-上游目前的 JVM repository 明確具有下列語意：
+本報告固定比對的上游 commit `bb7508a4f256450df90fd6c363788c7cbf5b4834` 之 JVM repository
+明確具有下列語意：
 
 ```kotlin
 override fun isBonded(address: String): Boolean = false // Bonding not supported on desktop yet
@@ -126,7 +130,7 @@ authentication 的 Meshtastic 節點不成立。
 `f42e08fec76e770542449b272724559c7e5bac50` 對 `KableBluetoothRepository` 幾乎只是 package rename，
 沒有把既有 bonding 功能改壞，因為可用的 Windows bonding 功能原本就不存在。
 
-### 3.2 根因二：fork 新 helper 使用 Microsoft 明列不支援的 Desktop API
+### 3.2 設計缺口二：fork helper 使用 Microsoft 明列不支援的 Desktop API
 
 現行 helper 在：
 
@@ -184,6 +188,11 @@ Microsoft 的 custom pairing contract 要求 App 參與 ceremony：
 來源：[Pair devices](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/pair-devices)、
 [DevicePairingKinds](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.devicepairingkinds)
 
+上述是**受支援 custom-pairing app model** 下的 contract。Microsoft reference sample 主要示範
+UWP／AppContainer 情境；目前 Compose JVM 或其派生的 full-trust helper 是否屬於可使用該 API 的
+app model，仍必須由 Phase 0 viability prototype 證明。custom overload 未出現在同一份 unsupported
+清單，只能形成候選，不能當成 Microsoft 對 full-trust Desktop 的正面支援保證。
+
 原報告曾引用 basic pairing 文件，認為 Windows 應自動顯示必要互動。該語意適用於文件所述的
 basic pairing 情境，但不能推翻 Microsoft 對 Desktop `DeviceInformationPairing.PairAsync()` 的明確限制。
 因此正確說法是：
@@ -191,7 +200,7 @@ basic pairing 情境，但不能推翻 Microsoft 對 Desktop `DeviceInformationP
 > 本次沒有觀察到 PIN／system dialog；無法證明 helper 已進入有效 pairing ceremony，也不能期待目前
 > unsupported basic API 必然替 Compose Desktop 顯示 PIN UI。
 
-### 3.4 未取得 exit code 6／9，不影響設計層判定
+### 3.4 `PAIRING_STATUS=Failed` 是壓縮結果，不是原生狀態
 
 目前 helper 的兩條路徑會產生相同 stdout：
 
@@ -215,8 +224,14 @@ Kotlin runner 取得 `WindowsPairingProcessResult.exitCode`，但 `ensurePaired(
 - `ProtectionLevelUsed`
 - exception type／HRESULT／InnerException
 
-這些資料仍值得保留，因為它們能解釋本次具體失敗；但無論是 status 19 或 interop exception，都不會
-讓 `DeviceInformationPairing.PairAsync()` 變成受支援的 Desktop production path。
+所以目前只能同時成立兩項結論：
+
+1. 現行 basic `PairAsync()` production 設計已確定不成立，應退役。
+2. 本次具體 failure 尚未解析；不得把 helper 的字串 `Failed` 直接翻譯成 PIN 錯誤、使用者拒絕、
+   `DevicePairingResultStatus.Failed` 或任何特定 HRESULT。
+
+保留 exit code、原生 status 與經 allowlist 消毒的 exception 資料，仍是 Phase 0 必做診斷；它們不會
+使 basic `PairAsync()` 變成受支援的 Desktop production path。
 
 ## 4. 完整失敗呼叫鏈
 
