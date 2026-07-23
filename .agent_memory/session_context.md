@@ -830,6 +830,26 @@
   selecting the radio, actionable authentication error mapping, stable scan-name merging, focused tests, and an
   on-device pairing/PIN/connection validation.
 
+## 2026-07-23 - Windows BLE PairAsync root-cause follow-up
+- Microsoft explicitly lists `DeviceInformationPairing.PairAsync` as unsupported in Desktop apps. The current
+  fork-only `JvmDesktopBluetoothPairingService` invokes exactly that basic-pairing API from a hidden, non-interactive
+  PowerShell desktop process, matching the observed `PAIRING_STATUS=Failed` result and absence of a PIN dialog.
+- Upstream `main` still documents that BLE bonding is not supported on Desktop. Its JVM `isBonded()` remains false and
+  `bond()` remains a no-op; Kable 0.42.0 in this fork and Kable 0.44.3 upstream expose no JVM pair/bond/PIN API.
+  Therefore Windows first-pair/PIN was not an upstream-complete feature that branding broke.
+- The fork's PowerShell/WinRT helper, fake tests, and fail-before-GATT integration were introduced together in
+  `ce20e086c`; the prior `8ae1bd4e` state retained the upstream no-op behavior. The helper also discards the child
+  process exit code and exception detail, has no custom-pairing/PIN UI state machine, and is retried indefinitely even
+  though `BlePairingException` is classified as permanent.
+- Focused validation passed on JDK 21:
+  `:core:ble:jvmTest :core:network:allTests :feature:connections:allTests :desktop:test --no-configuration-cache`.
+  These tests use a fake pairing process and no Windows hardware/WinRT ceremony, so they do not validate real
+  first-pairing.
+- Recommended implementation direction is a Windows-only custom-pairing bridge using
+  `DeviceInformation.Pairing.Custom`, `PairingRequested`, and an ephemeral Compose pairing state/PIN flow, followed by
+  real Windows Settings/reference-helper and Meshtastic hardware testing. A Windows Settings pre-pair flow is the
+  lowest-risk interim workaround. No product code or OS Bluetooth state was changed in this investigation.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.

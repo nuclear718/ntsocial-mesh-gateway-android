@@ -1,37 +1,56 @@
-# NTsocial MeshLink Windows BLE 配對失敗問題分析報告
+# NTsocial MeshLink Windows BLE 配對失敗：根因分析與修改規格
 
+- 報告版本：2.0（取代原 2026-07-23 探索性報告）
 - 報告日期：2026-07-23（Asia/Taipei）
-- 調查範圍：NTsocial MeshLink Windows Desktop 與 Meshtastic BLE 節點的掃描、配對及進入 GATT 前的狀態
-- 基準 commit：`8ae1bd4e72d8`（`main`，工作樹含尚未提交的 Windows 品牌化與 BLE 配對實驗）
-- 本輪限制：唯讀調查；未修改 Kotlin、Gradle、Windows 設定、節點設定或配對狀態
-- 結論狀態：**已定位失敗邊界，但尚未取得足以宣告根因的底層錯誤**
+- 主要影響軌：Microsoft Windows `NTsocial MeshLink` Desktop
+- Android 影響：不得改變既有 Android `createBond()`、Gateway IPC 或 Android 綠色品牌行為
+- Fork 基準：`ce20e086cd0f10686e071b57335837eaadfaf755`
+- 上游比對基準：`bb7508a4f256450df90fd6c363788c7cbf5b4834`
+- 原始失敗記錄基準：`8ae1bd4e72d8` 加上當時尚未提交的 Windows 配對實驗
+- 結論狀態：**已確認設計層根因；替代 Windows 配對架構仍須通過真機 viability gate**
+- 本報告變更範圍：分析與工程修改規格；未修改 Kotlin、Gradle、Windows 配對狀態或節點設定
 
-## 1. 摘要
+## 1. 執行摘要
 
-目前證據足以確認：
+目前問題不是 Logo、主題、Splash 或其他視覺品牌變更破壞 BLE。根因有兩層：
 
-1. Windows Desktop 可以掃描到 Meshtastic 節點，取得正確名稱、位址與穩定 RSSI。
-2. 原始 Desktop 路徑未先建立 bond，進入受保護 GATT 屬性時收到
-   `HRESULT 0x80650005`。Microsoft 將此碼定義為
-   `E_BLUETOOTH_ATT_INSUFFICIENT_AUTHENTICATION`，也就是該屬性必須先通過驗證。
-3. 現行工作樹已改成在 Kable GATT 連線前呼叫 Windows
-   `DeviceInformation.Pairing.PairAsync()`，但兩個節點都沒有出現 PIN 對話框，並在
-   pairing helper 階段顯示 `Windows Bluetooth pairing failed (Failed).`。
-4. 現行失敗發生後不會執行 `bleConnection.connectAndAwait()`；因此本次 log 中沒有成功的
-   GATT connection、service discovery、特徵值存取或 Meshtastic 封包交換。
-5. **目前無法由既有 log 判斷 `Failed` 是 WinRT 正常回傳
-   `DevicePairingResultStatus.Failed`，還是 PowerShell／WinRT 互操作拋出例外。**
-   兩種情況都被 helper 壓縮成相同字串，Kotlin 端又沒有記錄 process exit code 或底層
-   HRESULT。這是現在無法確認真因的主要阻礙。
+1. 官方 Meshtastic Desktop 上游提供 Windows BLE 掃描與 Kable GATT 路徑，但**沒有完成或證明可靠的
+   Windows first-pair、PIN 與 bonding 實作**。上游 JVM `BluetoothRepository.bond()` 原本就是
+   no-op，官方 Desktop 文件也明寫 BLE bonding 尚未支援。
+2. NTsocial fork 為補足此缺口新增了 PowerShell／WinRT pairing helper，但 helper 呼叫的
+   `DeviceInformation.Pairing.PairAsync()` 被 Microsoft 明確列為 **Desktop apps 不支援的方法**。
+   因此這條 helper 只能視為診斷實驗，不能作為可發布的 Windows 配對實作。
 
-因此，現階段最準確的說法是：
+這兩層問題完整解釋目前症狀：
 
-> 直接 GATT 的舊路徑確定缺少驗證；新的顯式配對路徑則確定在 Windows pairing helper
-> 內失敗。失敗位於 `PairAsync()` 呼叫／等待／結果處理附近，但現有觀測資料不足以區分
-> Windows 拒絕配對、配對 ceremony 不相容、應用程式權限／身分問題，或 WinRT
-> PowerShell interop 例外。
+- BLE advertisement scan 正常，因此能看到正確名稱、address 與 RSSI。
+- 舊路徑未先取得受保護 GATT attribute 所需的 authentication，收到
+  `HRESULT 0x80650005 / E_BLUETOOTH_ATT_INSUFFICIENT_AUTHENTICATION`。
+- 新路徑在 Kable GATT 之前改呼叫 Desktop 不支援的 basic `PairAsync()`，因此回傳
+  `PAIRING_STATUS=Failed`，也沒有可依賴的 PIN ceremony。
+- 專案中沒有 `DeviceInformationCustomPairing`、`PairingRequested`、`ProvidePin` 或 Compose PIN
+  UI，因此 helper 沒有顯示 Windows UI 時，App 內也不存在第二條輸入 PIN 的路徑。
+- 現行失敗發生在 `bleConnection.connectAndAwait()` 之前；本次不是 Meshtastic service UUID、
+  characteristic subscription、Stage 1/2 config handshake 或封包交換問題。
 
-## 2. 測試環境快照
+工程決策如下：
+
+> **停止把互動式配對放在 `BleRadioTransport`／reconnect loop。使用者點選裝置後，必須先以受支援的
+> Windows 流程完成配對，再提交 radio address、建立 Kable transport 並進入 GATT。**
+
+建議分兩階段恢復：
+
+- **第一階段（可較快發布）：**移除 PowerShell basic `PairAsync()`，引導使用者到 Windows Bluetooth
+  設定手動配對，App 驗證 `IsPaired=true` 後才連線。
+- **第二階段（完整 App 內 PIN）：**先以小型原生 C#／C++ prototype 驗證
+  `DeviceInformation.Pairing.Custom` 在選定 Desktop app model 上可用；通過後才整合 versioned broker
+  IPC、`PairingRequested` 與 Compose PIN／確認 UI。
+
+不能把「改成 MSIX」、「取消 `-NonInteractive`」、「增加 retry」或「只升級 Kable」當成正式修復。
+
+## 2. 已觀測環境與證據
+
+### 2.1 Windows 測試環境
 
 | 項目 | 觀測值 |
 |---|---|
@@ -39,377 +58,1310 @@
 | OS version / build | `10.0.26200` / `26200` |
 | Bluetooth adapter | Intel(R) Wireless Bluetooth(R)，PnP status `OK` |
 | Bluetooth driver | `24.50.0.4`，driver date `2026-05-08` |
-| Desktop 啟動方式 | Gradle `:desktop:run`，一般 JVM desktop process |
-| Windows 發行格式 | Compose Desktop `MSI` / `EXE`；不是 MSIX |
-| Kable | `0.42.0` |
+| Desktop 啟動方式 | Gradle `:desktop:run`，一般 Compose/JVM Desktop process |
+| Windows 發行格式 | Compose Desktop MSI／EXE；不是 MSIX |
+| Kable | fork 使用 `0.42.0`；調查時上游為 `0.44.3` |
 | Desktop log | `%TEMP%\ntsocial-meshlink-desktop-run.out.log` |
 | Log 時間範圍 | 2026-07-23 16:14:12 至 16:18:45 +08:00 |
 | Log SHA-256 | `826ABF87B115D1F4944778DAF8434751F55F6EE9ECA0C884067F18DBBACF030A` |
 
-`stderr` 只有 Java locale 與 SLF4J 無 provider 的警告，沒有 Bluetooth 或 WinRT
-失敗細節。這些警告與目前配對失敗沒有直接關聯。
+`stderr` 只有 Java locale 與 SLF4J provider 警告，沒有足以解釋 Bluetooth／WinRT 失敗的內容。
 
-## 3. 節點與即時／快取狀態
+### 2.2 節點觀測
 
-測試過程曾同時觀察到：
-
-| 節點 | 位址（遮蔽） | 畫面 RSSI 範圍 | App 掃描 | 配對結果 |
+| 節點 | 位址（遮蔽） | 測試期間 RSSI | App 掃描 | App 配對 |
 |---|---|---:|---|---|
 | `Meshtastic_7faf` | `…:7F:AF` | 約 `-64` 至 `-67 dBm` | 成功 | `Failed` |
 | `Meshtastic_fe66` | `…:FE:66` | 約 `-68` 至 `-76 dBm` | 成功 | `Failed` |
 
-在報告撰寫期間，使用者已關閉其中一個節點，**目前實際在線只剩一個節點**；本次沒有記錄
-是哪一個仍在線，避免推測。
-
-在 App 關閉後執行唯讀 WinRT 查詢，Windows 對兩個已知位址都返回：
+App 關閉後的唯讀 WinRT metadata 查詢對兩個位址均返回：
 
 - 正確裝置名稱
-- `IsPaired = false`
-- `CanPair = true`
-- `ConnectionStatus = Disconnected`
-- `BluetoothAddressType = Random`
+- `IsPaired=false`
+- `CanPair=true`
+- `ConnectionStatus=Disconnected`
+- `BluetoothAddressType=Random`
 
-這個結果不能解讀成兩台都仍在線。Microsoft 文件說明
-`BluetoothLEDevice.FromBluetoothAddressAsync()` 可以從 Windows system cache 取得未配對裝置，
-而建立 `BluetoothLEDevice` 本身也不一定會發起連線。因此此查詢只證明 Windows 仍保有兩個
-裝置的 metadata，不能取代即時 advertisement scan。
+這只能證明 Windows system cache 保有 metadata，不代表兩台裝置當時都在線。
+`BluetoothLEDevice.FromBluetoothAddressAsync()` 可以從 cache 取得未配對裝置，而建立
+`BluetoothLEDevice` object 本身也不一定發起連線。
 
-## 4. 兩階段失敗證據
+### 2.3 已執行的聚焦測試
 
-### 4.1 舊路徑：未配對便存取 GATT
-
-先前畫面顯示：
+以下現有測試在 JDK 21 上成功：
 
 ```text
-HRESULT(0x80650005): 需要先驗證屬性，才能讀取或寫入屬性。
+:core:ble:jvmTest
+:core:network:allTests
+:feature:connections:allTests
+:desktop:test
 ```
 
-這對應 Windows 的
-`E_BLUETOOTH_ATT_INSUFFICIENT_AUTHENTICATION`。它證明 Meshtastic GATT 端要求已驗證／加密的
-連線，也證明只依賴 JVM Kable／btleplug 自動處理 first pairing 不足。
+這些測試成功只證明 Kotlin 邏輯、fake process output mapping 與 Desktop host 組裝沒有失敗，**不證明
+真實 Windows first-pairing 可用**。目前配對測試沒有執行真正的 PowerShell、WinRT pairing broker、
+Windows system consent、PIN ceremony 或 BLE 硬體。
 
-### 4.2 現行路徑：顯式 pairing helper 失敗
+## 3. 根因判定
 
-現行呼叫順序為：
+### 3.1 根因一：上游 Desktop bonding 本來就未完成
 
-```mermaid
-flowchart LR
-    A["BLE advertisement scan 成功"] --> B["findDevice() 找到相同位址"]
-    B --> C["isBonded() 在 Windows 回傳 false"]
-    C --> D["bond() → ensurePaired()"]
-    D --> E["隱藏的 Windows PowerShell 5.1 process"]
-    E --> F["BluetoothLEDevice.FromBluetoothAddressAsync(address)"]
-    F --> G["DeviceInformation.Pairing.PairAsync()"]
-    G --> H["PAIRING_STATUS=Failed"]
-    H --> I["BlePairingException"]
-    I --> J["未進入 Kable connectAndAwait()"]
+官方 Desktop BLE 是在 2026 年 3 月的上游 PR
+[#4818](https://github.com/meshtastic/Meshtastic-Android/pull/4818) 引入 Kable backend。
+該實作提供掃描與 GATT 操作，但沒有 Windows PIN callback 或 bonding 實作。
+
+上游目前的 JVM repository 明確具有下列語意：
+
+```kotlin
+override fun isBonded(address: String): Boolean = false // Bonding not supported on desktop yet
+
+override suspend fun bond(device: BleDevice) {
+    // No-op
+}
 ```
 
-相關程式位置：
+上游 `JvmScannerViewModel` 則假設 OS 會在 GATT connection 期間處理 pairing。這個假設對本次需要
+authentication 的 Meshtastic 節點不成立。
 
-- `KableBluetoothRepository.kt:43-46`：Windows 一律走 `ensurePaired()`。
-- `BleRadioTransport.kt:250-271`：先 bond；`BlePairingException` 會重新拋出；成功後才可進入
-  `connectAndAwait()`。
-- `JvmDesktopBluetoothPairingService.kt:143-169`：啟動 helper 並只解析輸出字串。
-- `JvmDesktopBluetoothPairingService.kt:259-302`：PowerShell WinRT pairing script。
+截至 fork commit `8ae1bd4e72d8`，NTsocial 版本仍保持相同行為。純品牌 rename commit
+`f42e08fec76e770542449b272724559c7e5bac50` 對 `KableBluetoothRepository` 幾乎只是 package rename，
+沒有把既有 bonding 功能改壞，因為可用的 Windows bonding 功能原本就不存在。
 
-本次 log 統計：
+### 3.2 根因二：fork 新 helper 使用 Microsoft 明列不支援的 Desktop API
 
-| 節點 | Connection attempts | Bond starts | 完整記錄的 pairing failures | 到達 GATT connect |
-|---|---:|---:|---:|---:|
-| `Meshtastic_7faf` | 4 | 3 | 2 | 0 |
-| `Meshtastic_fe66` | 4 | 4 | 4 | 0 |
-
-`Meshtastic_7faf` 有一次 bond 流程在使用者切換節點時被中止，所以 bond starts 與完整 failure
-數量不同。
-
-六次完整失敗的 session duration 為：
+現行 helper 在：
 
 ```text
-Meshtastic_7faf: 10.271 s, 15.254 s
-Meshtastic_fe66:  3.864 s, 4.890 s, 12.511 s, 22.519 s
+core/ble/src/jvmMain/kotlin/com/ntsocial/meshlink/core/ble/
+  JvmDesktopBluetoothPairingService.kt
 ```
 
-最後中斷統計為 `Packets RX: 0`、`Packets TX: 0`。背景 heartbeat 曾被排程，但 log 明確顯示
-`toRadio characteristic unavailable`，所以沒有實際寫入 Meshtastic characteristic。
-
-## 5. 為何現在的 `Failed` 不能代表真正錯誤
-
-helper 有兩條不同路徑會產生完全相同的輸出：
+透過隱藏、`-NonInteractive` 的 Windows PowerShell 5.1 process 執行：
 
 ```powershell
-# PairAsync 正常完成，但 Windows result status 本身是 Failed
+$pairOperation = $pairing.PairAsync()
+```
+
+Microsoft 的 Desktop WinRT 支援矩陣在「Unsupported members」明確列出：
+
+| Class | Unsupported method |
+|---|---|
+| `DeviceInformationPairing` | `PairAsync` |
+
+來源：[WinRT APIs not supported in desktop apps](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/winrt-api-desktop-app-support)
+
+因此需要區分兩件事：
+
+- `BluetoothLEDevice` lookup、`IsPaired`、`CanPair` 等部分 WinRT API 在目前 Desktop process 可用。
+- 這**不代表** `DeviceInformationPairing.PairAsync()` 在 Desktop app 受支援。
+
+Compose JVM 主程式派生 PowerShell child process，不會把 child process 轉換成 UWP／AppContainer，也不會
+消除 Desktop support restriction。jpackage MSI／EXE 仍是 Desktop app。Microsoft 將此方法列在
+UWP-only UI 相依的 unsupported members，而不是「只需要 package identity」的清單，所以：
+
+- 改成 MSI 安裝版不會自動修復。
+- 單純改成 MSIX或補 capability 不是 Microsoft 文件提供的修復。
+- 取消 `-WindowStyle Hidden` 或 `-NonInteractive` 只能作診斷實驗，不能使不受支援的 API 成為
+  production solution。
+
+### 3.3 為何沒有 PIN 輸入 UI
+
+目前專案沒有：
+
+- `DeviceInformation.Pairing.Custom`
+- `DeviceInformationCustomPairing.PairingRequested`
+- `DevicePairingKinds.ProvidePin`
+- `DevicePairingKinds.DisplayPin`
+- `DevicePairingKinds.ConfirmPinMatch`
+- Compose PIN input／confirmation state
+
+Microsoft 的 custom pairing contract 要求 App 參與 ceremony：
+
+- `ProvidePin`：App 向使用者取得 PIN，再呼叫 `args.Accept(pin)`。
+- `DisplayPin`：App 顯示 Windows 提供的 PIN，讓使用者在對端輸入。
+- `ConfirmPinMatch`：App 顯示 PIN 並要求使用者確認。
+- `ConfirmOnly`：App 接受或拒絕 pairing request；Desktop 仍可能顯示 system consent。
+
+來源：[Pair devices](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/pair-devices)、
+[DevicePairingKinds](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.devicepairingkinds)
+
+原報告曾引用 basic pairing 文件，認為 Windows 應自動顯示必要互動。該語意適用於文件所述的
+basic pairing 情境，但不能推翻 Microsoft 對 Desktop `DeviceInformationPairing.PairAsync()` 的明確限制。
+因此正確說法是：
+
+> 本次沒有觀察到 PIN／system dialog；無法證明 helper 已進入有效 pairing ceremony，也不能期待目前
+> unsupported basic API 必然替 Compose Desktop 顯示 PIN UI。
+
+### 3.4 未取得 exit code 6／9，不影響設計層判定
+
+目前 helper 的兩條路徑會產生相同 stdout：
+
+```powershell
+# PairAsync 正常完成，但 DevicePairingResultStatus 是 Failed
 Write-Output ('PAIRING_STATUS=' + $result.Status.ToString())
 exit 6
 
-# FromBluetoothAddressAsync、PairAsync、Await-WinRt 或結果投影等任一步驟拋出例外
+# lookup、PairAsync、PowerShell WinRT projection 或 wait 拋出例外
 catch {
     Write-Output 'PAIRING_STATUS=Failed'
     exit 9
 }
 ```
 
-Kotlin runner 其實有取得 `exitCode`，但 `ensurePaired()` 只把 `result.output` 傳給
-`pairingOutcomeFrom()`；既有 log 沒有 exit code，也沒有以下任一資料：
+Kotlin runner 取得 `WindowsPairingProcessResult.exitCode`，但 `ensurePaired()` 只把 `result.output` 傳給
+`pairingOutcomeFrom()`。所以既有 log 仍無法知道：
 
-- PowerShell exception type
-- WinRT／COM `HRESULT`
-- `InnerException`
-- 真正的 `DevicePairingResultStatus`
+- 實際 exit code 是 6 還是 9
+- 真實 `DevicePairingResultStatus`
 - `ProtectionLevelUsed`
-- pairing ceremony / `DevicePairingKinds`
-- pairing dialog 是否被 Windows 建立但無法顯示或取得 owner
-
-Microsoft 將 `DevicePairingResultStatus.Failed` 定義為「unknown failure」。即使未發生 PowerShell
-例外，只記錄 `Failed` 仍不足以指出具體原因。
-
-### 單元測試為何仍會通過
-
-`JvmDesktopBluetoothPairingServiceTest` 使用 `FakePairingProcessRunner`，直接回傳
-`PAIRING_STATUS=Paired`、`AlreadyPaired`、`PairingCanceled` 等人工字串。測試只確認：
-
-- 位址正規化
-- 產生的 script 包含 `PairAsync()`
-- 已知狀態字串能映射成預期 outcome／exception
-- timeout 與非 Windows 分支
-
-測試沒有在 Windows 執行真實 WinRT pairing，沒有驗證系統 PIN UI、應用程式身分／capability、
-PowerShell async projection 或真實 BLE 硬體。因此 `:core:ble:jvmTest`、`:desktop:test`
-成功不能證明 Windows first pairing 可用。
-
-## 6. Kable／btleplug 邊界
-
-本機 Gradle cache 中的 Kable `0.42.0` JVM source 與 FFI surface 已唯讀檢查。JVM
-`BtleplugPeripheral` 提供 connect、disconnect、service discovery、read、write、subscribe
-等方法，但 FFI 沒有 pair／bond API。
-
-因此目前架構必須在 Kable 外部完成 Windows pairing；不能期待
-`KableBluetoothRepository.bond()` 直接委派給現有 Kable JVM API。
-
-## 7. 已證實、可排除與尚未證實
-
-### 已證實
-
-- BLE adapter 與掃描功能可用。
-- 測試期間兩台節點都曾發出可被 App 接收的 advertisement。
-- 裝置名稱及 RSSI 足以辨識節點；最新畫面沒有 `unnamed` 造成的選錯裝置證據。
-- 兩台裝置都重現相同 pairing failure，問題不侷限於單一 MAC。
-- 舊路徑的 GATT characteristic 需要 authentication。
-- 現行路徑在進入 Kable GATT connect 前失敗。
-- Windows cache 中兩個裝置均為未配對、可配對，address type 為 `Random`。
-- 現行 log 無法區分 WinRT result `Failed` 與 helper exception。
-
-### 可暫時降低優先度
-
-- 訊號過弱：兩台節點在測試時 RSSI 均足以穩定掃描。
-- 單一節點硬體故障：兩個節點以相同方式失敗，而且使用者確認節點可由手機端正常使用。
-- Meshtastic GATT service 完全不存在：先前已到達受保護屬性並取得
-  insufficient-authentication error，而不是 service-not-found。
-
-### 尚未證實
-
-- 兩台節點的硬體型號、firmware version 與 Bluetooth pairing mode。
-- Windows「設定 → Bluetooth 與裝置」能否對目前在線節點完成手動配對。
-- Microsoft 官方 Device Enumeration and Pairing sample／Bluetooth LE Explorer 能否完成配對。
-- 目前 helper 是 exit code 6 還是 exit code 9。
-- Gradle unpackaged JVM process 是否因 package identity、capability 或 UI ownership 影響
-  `PairAsync()`。
-- 是否需要 basic pairing 以外的 custom pairing ceremony。
-- `BluetoothAddressType.Random` 未明確傳入 overload 是否影響配對。
-- 同時存在的 Kable scan 與 pairing request 是否造成 Windows Bluetooth stack contention。
-- Windows Bluetooth ETW 中真正的 protocol／broker failure。
-
-## 8. 根因假設與目前排序
-
-以下是調查優先度，不是已證實結論。
-
-### H1：Windows pairing helper 的 WinRT／PowerShell 執行或等待路徑失敗（高）
-
-支持證據：
-
-- PIN UI 完全沒有出現。
-- basic `PairAsync()` 的 Microsoft 文件指出，Desktop 若需要使用者互動，Windows 會處理並顯示
-  system dialog；本次沒有觀察到該 ceremony。
-- helper 在隱藏、`-NonInteractive` 的 PowerShell 5.1 child process 中執行。
-- helper 把所有 WinRT／reflection／async projection exception 都壓成 `Failed`。
-- 測試 artifact 是 Gradle 啟動的 unpackaged JVM process；Bluetooth WinRT API 在 desktop app
-  可用，但 Microsoft 也註明部分 API／capability 的行為會受 package identity 與 app model 影響。
-
-反證／限制：
-
-- 同一類 WinRT read-only 呼叫可成功取得 `BluetoothLEDevice` 與 pairing metadata。
-- 尚未取得 exit code 9 或底層 exception，不能確認是 interop exception。
-
-### H2：Windows basic pairing ceremony 與 Meshtastic PIN 模式不匹配（中高）
-
-Meshtastic 節點需要 authentication，且使用者預期第一次連線時輸入 PIN。若 basic
-`PairAsync()` 沒有為該裝置選到正確 ceremony，可能需要以官方 sample 驗證
-`DeviceInformation.Pairing.Custom`、`PairingRequested` 與相符的 `DevicePairingKinds`。
-
-目前不能直接判定「一定要 custom pairing」；Microsoft 文件明確說 basic pairing 應由 Windows
-處理必要的使用者互動。必須先取得真實 result status／ceremony。
-
-### H3：使用 random BLE address，helper 未傳入 address type（中）
-
-兩台裝置的 WinRT `BluetoothAddressType` 都是 `Random`，但 helper 使用單參數
-`FromBluetoothAddressAsync(address)`，沒有使用可明確指定 address type 的 overload。
-
-單參數呼叫確實返回正確裝置，所以這不是「找不到裝置」；但仍應以
-`FromBluetoothAddressAsync(address, BluetoothAddressType.Random)` 或直接沿用 active
-`DeviceInformation.Id` 做 A/B 測試，確認 pairing endpoint identity 沒有歧義。
-
-### H4：UI scan、transport scan 與無限 retry 造成 stack contention（中）
-
-log 中可見：
-
-- UI 與 transport 多次交錯 `Starting scan`／`Removing scan listener`
-- 7 次 `Unable to deliver advertisement event due to failure in flow or premature closing`
-- pairing failure 被持續重試，backoff 為 5、10、20、40 秒
-
-`BlePairingException` 雖在 classifier 標示為 permanent，但 reconnect policy 使用
-`maxFailures = Int.MAX_VALUE`，`Outcome.Failed` 本身不帶 permanent flag，所以 pairing failure
-仍會重試。這可能引入 `OperationAlreadyInProgress` 或 broker contention，但無法解釋第一個
-pairing attempt 為何已經失敗，較可能是放大器而非最初根因。
-
-### H5：Windows build／driver 或 Meshtastic firmware 相容性（中低）
-
-Windows build 26200、Intel Bluetooth driver 24.50.0.4 與節點 firmware 的組合尚未做官方
-reference-client 對照。Meshtastic firmware 過去也曾有特定版本的 BLE pairing regression。
-
-不過兩個節點都可被手機正常使用、可在 Windows 掃描，且同一 App helper 以相同方式失敗，
-目前證據較偏向 host pairing path。沒有 Windows Settings／官方 sample 基線前仍不能排除。
-
-## 9. 建議的下一輪調查順序
-
-下一輪應先取得鑑別力最高的證據，而不是直接改 production code。
-
-### P0：建立 Windows 原生配對基線
-
-1. 關閉 NTsocial MeshLink，確保沒有背景 retry。
-2. 僅保留一個節點在線。
-3. 從 Windows「設定 → Bluetooth 與裝置 → 新增裝置」手動配對。
-4. 記錄是否出現 PIN、Windows 顯示的裝置名稱、成功／失敗訊息與時間。
-5. 不在 log 或報告中記錄實際 PIN。
-
-判讀：
-
-- Windows Settings 也失敗：優先調查 Windows driver、節點 firmware／pairing mode 或殘留 bond。
-- Windows Settings 成功：硬體與 Windows stack 的基本 pairing path 成立，焦點回到 App helper。
-
-### P0：保留 helper 的真正結果
-
-在獨立 diagnostic probe 或經使用者核准的暫時診斷版本中，至少記錄：
-
-- child process exit code（6 或 9）
-- 真正 `DevicePairingResultStatus`
-- `ProtectionLevelUsed`
-- exception type、HRESULT、InnerException
-- `IsPaired`／`CanPair` 在 PairAsync 前後的值
-- PairAsync 開始與完成時間
-- address type 與取得 DeviceInformation 的方式
-
-不要記錄 PIN、金鑰、私訊、位置或其他 BLE payload。
-
-判讀：
-
-- exit 9：先修 WinRT／PowerShell interop、權限或 async projection。
-- exit 6 且 status 19：PairAsync 有完成，需調查 pairing ceremony、endpoint、app model 或 Windows
-  broker。
-- 明確 status 8/9/11/12/16：依 AuthenticationNotAllowed、AuthenticationFailure、
-  ProtectionLevelCouldNotBeMet、AccessDenied、RequiredHandlerNotRegistered 分流。
-
-### P1：用 Microsoft reference implementation 交叉驗證
-
-在同一台筆電、同一個在線節點測試：
-
-- Microsoft Device Enumeration and Pairing sample
-- Microsoft Bluetooth LE sample／Bluetooth LE Explorer
-
-若官方 sample 成功而 helper 失敗，可把硬體、driver 與大部分 Windows stack 問題降到低優先度。
-
-### P1：建立單一、無競爭的重現條件
-
-- pairing 前停止 UI advertisement scan
-- transport 不再另外啟動第二個 scan
-- 每次只允許一個 pairing attempt
-- pairing failure 後停止自動 retry，等待使用者再次選取
-- 使用 active scan 產生的 `DeviceInformation.Id`，或明確傳入 `BluetoothAddressType.Random`
-
-這些是後續 A/B 實驗條件，不是本報告授權的程式修改。
-
-### P1：擷取 Windows Bluetooth ETW
-
-目前：
-
-- `Microsoft-Windows-Bluetooth-BthLEPrepairing/Operational` 已啟用但 record count 為 0。
-- `Microsoft-Windows-DeviceAssociationService/Performance` 未啟用。
-- 最近三小時的 System log 沒有相關 Bluetooth／DeviceAssociation 事件。
-
-下一次重現前應依 Microsoft Bluetooth／ETW 指引啟用適當 provider，使用 WPR／WPA 或
-Microsoft Bluetooth 測試工具擷取短時間 ETL。ETL 可能包含裝置識別資訊，需限制保存範圍並避免
-公開上傳。
-
-### P2：補齊節點端資訊
-
-透過手機或 serial（不記錄 PIN／keys）取得：
-
-- hardware model
-- firmware version
-- Bluetooth enabled
-- pairing mode（例如 fixed/random/no PIN）
-- 是否存在已保存的 Windows bond
-
-## 10. 決策表
-
-| 新證據 | 優先結論 |
-|---|---|
-| Windows Settings 無法配對 | 先查 host driver、節點 firmware／mode、殘留 bond |
-| Windows Settings 成功，Microsoft sample 成功 | App helper／app model／interop 問題 |
-| helper exit code 9 | PowerShell／WinRT exception，不是 status 19 |
-| helper exit code 6 + status 19 | Windows pairing ceremony／broker 的 unknown failure |
-| 明確 `AccessDenied` | capability、package identity、policy 或使用者權限 |
-| 明確 `RequiredHandlerNotRegistered` | custom pairing handler／pairing kinds |
-| 停止 scan 後成功 | concurrent scan／broker contention |
-| 明確傳入 `Random` address type 後成功 | endpoint address-type handling |
-
-## 11. 目前不應做的事
-
-- 不應再把 `Failed` 直接宣告成節點拒絕、PIN 錯誤或 Windows 權限錯誤。
-- 不應用更多 retry 取代診斷；目前 retry 只會重複同一個不透明失敗。
-- 不應把綠色單元測試視為真實 Windows pairing 驗證。
-- 不應在 log 中加入 PIN、PSK、訊息 payload 或其他敏感資料。
-- 在取得 Windows Settings／官方 sample／exit code 與 HRESULT 前，不宜決定最終實作方向。
-
-## 12. 參考資料
-
-- Microsoft：[`0x80650005` / `E_BLUETOOTH_ATT_INSUFFICIENT_AUTHENTICATION`](https://learn.microsoft.com/zh-tw/windows/win32/com/com-error-codes-9)
-- Microsoft：[Pair devices](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/pair-devices)
-- Microsoft：[DevicePairingResultStatus](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.devicepairingresultstatus)
-- Microsoft：[BluetoothLEDevice.FromBluetoothAddressAsync](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.bluetoothledevice.frombluetoothaddressasync)
-- Microsoft：[Device enumeration and pairing sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/deviceenumerationandpairing/)
-- Microsoft：[Bluetooth Low Energy sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/bluetoothle/)
-- Microsoft：[App capability declarations](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/app-capability-declarations)
-- Microsoft：[WinRT API support for desktop apps](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/winrt-api-desktop-app-support)
-- Microsoft：[Bluetooth Test Platform pairing tests](https://learn.microsoft.com/en-us/windows-hardware/drivers/bluetooth/testing-btp-tests-pairing)
-- Microsoft：[ETW instrumentation overview](https://learn.microsoft.com/en-us/windows-hardware/test/weg/instrumenting-your-code-with-etw)
-- Kable JVM `0.42.0` sources：本機 Gradle dependency cache（唯讀檢查）
-
-## 13. 報告結論
-
-目前最可靠的根因定位層級是：
-
-```text
-BLE advertisement / device selection        正常
-Windows device metadata lookup               可用
-Windows explicit pairing helper              失敗
-Kable GATT connect / service discovery       本次未到達
-Meshtastic protocol exchange                 本次未發生
+- exception type／HRESULT／InnerException
+
+這些資料仍值得保留，因為它們能解釋本次具體失敗；但無論是 status 19 或 interop exception，都不會
+讓 `DeviceInformationPairing.PairAsync()` 變成受支援的 Desktop production path。
+
+## 4. 完整失敗呼叫鏈
+
+以下行號以 fork commit `ce20e086c` 為基準，後續修改時可能位移。
+
+```mermaid
+flowchart TD
+    A["ConnectionsScreen 點選 BLE device"] --> B["ScannerViewModel.onSelected()"]
+    B --> C{"entry.bonded?"}
+    C -- "false" --> D["Desktop requestBonding() 直接 changeDeviceAddress()"]
+    D --> E["SharedRadioInterfaceService 建立 BleRadioTransport"]
+    E --> F["BleRadioTransport.findDevice()"]
+    F --> G["KableBluetoothRepository.isBonded() 在 Windows 固定 false"]
+    G --> H["bond() → ensurePaired()"]
+    H --> I["隱藏 PowerShell desktop child process"]
+    I --> J["BluetoothLEDevice metadata lookup"]
+    J --> K["不受 Desktop 支援的 basic PairAsync()"]
+    K --> L["PAIRING_STATUS=Failed"]
+    L --> M["BlePairingException"]
+    M --> N["包裝成一般 Outcome.Failed"]
+    N --> O["5 / 10 / 20 / 40 / 60 秒持續重試"]
+    M -. "阻止" .-> P["connectAndAwait() / GATT / Meshtastic handshake"]
 ```
 
-真正需要回答的下一個問題不是「再改哪一行」，而是：
+主要位置：
 
-> helper 到底取得 exit code 6 還是 9；若是 WinRT result，完整 status／protection level 是什麼；
-> 若是 exception，底層 HRESULT 與 InnerException 是什麼？
+1. `feature/connections/.../ui/ConnectionsScreen.kt:259-265`
+   - 將裝置點擊傳給 `scanModel.onSelected(entry)`。
+2. `feature/connections/.../ScannerViewModel.kt:317-328`
+   - 未配對 BLE entry 走 `requestBonding()`。
+3. `feature/connections/.../ScannerViewModel.kt:353-362`
+   - Desktop 預設實作沒有等待配對，只立即設定 device address。
+4. `feature/connections/.../JvmScannerViewModel.kt:37-42`
+   - 沒有 override；註解仍宣稱 OS 會在 GATT 自動配對，已與目前實作和實測不符。
+5. `core/network/.../BleRadioTransport.kt:250-271`
+   - transport 找裝置後主動 bond，成功才呼叫 `connectAndAwait()`。
+6. `core/ble/.../KableBluetoothRepository.kt:43-46`
+   - Windows 的 `isBonded()` 不是查詢特定裝置，而是一律回傳 false，然後呼叫 helper。
+7. `core/ble/.../JvmDesktopBluetoothPairingService.kt:76-114`
+   - 啟動 hidden/non-interactive PowerShell。
+8. `core/ble/.../JvmDesktopBluetoothPairingService.kt:143-169`
+   - 執行 helper，但忽略 exit code。
+9. `core/ble/.../JvmDesktopBluetoothPairingService.kt:274-299`
+   - 呼叫 basic `PairAsync()`，把 result failure 與 exception 壓成相同 sentinel。
+10. `core/network/.../BleRadioTransport.kt:217-225`
+    - `BlePairingException` 被包成普通 `Outcome.Failed`。
+11. `core/network/.../BleReconnectPolicy.kt:98-114`
+    - policy 不看 exception 的 permanent 分類。
 
-在取得這組證據，以及 Windows Settings／Microsoft reference sample 的對照結果前，任何具體修正
-都仍屬猜測。
+本次完全未抵達：
+
+- `BleRadioTransport.kt:271` 的 `connectAndAwait()`
+- GATT service discovery
+- Meshtastic FROMNUM subscription
+- `want_config_id` Stage 1／Stage 2
+- 最終 `ConnectionState.Connected`
+- Meshtastic packet RX／TX
+
+## 5. 舊路徑與新路徑的不同失敗
+
+### 5.1 舊上游路徑
+
+舊路徑直接進入 Kable GATT，受保護 attribute 回傳：
+
+```text
+HRESULT(0x80650005): 需要先驗證屬性，才能讀取或寫入屬性。
+```
+
+Microsoft 定義為 `E_BLUETOOTH_ATT_INSUFFICIENT_AUTHENTICATION`：
+
+[COM Bluetooth error codes](https://learn.microsoft.com/en-us/windows/win32/com/com-error-codes-9#e_bluetooth_att_insufficient_authentication)
+
+這證明當時的 GATT connection 沒有取得該 attribute 所需的 authentication。它本身不單獨證明：
+
+- 一定需要哪一種 PIN ceremony
+- 一定需要永久 bond
+- 應採 basic 或 custom pairing
+
+### 5.2 現行 fork 路徑
+
+現行路徑在 GATT 前先執行 fork-only helper：
+
+| 節點 | Connection attempts | Bond starts | 完整 pairing failures | 到達 GATT connect |
+|---|---:|---:|---:|---:|
+| `Meshtastic_7faf` | 4 | 3 | 2 | 0 |
+| `Meshtastic_fe66` | 4 | 4 | 4 | 0 |
+
+六次完整失敗 duration：
+
+```text
+Meshtastic_7faf: 10.271 s, 15.254 s
+Meshtastic_fe66:  3.864 s, 4.890 s, 12.511 s, 22.519 s
+```
+
+最後中斷為 `Packets RX: 0`、`Packets TX: 0`。heartbeat 曾被排程，但
+`toRadio characteristic unavailable`，所以沒有實際 Meshtastic characteristic write。
+
+## 6. 上游、fork 與 Kable 比對
+
+### 6.1 Git 歷史判定
+
+| 版本／commit | BLE pairing 行為 |
+|---|---|
+| 上游 `0b2e89c46`（PR #4818） | 引入 Desktop Kable；bonding 仍未支援 |
+| fork `f42e08fec` | 主要為 namespace／品牌 rename；bonding 行為未變 |
+| fork `8ae1bd4e` | Windows `isBonded=false`、`bond()` no-op |
+| fork `ce20e086c` | 新增 PowerShell PairAsync helper、fake tests 與 fail-before-GATT 行為 |
+
+`ce20e086c` 同時包含 Windows 品牌、Splash、Theme 與 BLE pairing 實驗，所以該 commit 並不只是
+Logo 變更。純 scanner／GATT 核心檔案在 `8ae1bd4e` 至該 commit 間沒有因視覺資產而退化：
+
+- `KableBleScanner.kt`
+- `KableBleConnection.kt`
+- `KableBleConnectionFactory.kt`
+- `MeshtasticBleConstants.kt`
+- `DesktopRadioTransportFactory.kt`
+
+結論是「視覺變更沒有破壞既有 BLE 核心」，但不能再假設 fork 只是「最新上游加皮膚」。
+
+### 6.2 Kable 能力邊界
+
+fork 使用的 Kable `0.42.0` JVM/btleplug surface 提供：
+
+- scan
+- connect／disconnect
+- service discovery
+- read／write
+- subscribe／unsubscribe
+
+沒有 exposed：
+
+- pair
+- bond
+- PIN callback
+- Windows pairing ceremony
+
+調查時上游使用的 Kable `0.44.3` 仍沒有 explicit pair／bond API。因此：
+
+- 升級 Kable可作獨立 backend 相容性實驗。
+- 不能把升級 Kable 當成 Windows first-pairing 修復保證。
+- 配對可能由 Windows 預先完成、由受支援的 OS automatic pairing 完成，或由另外的 Windows-native
+  integration 完成；目前 Kable JVM API 本身不能主動要求 PIN pairing。
+
+## 7. 其他已確認的程式缺陷
+
+這些缺陷不是第一次 `PairAsync()` 失敗的根因，但必須與配對架構一起修正。
+
+### 7.1 互動式配對放在 transport/reconnect 層
+
+`BleRadioTransport` 是背景 transport，會在斷線後重試。PIN／system consent 是使用者互動，不應從
+背景 reconnect loop 啟動。
+
+後果：
+
+- 使用者取消後仍可能再次觸發配對。
+- App 冷啟動或背景重連可能非預期彈出 UI。
+- pairing failure 和 transient GATT failure 混在同一個 backoff policy。
+
+### 7.2 permanent 分類被忽略
+
+`BlePairingException` 在 `BleExceptionClassifier` 被標為 permanent，但：
+
+- `BleRadioTransport` 將所有 exception 包成 `Outcome.Failed`。
+- `BleReconnectPolicy` 不檢查 `isPermanent`。
+- transport 設定 `maxFailures=Int.MAX_VALUE`。
+
+因此失敗會按 5、10、20、40、60 秒持續重跑。這是放大器，不是第一個 failure 的原因。
+
+### 7.3 Windows bonded state 是假的
+
+`KableBluetoothRepository.isBonded(address)` 在 Windows 不是 per-device query，而是由
+`isExplicitPairingRequired` 推導，結果對所有 Windows address 都是 false。
+
+後果：
+
+- 已由 Windows Settings 配對的裝置也可能重跑 helper。
+- App restart 後無法正確辨識保存的 Windows bond。
+- UI 與 transport 的 bonded 語意不一致。
+
+### 7.4 裝置選取不是 transaction
+
+`ScannerViewModel.onSelected()` 會先更新 `radioPrefs.devName`，Desktop `requestBonding()` 又立即
+`changeDeviceAddress()`。也就是尚未配對成功就提交新裝置，啟動 transport。
+
+正確語意應是：
+
+1. 保留目前連線。
+2. 對新裝置執行 pairing gate。
+3. 成功後一次性提交名稱與 address。
+4. 失敗或取消時不改動目前連線。
+
+### 7.5 scan contention
+
+目前畫面 scan 與 transport `findDevice()` 可能重疊，log 也有 advertisement flow prematurely closing。
+這可能造成 `OperationAlreadyInProgress` 或 Windows stack contention，但不能解釋 unsupported basic
+`PairAsync()` 的第一個 failure。
+
+### 7.6 診斷資料被過度壓縮
+
+helper 丟失：
+
+- exit code
+- HRESULT
+- exception type
+- InnerException
+- native result status
+- `ProtectionLevelUsed`
+
+應保留結構化、已消毒資料，但不得記錄 PIN、完整 MAC、DeviceInformation.Id 或其他敏感 payload。
+
+## 8. 已證實、尚未證實與優先度
+
+### 8.1 已證實
+
+- Windows adapter 與 BLE advertisement scan 可用。
+- 測試期間兩個節點都可被 App 掃描。
+- 舊 GATT 路徑沒有取得 attribute 所需 authentication。
+- 上游 JVM Desktop 沒有顯式 bond/PIN 實作。
+- Kable JVM 沒有 pair/bond API。
+- 現行 helper 呼叫 Microsoft 明列 Desktop 不支援的 basic `DeviceInformationPairing.PairAsync()`。
+- 目前專案沒有 custom pairing callback 或 PIN UI。
+- 新路徑在 Kable GATT connect 前失敗。
+- pairing failure 被錯誤地自動重試。
+- 現有 unit tests 不執行真實 Windows pairing。
+
+### 8.2 仍須驗證
+
+- Windows Settings 能否從乾淨無 bond 狀態完成同一節點 pairing。
+- Settings 預配對後，現有 Kable能否完成受保護 GATT read/write 與 Meshtastic handshake。
+- 節點實際要求的 ceremony：`ProvidePin`、`DisplayPin`、`ConfirmPinMatch`、`ConfirmOnly` 或其他。
+- `DeviceInformationCustomPairing.PairAsync()` 在選定 full-trust Desktop helper app model 是否實機可用。
+- 若 full-trust custom helper 不可用，packaged UWP／WinUI broker 的必要 identity／capability。
+- 節點 hardware model、firmware version、pairing mode 與殘留 bond。
+- Windows build、Intel driver 與特定 firmware 組合是否另有相容問題。
+- 停止所有 scan 後是否消除額外 contention。
+- 明確指定 `BluetoothAddressType.Random` 或使用 AEP `DeviceInformation.Id` 是否改變 lookup；這只應作
+  A/B 實驗，不是主要根因。
+
+### 8.3 已降低優先度
+
+- Logo／Theme／Splash 造成 BLE 核心退化。
+- 單一節點硬體故障。
+- 單純 RSSI 過弱。
+- Meshtastic GATT service 完全不存在。
+- 單純升級 Kable即可取得 PIN pairing。
+
+## 9. 目標架構與不可違反的語意
+
+### 9.1 目標流程
+
+```mermaid
+flowchart TD
+    A["BLE scan"] --> B["使用者明確點選裝置"]
+    B --> C["停止本次 UI scan"]
+    C --> D["非互動式查詢 Windows paired state"]
+    D --> E{"已配對？"}
+    E -- "是" --> J["transactional commit: name + device address"]
+    E -- "否" --> F{"目前交付階段"}
+    F -- "Phase 1" --> G["開啟 Windows Bluetooth 設定並等待使用者配對"]
+    F -- "Phase 2" --> H["Windows native custom-pairing broker"]
+    H --> I["PairingRequested → Compose PIN／確認 UI"]
+    G --> K["重新查詢 IsPaired"]
+    I --> K
+    K --> L{"IsPaired + result 驗證成功？"}
+    L -- "否／取消" --> M["保留原裝置；不啟動 transport；不自動 retry"]
+    L -- "是" --> J
+    J --> N["建立 BleRadioTransport"]
+    N --> O["Kable GATT"]
+    O --> P["Meshtastic Stage 1/2 + Connected"]
+```
+
+### 9.2 必要架構規則
+
+1. pairing 只能由使用者在 Connections UI 明確觸發。
+2. `BleRadioTransport` 不得啟動 PIN／consent ceremony。
+3. pairing 成功前不得切換或持久化新 radio address。
+4. pairing 失敗、取消、PIN 錯誤不得自動重開 UI。
+5. transport 只可自動重試真正 transient 的 GATT／連線錯誤。
+6. 配對期間只允許一個 active request，並停止會競爭的 scan。
+7. Windows paired state 必須是 per-device、可重新查詢的真實狀態。
+8. App 冷啟動若發現保存的 bond 已消失，只回報「需要重新配對」，不可自行彈出 PIN。
+9. Kable仍負責配對成功後的 GATT；不要重寫 Meshtastic BLE protocol。
+10. Windows-native integration 留在 Desktop/platform boundary。`commonMain` 只能放平台中立的狀態、結果
+    與 retry contract，不得 import `java.*`、`android.*` 或 WinRT。
+11. Android `createBond()` 行為必須保留；任何 common interface 變更都要同步更新 Android implementation
+    和測試。
+12. macOS／Linux 保持現有 non-Windows policy，不能因 Windows helper 而被迫繼承 Windows UI。
+
+## 10. 具體修改辦法
+
+以下名稱是建議規格；工程師可以依現有命名微調，但責任邊界與語意必須保留。
+
+### 10.1 `BluetoothRepository`：分離狀態查詢與互動式配對
+
+目標檔案：
+
+```text
+core/ble/src/commonMain/kotlin/com/ntsocial/meshlink/core/ble/BluetoothRepository.kt
+core/ble/src/androidMain/kotlin/com/ntsocial/meshlink/core/ble/AndroidBluetoothRepository.kt
+core/ble/src/jvmMain/kotlin/com/ntsocial/meshlink/core/ble/KableBluetoothRepository.kt
+core/testing/src/commonMain/kotlin/com/ntsocial/meshlink/core/testing/FakeBle.kt
+```
+
+現行 `fun isBonded(address: String): Boolean` 無法在 Windows 安全執行 async WinRT query。建議改為或新增：
+
+```kotlin
+enum class BluetoothBondState {
+    BONDED,
+    NOT_BONDED,
+    NOT_REQUIRED,
+    UNKNOWN,
+}
+
+interface BluetoothRepository {
+    val state: StateFlow<BluetoothState>
+
+    fun refreshState()
+    fun isValid(bleAddress: String): Boolean
+    suspend fun bondState(address: String): BluetoothBondState
+    suspend fun bond(device: BleDevice)
+}
+```
+
+必要語意：
+
+- Android `bondState()` 可沿用 `BluetoothAdapter.getRemoteDevice(address).bondState`。
+- Windows `bondState()` 必須查詢指定 AEP／`IsPaired`，不能用 OS 名稱或全域 flag 推導。
+- macOS／Linux 可依目前 Kable/OS 策略返回 `NOT_REQUIRED`，但要有明確測試。
+- `bond()` 只可從 user-driven coordinator 呼叫，transport 不得呼叫。
+- 若不想立刻改 public interface，可先新增 Desktop pairing-status service；但最終不能保留 Windows
+  永遠 false 的 `isBonded()`。
+
+### 10.2 退役現行 PowerShell basic pairing
+
+目標檔案：
+
+```text
+core/ble/src/jvmMain/kotlin/com/ntsocial/meshlink/core/ble/
+  JvmDesktopBluetoothPairingService.kt
+core/ble/src/jvmTest/kotlin/com/ntsocial/meshlink/core/ble/
+  JvmDesktopBluetoothPairingServiceTest.kt
+```
+
+必須移除 production path：
+
+- Base64 PowerShell script
+- `WindowsPairingProcessRunner`
+- `-ExecutionPolicy Bypass`
+- `DeviceInformation.Pairing.PairAsync()`
+- 只靠 `PAIRING_STATUS=...` 的 sentinel protocol
+
+短期可保留的只有：
+
+- 非互動式 paired-state query
+- 結構化 diagnostic probe（若工程團隊仍需要）
+
+若保留舊 helper 作診斷，檔名與 UI 必須明示 `UnsupportedDiagnosticProbe`，不得由 production selection
+path 呼叫，也不得據此宣稱 pairing 支援。
+
+### 10.3 新增平台中立 pairing coordinator contract
+
+建議新增：
+
+```text
+core/ble/src/jvmMain/kotlin/com/ntsocial/meshlink/core/ble/
+  DesktopBluetoothPairingCoordinator.kt
+  WindowsPairingBrokerClient.kt
+feature/connections/src/commonMain/kotlin/com/ntsocial/meshlink/feature/connections/
+  PairingUiState.kt
+```
+
+建議介面：
+
+```kotlin
+interface DesktopBluetoothPairingCoordinator {
+    val state: StateFlow<PairingSessionState>
+    val prompts: Flow<PairingPrompt>
+
+    suspend fun query(device: BleDevice): BluetoothBondState
+    suspend fun beginPairing(device: BleDevice): PairingResult
+    suspend fun respond(requestId: String, promptId: String, response: PairingPromptResponse)
+    suspend fun cancel(requestId: String)
+}
+
+interface WindowsPairingBrokerClient {
+    suspend fun query(request: PairingQuery): NativePairingState
+
+    suspend fun pair(
+        request: PairingRequest,
+        onPrompt: suspend (PairingPrompt) -> PairingPromptResponse,
+    ): NativePairingResult
+
+    suspend fun cancel(requestId: String)
+}
+```
+
+`PairingSessionState` 是 `core:ble` 的平台中立 session/domain 狀態，不引用 Compose resources，也不含
+PIN。`feature:connections` 再把它映射成 `PairingUiState`：
+
+```kotlin
+sealed interface PairingSessionState {
+    data object Idle : PairingSessionState
+    data class Checking(val requestId: String, val deviceLabel: String) : PairingSessionState
+    data class WaitingForExternalPairing(val requestId: String, val deviceLabel: String) : PairingSessionState
+    data class WaitingForUserInput(
+        val requestId: String,
+        val promptId: String,
+        val kind: PairingPromptKind,
+    ) : PairingSessionState
+    data class Pairing(val requestId: String, val deviceLabel: String) : PairingSessionState
+    data class Failed(
+        val requestId: String,
+        val code: PairingFailureCode,
+        val canRetryExplicitly: Boolean,
+    ) : PairingSessionState
+}
+```
+
+`PairingPrompt` 必須透過 non-replaying `Flow`／`Channel` 傳遞。`DisplayPin`／`ConfirmPinMatch` 的 PIN
+只存在單一 prompt 與 dialog local memory，terminal path 後立即清除；不可放入 long-lived/replaying
+`StateFlow`、DataStore 或 exception。
+
+錯誤文案由 `feature:connections` 依 `PairingFailureCode` 映射到 Compose Multiplatform string
+resources；`core:ble` 不應持有 hardcoded UI text 或 resource key。
+
+### 10.4 Connections selection 改成 transaction
+
+目標檔案：
+
+```text
+feature/connections/src/commonMain/kotlin/com/ntsocial/meshlink/feature/connections/
+  ScannerViewModel.kt
+feature/connections/src/jvmMain/kotlin/com/ntsocial/meshlink/feature/connections/
+  JvmScannerViewModel.kt
+feature/connections/src/androidMain/kotlin/com/ntsocial/meshlink/feature/connections/
+  AndroidScannerViewModel.kt
+```
+
+建議新增共用 helper：
+
+```kotlin
+protected fun commitDeviceSelection(entry: DeviceListEntry) {
+    radioPrefs.setDevName(entry.name)
+    addRecentAddress(entry.fullAddress, entry.name)
+    changeDeviceAddress(entry.fullAddress)
+}
+```
+
+BLE selection 必須：
+
+1. 不先寫 `radioPrefs.devName`。
+2. 暫停 BLE scan。
+3. 查 paired state。
+4. 已配對：`commitDeviceSelection(entry)`。
+5. 未配對：啟動外部 Settings flow 或 native broker。
+6. 只有成功後 commit。
+7. 失敗／取消：保留舊 address 與舊連線。
+8. terminal 後依 `bleAutoScan` 恢復 scan。
+
+`JvmScannerViewModel` 必須 override Desktop bonding，不能再依賴 base class 的「直接 connect」。
+Android `AndroidScannerViewModel` 維持既有 user-triggered `createBond()`，成功後才 commit。
+
+### 10.5 UI：新增 pairing state 與安全對話框
+
+目標檔案：
+
+```text
+feature/connections/src/commonMain/kotlin/com/ntsocial/meshlink/feature/connections/ui/
+  ConnectionsScreen.kt
+feature/connections/src/commonMain/kotlin/com/ntsocial/meshlink/feature/connections/ui/component/
+  BluetoothPairingDialog.kt
+```
+
+UI 必須支援：
+
+- 檢查是否已配對
+- 等待 Windows Settings 手動配對
+- `ProvidePin`
+- `DisplayPin`
+- `ConfirmPinMatch`
+- `ConfirmOnly`
+- 取消
+- timeout
+- 明確重試按鈕
+- unsupported ceremony／AccessDenied／broker unavailable 等可恢復錯誤
+
+Meshtastic proto 定義 `RANDOM_PIN`、`FIXED_PIN`、`NO_PIN`；目前專案的 fixed-PIN editor 採六位數
+限制。Phase 0 必須確認各實際 firmware 的 random/fixed PIN 長度與
+`PairingRequested.PairingKind`。Production UI 只能依已驗證的 Meshtastic contract 設定長度，
+不能只根據裝置名稱猜測。
+
+安全要求：
+
+- PIN field 使用 numeric password keyboard／visual transformation。
+- PIN 不放入 ViewModel persistent state。
+- submit、cancel、timeout、dialog dispose 後清除 local value。
+- `DisplayPin`／`ConfirmPinMatch` 的 PIN 也不得寫 log。
+- 不在 UI 顯示完整 MAC。
+- 配對期間 disable 其他裝置列，或要求先取消目前 session。
+
+新增字串時先查 `.skills/compose-ui/strings-index.txt`，使用 Compose Multiplatform resources，最後執行：
+
+```text
+python3 scripts/sort-strings.py
+```
+
+不得在 common UI hardcode 英文錯誤訊息。
+
+### 10.6 transport：只驗證，不啟動 pairing
+
+目標檔案：
+
+```text
+core/network/src/commonMain/kotlin/com/ntsocial/meshlink/core/network/radio/
+  BleRadioTransport.kt
+  BleReconnectPolicy.kt
+core/ble/src/commonMain/kotlin/com/ntsocial/meshlink/core/ble/
+  BlePairingException.kt
+  BleExceptionClassifier.kt
+```
+
+`BleRadioTransport.attemptConnection()` 應改為：
+
+```text
+find device
+→ 非互動式檢查 bond/auth prerequisite
+→ 未配對：PAIRING_REQUIRED，立即結束本次 transport
+→ 已配對／平台不要求：connectAndAwait()
+→ service discovery
+→ subscribe
+```
+
+必須刪除 transport 內的：
+
+```kotlin
+bluetoothRepository.bond(device)
+```
+
+建議錯誤模型：
+
+```kotlin
+enum class PairingFailureCode {
+    PAIRING_REQUIRED,
+    DEVICE_NOT_FOUND,
+    NOT_READY,
+    USER_CANCELLED,
+    PIN_REJECTED,
+    AUTHENTICATION_TIMEOUT,
+    PROTECTION_LEVEL_NOT_MET,
+    ACCESS_DENIED,
+    UNSUPPORTED_CEREMONY,
+    OPERATION_IN_PROGRESS,
+    BROKER_UNAVAILABLE,
+    BROKER_CRASHED,
+    BROKER_PROTOCOL_ERROR,
+    WINDOWS_FAILURE,
+}
+
+enum class RetryDirective {
+    NONE,
+    USER_ACTION,
+    TRANSIENT_CONNECTION,
+}
+```
+
+`BlePairingException` 應帶：
+
+- failure code
+- retry directive
+- 可公開的 resource/message key
+- 可選 native status
+- 可選 HRESULT
+
+不可包含 PIN、完整 address、DeviceInformation.Id 或原始 protocol line。
+
+`BleReconnectPolicy.Outcome.Failed` 必須攜帶 retry directive，或 policy 必須呼叫
+`classifyBleException()`：
+
+- `NONE`／`USER_ACTION`：立即 `GiveUp`，通知 UI。
+- `TRANSIENT_CONNECTION`：才使用現有 backoff。
+- `maxFailures=Int.MAX_VALUE` 不得覆蓋 permanent classification。
+
+### 10.7 Desktop DI 與平台邊界
+
+目標檔案：
+
+```text
+desktop/src/main/kotlin/com/ntsocial/meshlink/desktop/di/DesktopKoinModule.kt
+desktop/src/main/kotlin/com/ntsocial/meshlink/desktop/ble/
+  WindowsBluetoothPairingCoordinator.kt
+  WindowsPairingBrokerProcessClient.kt
+  WindowsBluetoothSettingsLauncher.kt
+```
+
+建議：
+
+- `core:ble` 定義 contract 與平台中立 DTO。
+- `desktop` host 提供 Windows process／WinRT broker integration。
+- Windows 綁定 real implementation。
+- macOS／Linux 綁定明確 no-op／not-required implementation。
+- 移除 `JvmDesktopBluetoothPairingService` 上會與 host binding 衝突的自動 `@Single`，由
+  `DesktopKoinModule` 明確組裝。
+- 新增 `DesktopKoinTest`，驗證三個 OS branch 都只有一個 pairing coordinator binding。
+
+這是 MeshLink 自身的本機 Windows adapter，不是 `NTsocial_Windows` product IPC。不得將其描述為
+兩個產品已建立互通，也不得導入相鄰專有 repository 的程式碼或秘密。
+
+## 11. 第一階段：Windows Settings 預配對方案
+
+這是建議先落地的 release-unblock path。
+
+### 11.1 使用者流程
+
+1. 使用者在 MeshLink 點選未配對節點。
+2. App 停止 scan 並查詢 `IsPaired`。
+3. 若未配對，顯示說明與「開啟 Windows Bluetooth 設定」按鈕。
+4. 使用者明確按下後，App 開啟：
+
+   ```text
+   ms-settings:bluetooth
+   ```
+
+5. 使用者在 Windows 設定完成 PIN pairing。
+6. 回到 MeshLink 後，App 每 1 秒或在 window focus 恢復時重新查詢，最多等待 120 秒。
+7. 只有 `IsPaired=true` 才提交 address 並進入 Kable。
+8. cancel／timeout 不改變目前選取裝置。
+
+Microsoft 正式列出 `ms-settings:bluetooth`：
+
+[Launch Windows Settings](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings)
+
+實作可先驗證既有 JVM `rememberOpenUrl()` 的
+`java.awt.Desktop.browse(URI("ms-settings:bluetooth"))`。若 installed MSI／EXE 對 custom scheme 不支援，
+再使用 Windows-only fixed-command launcher；不得把任何使用者輸入插入 shell command。
+
+### 11.2 第一階段完成條件
+
+- PowerShell basic PairAsync production path 已停用。
+- 未配對裝置不會啟動 transport。
+- Windows Settings 配對成功後，App 能偵測 bond。
+- 已配對節點能完成受保護 GATT 與 Meshtastic handshake。
+- cancel／timeout 不會自動 retry pairing。
+- App restart 與 Windows reboot 後可重連。
+- UI 明確標示這是 Windows 外部配對流程，不宣稱 App 內 PIN 已實作。
+
+若 Windows Settings 自身也無法配對，立即停止 App pairing 工程，先調查：
+
+- node firmware／pairing mode
+- 殘留 bond
+- Windows build／driver
+- 節點是否真的處於 pairing-ready 狀態
+
+## 12. 第二階段：App 內 custom-pairing broker
+
+### 12.1 先做 viability prototype，不能直接整合
+
+Microsoft Desktop support matrix只明確排除 basic `DeviceInformationPairing.PairAsync()`，沒有在同一清單
+中列出 `DeviceInformationCustomPairing.PairAsync()`。這使 custom pairing 成為合理候選，但**不是已知
+保證可用的 Compose JVM 解法**。
+
+先建立最小 C#／C++ prototype，在同一台筆電與同一節點驗證：
+
+- 以 `DeviceInformationKind.AssociationEndpoint` 取得可配對 object。
+- `DeviceInformation.Pairing.Custom` 非 null。
+- `PairingRequested` 會觸發。
+- 能觀察實際 `PairingKind`。
+- 正確 PIN 可配對。
+- 錯誤 PIN、cancel、timeout 可控。
+- 最終重新查詢 `IsPaired=true`。
+- helper 關閉後 bond 仍由 Windows 正常保存。
+
+Microsoft reference sample 說明 pairing 只能對 `AssociationEndpoint` 執行：
+
+[Device enumeration and pairing sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/deviceenumerationandpairing/)
+
+該 sample 是 UWP feature sample，只能作 ceremony 與 API 使用方式的基準，不能直接證明 unpackaged
+Compose Desktop 可用。
+
+若 full-trust C#／C++ custom helper 失敗，停止在 PowerShell 上修補，改評估 packaged UWP／WinUI
+pairing broker。Kotlin coordinator 與 IPC DTO 應保持不變，讓 app model 替換不影響 shared feature。
+
+### 12.2 建議 broker 專案
+
+```text
+desktop/windows-pairing-broker/
+  NTsocial.MeshLink.PairingBroker.csproj
+  Program.cs
+  PairingSession.cs
+  WindowsBleDeviceResolver.cs
+  Protocol/
+    Messages.cs
+    ProtocolCodec.cs
+  Security/
+    SensitiveBuffer.cs
+  PROTOCOL.md
+```
+
+Phase 0 可用 .NET 8/C# 快速驗證。若正式封裝 C# helper：
+
+- 必須 self-contained 或明確封裝 runtime，不能假設使用者已安裝 .NET。
+- 新增相關開源授權與 provenance 至 `THIRD_PARTY_NOTICES.md`。
+- 不得把 helper 做成閉源或從相鄰 proprietary project 複製。
+
+C++/WinRT 可減少 runtime 體積，但工程成本較高；應在 viability 之後決定，不要在 API 可用性尚未證明前
+先做完整 packaging。
+
+### 12.3 Broker 必須執行的流程
+
+1. 從 stdin 接收固定 schema request；不接受任意 script／WinRT method。
+2. 解析正規化 address，但不信任 JVM 提供的顯示名稱。
+3. 以 BLE AEP selector 找到穩定 `DeviceInformation.Id`。
+4. 驗證 `DeviceInformationKind.AssociationEndpoint`、`Pairing != null`、`CanPair`。
+5. 保留 `BluetoothAddressType`；本次實機為 `Random`。
+6. 若 `IsPaired=true`，回傳 `ALREADY_PAIRED`，不得再次 PairAsync。
+7. 取得 `DeviceInformation.Pairing.Custom`。
+8. 在 `Custom.PairAsync()` 前註冊 `PairingRequested`。
+9. 依實際 `PairingKind` 取得 deferral、把 prompt 傳給 JVM、等待有界回應。
+10. 依 contract 呼叫 `Accept()`／`Accept(pin)`。
+11. 所有 terminal／exception／cancel path 都 complete deferral、解除 handler、dispose device。
+12. 成功後重新查詢 `IsPaired`，並回傳 `DevicePairingResultStatus` 與 `ProtectionLevelUsed`。
+13. parent pipe 關閉或 JVM 結束時立即取消 session 並退出。
+
+Broker 必須能處理：
+
+- `ProvidePin`
+- `DisplayPin`
+- `ConfirmPinMatch`
+- `ConfirmOnly`
+
+不要在未實測前盲目把所有 `DevicePairingKinds` bit 一次交給 Windows；不同 flag 組合可能改變 ceremony
+選擇。Phase 0 應記錄 Meshtastic `RANDOM_PIN`、`FIXED_PIN`、`NO_PIN` 實際要求的 pairing kind，production
+只宣告已實作並驗證的 kinds。
+
+`DevicePairingProtectionLevel` 也必須實測：
+
+- `Default`
+- `EncryptionAndAuthentication`
+
+受保護 GATT 需要 authentication，但不能在未驗證 firmware 相容性前任意 hardcode 或在 failure 後
+靜默降級。若收到 `ProtectionLevelCouldNotBeMet`，應顯示相容性錯誤並停止，不可偷偷降低安全要求。
+
+## 13. Broker IPC 規格
+
+建議使用一個 pairing request 對應一個 child process，以匿名 stdin/stdout pipes 傳遞 versioned NDJSON。
+helper 啟動參數不含 address、PIN 或使用者資料。
+
+### 13.1 Query
+
+```json
+{"v":1,"type":"query","requestId":"8d3...","address":"AABBCCDDEEFF"}
+```
+
+### 13.2 Start pairing
+
+```json
+{"v":1,"type":"pair","requestId":"8d3...","address":"AABBCCDDEEFF","timeoutMs":120000}
+```
+
+### 13.3 Broker prompt
+
+```json
+{"v":1,"type":"prompt","requestId":"8d3...","promptId":"p17...","kind":"providePin"}
+```
+
+### 13.4 JVM response
+
+```json
+{"v":1,"type":"promptResponse","requestId":"8d3...","promptId":"p17...","decision":"accept","pin":"123456"}
+```
+
+### 13.5 Terminal result
+
+```json
+{
+  "v":1,
+  "type":"result",
+  "requestId":"8d3...",
+  "status":"paired",
+  "nativeStatus":"Paired",
+  "protectionLevelUsed":"EncryptionAndAuthentication"
+}
+```
+
+失敗範例：
+
+```json
+{
+  "v":1,
+  "type":"result",
+  "requestId":"8d3...",
+  "status":"failed",
+  "failureCode":"authenticationFailed",
+  "nativeStatus":"AuthenticationFailure",
+  "hresult":"0x........",
+  "retry":"userAction"
+}
+```
+
+協定要求：
+
+- `v`、`type`、`requestId` 必填。
+- 同一 process 同時只允許一個 active request。
+- 每行設定大小上限，例如 8 KiB。
+- response 必須比對 `requestId + promptId`。
+- unknown version／type、重複 terminal result、stale response 必須 fail closed。
+- stdout 只允許 protocol；已消毒診斷走 stderr。
+- Kotlin 不得把完整 input/output line 寫入 log，避免 PIN response 被記錄。
+- PIN 不得進 command line、環境變數、暫存檔、Registry 或 shell history。
+- helper 從 App 安裝目錄的固定絕對路徑啟動，不可透過 `PATH` 搜尋。
+- Release build 應驗證 bundled helper SHA-256；只有實際配置並驗證 code signing 時才能宣稱已簽章。
+
+## 14. 錯誤、UI 與重試語意
+
+| 狀態／錯誤 | 自動 pairing retry | Transport retry | UI 行為 |
+|---|---:|---:|---|
+| `AlreadyPaired` | 否 | 適用一般 GATT policy | 直接提交並連線 |
+| `PairingRequired` | 否 | 否 | 要求使用者明確配對 |
+| `DeviceNotFound` | 否 | 否 | 恢復 scan |
+| `NotReadyToPair` | 否 | 否 | 提示檢查 node pairing mode |
+| `UserCancelled` | 否 | 否 | 安靜回到裝置列表 |
+| `PIN rejected`／`AuthenticationFailure` | 否 | 否 | 顯示明確「重新輸入」按鈕 |
+| `AuthenticationTimeout` | 否 | 否 | 顯示明確重試 |
+| `ProtectionLevelCouldNotBeMet` | 否 | 否 | firmware/security 相容錯誤 |
+| `AccessDenied` | 否 | 否 | Windows 權限／政策提示 |
+| `UnsupportedCeremony` | 否 | 否 | App 元件不支援，回報 pairing kind |
+| `OperationAlreadyInProgress` | 不重開 UI；最多清理後查詢一次 | 否 | 若仍存在則要求使用者重試 |
+| broker unavailable／crash／protocol error | 否 | 否 | App 安裝元件錯誤 |
+| paired 後 GATT busy／短暫 disconnect | 不適用 | 是 | 沿用 BLE backoff |
+| paired 後再次 insufficient authentication | 否 | 否 | 視為 stale bond／security mismatch，要求重新配對 |
+
+任何「重試配對」按鈕都必須建立新的 requestId。舊 session 晚到的 prompt／result 一律忽略。
+
+## 15. PIN、隱私與安全要求
+
+- 目前專案的 Meshtastic fixed-PIN editor 為六位數。Production broker 應依 Phase 0 驗證結果接受
+  有界 ASCII digits，不要在尚未驗證所有 firmware 前假設所有 pairing mode 都一定是六位。
+- PIN 不得持久化至 DataStore、Room、檔案、Windows Registry、crash report 或 analytics。
+- PIN 不得進入：
+
+  - Kermit／SLF4J
+  - exception message
+  - `PairingResult`
+  - long-lived／replaying `StateFlow`
+  - command-line arguments
+  - process environment
+  - helper stderr
+
+- Compose TextField／JSON 轉碼可能短暫產生 immutable `String`；工程上無法承諾 JVM 記憶體零拷貝，但
+  必須縮短存活時間、禁止 logging，並在 submit／cancel／dispose 後清除可變 buffer。
+- API boundary 優先使用 `CharArray`，傳送後覆寫。
+- Broker 使用可清除 buffer，呼叫 WinRT 後立即清除。
+- `DisplayPin`／`ConfirmPinMatch` 的值同樣視為敏感資料。
+- address、AEP ID 與裝置名稱只在必要 scope 使用；log 沿用 anonymize，不輸出完整 MAC／DeviceInformation.Id。
+- broker 不接受任意 command、file path、PowerShell 或 method name。
+- 使用者取消必須終止／忽略 pending prompt；不能在晚到 callback 中自動 Accept。
+- ETW／WPR 只能在受控診斷時使用；ETL 可能包含裝置 identifier，不公開上傳。
+
+## 16. Packaging 與 CI 修改
+
+### 16.1 `desktop/build.gradle.kts`
+
+若 Phase 2 採 native broker：
+
+- 只在 Windows host build broker。
+- 將 helper 與 `PROTOCOL.md`／protocol version manifest 放入 Desktop app image。
+- MSI／EXE 都必須包含同一版本 helper。
+- helper 使用固定相對 app-image path，runtime 轉成絕對路徑。
+- 若使用 self-contained .NET，檢查 x64／arm64 架構與 runtime 體積。
+- 若新增 reflection/JNI/ServiceLoader dependency，同步檢查 `desktop/proguard-rules.pro` 與 Android rules。
+- 保留 Windows application ID、vendor、menu group 與 upgrade UUID，不因 BLE helper 改變 installer identity。
+
+### 16.2 Windows CI
+
+建議調整：
+
+```text
+.github/workflows/reusable-check.yml
+```
+
+新增／強化：
+
+- Windows runner build native broker。
+- broker native unit tests。
+- `:desktop:test` 用 fake broker executable 驗證真正 process/stdin/stdout lifecycle。
+- malformed JSON、EOF、crash、timeout、unknown protocol version。
+- `createDistributable` 後檢查 helper 存在。
+- Kotlin client protocol version 與 broker version 一致。
+- log capture 斷言不含測試 PIN。
+
+自動 CI 仍不能冒充硬體 pairing 驗證。Windows runner build 綠燈只代表 binary、protocol 與 packaging
+正確，不代表 system consent、driver、firmware 或 RF hardware 可用。
+
+## 17. 測試規格
+
+### 17.1 Kotlin unit tests
+
+- already paired 不啟動 broker，直接 commit。
+- 未配對成功後才 commit name/address。
+- pairing failure／cancel 不改 address，也不斷開目前連線。
+- pairing 期間 scan 停止；terminal 後依 preference 恢復。
+- `ProvidePin → submit → paired` 狀態完整。
+- wrong PIN、cancel、timeout、AccessDenied 映射正確。
+- stale／duplicate prompt response 被拒絕。
+- terminal pairing failure 不進 reconnect loop。
+- 冷啟動發現 bond 消失，只顯示 `PAIRING_REQUIRED`。
+- broker crash／EOF／malformed NDJSON／unknown version fail closed。
+- success 後第二次連線不重跑 pairing。
+- macOS／Linux 維持原 non-Windows policy。
+- Android bonding flow 不變。
+
+### 17.2 Native broker unit tests
+
+以 WinRT adapter abstraction fake：
+
+- handler 在 `Custom.PairAsync()` 前註冊。
+- `ConfirmOnly`、`DisplayPin`、`ProvidePin`、`ConfirmPinMatch` 使用正確 `Accept` overload。
+- 需要 async user input 時取得 deferral。
+- accept／reject／cancel／exception path 都 complete deferral。
+- finally 一定解除 handler、dispose device。
+- `IsPaired` 前後驗證。
+- AEP kind／CanPair／Random address resolution。
+- 所有 `DevicePairingResultStatus` 映射。
+- HRESULT／inner exception 保留但消毒。
+- parent pipe 關閉時退出。
+- stdout／stderr 永不輸出 PIN。
+
+### 17.3 Windows 真機矩陣
+
+| 類別 | 必測情境 |
+|---|---|
+| Pairing mode | `RANDOM_PIN`、`FIXED_PIN`、`NO_PIN` |
+| User action | 正確 PIN、錯誤 PIN、取消、timeout |
+| Bond state | 未配對、已配對、手動刪除 Windows bond |
+| Address | Random address；若可取得再測 Public address |
+| Radio state | Bluetooth 關閉／重開 |
+| Device count | 一個與兩個節點同時在線 |
+| Concurrency | pairing 期間切換裝置、重複點擊 |
+| Lifecycle | App close/restart、tray hide/show、Windows reboot |
+| Artifact | Gradle run、installed MSI、installed EXE |
+| Firmware | 至少兩種 Meshtastic hardware／firmware 組合 |
+| Post-pair | GATT service、FROMNUM subscription、Stage 1、Stage 2、最終 Connected |
+| Data path | 至少一次 Meshtastic packet round trip |
+| Privacy | log 無 PIN、keys、完整 address 或 message payload |
+
+### 17.4 共用/KMP 驗證
+
+若只改本報告，不需 Gradle。工程師實際修改 BLE／network／connections 後，依專案規則至少執行：
+
+```text
+./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests --no-configuration-cache
+./gradlew kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug --no-configuration-cache
+./gradlew :desktop:test --no-configuration-cache
+```
+
+若改 Desktop packaging：
+
+```text
+./gradlew :desktop:packageReleaseDistributionForCurrentOS --no-configuration-cache
+```
+
+並檢查 MSI／EXE：
+
+- 名稱 `NTsocial MeshLink`
+- Manufacturer `LiberaNt LLC`
+- menu group `NTsocial`
+- upgrade UUID `6784A2DD-CE59-518B-AA15-C26302D6FA85`
+- helper binary 路徑／版本／hash
+- taskbar／tray／toast identity
+
+實際 release claim 還需要 100%／150%／200% scaling 下檢查 PIN dialog 與 system consent。
+
+## 18. 分階段落地與驗收門檻
+
+### Phase 0：建立可判別基線
+
+工作：
+
+1. 關閉 MeshLink 與所有 retry。
+2. 只保留一個節點在線。
+3. Windows Settings 從乾淨無 bond 狀態配對。
+4. 記錄 pairing mode、firmware、是否出現 PIN、最終 `IsPaired`。
+5. Settings 預配對後啟動現有 Kable，驗證 GATT／Meshtastic exchange。
+6. 建立最小 native custom-pairing prototype。
+
+Gate：
+
+- Settings 失敗：先查 driver／firmware／pairing mode，不進 App custom pairing。
+- Settings 成功但 Kable GATT 失敗：先查 Kable／address identity／service access。
+- Settings + Kable 成功：確認主要缺口是 App first-pair UX。
+- full-trust custom prototype 成功：可進 Phase 2 broker integration。
+- full-trust custom prototype 失敗：評估 packaged UWP／WinUI broker。
+
+### Phase 1：先恢復可用性
+
+工作：
+
+- 停用／刪除 production PowerShell PairAsync。
+- pairing 移出 transport/reconnect。
+- transactional selection。
+- Windows Settings button + paired-state polling。
+- permanent failure 停止 retry。
+
+驗收：
+
+- 未配對點擊不進 GATT。
+- 手動配對後可進入 Kable。
+- cancel／timeout 不改現有連線。
+- restart／Windows reboot 後可重連。
+- MSI／EXE 實機通過。
+
+此階段只能宣稱：
+
+> Windows 可掃描，並可在 Windows Settings 預配對後連線。
+
+不能宣稱 App 內 PIN pairing 已交付。
+
+### Phase 2：Broker、IPC 與 Compose UI
+
+工作：
+
+- versioned NDJSON broker。
+- 實測必要 pairing kinds。
+- PIN／confirmation dialog。
+- cancel／timeout／error mapping。
+- process integration tests。
+
+驗收：
+
+- 正確 PIN 成功。
+- 錯誤 PIN、取消與 timeout 可恢復且不自動重試。
+- 結果後重新查詢 `IsPaired=true`。
+- pairing 成功後完整 Meshtastic handshake。
+- log 無 PIN／完整 identifier。
+
+### Phase 3：Packaging 與 hardening
+
+工作：
+
+- broker 納入 MSI／EXE。
+- fixed path、hash、protocol version 檢查。
+- Windows CI。
+- EOF／crash／malformed protocol／stale response hardening。
+- 移除所有 legacy PowerShell script 與 fake sentinel test。
+
+驗收：
+
+- Gradle run 與安裝版行為一致。
+- broker 缺失／被替換時 fail closed。
+- 非 Windows distribution 不包含 Windows broker。
+
+### Phase 4：硬體 release gate
+
+必須完成：
+
+- 至少兩種 Meshtastic hardware／firmware。
+- 至少目前 Intel adapter 與另一組主流 Windows adapter／build。
+- `RANDOM_PIN`、`FIXED_PIN`、`NO_PIN`。
+- restart、Windows reboot、unpair/re-pair。
+- GATT、Stage 1/2、Connected、packet round trip。
+
+通過前不得宣稱「完整 Windows BLE first-pairing 已交付」。
+
+## 19. 決策表
+
+| 新證據 | 工程決策 |
+|---|---|
+| Windows Settings 無法配對 | 先查 node firmware／mode、driver、殘留 bond |
+| Settings 成功，但預配對後 Kable仍失敗 | 查 Kable、AEP/address identity、GATT service access |
+| Settings + Kable成功 | first-pair UX／App pairing integration 是主要缺口 |
+| full-trust custom prototype 成功 | 採 Desktop native broker + versioned IPC |
+| full-trust custom prototype 失敗 | 採 packaged UWP／WinUI broker 或維持 Settings flow |
+| `RequiredHandlerNotRegistered` | pairing kinds／PairingRequested handler 不完整 |
+| `ProtectionLevelCouldNotBeMet` | security／firmware 相容性，不得靜默降級 |
+| 停止 scan 後成功 | scan contention 是共同因素 |
+| 明確 Random address handling 後成功 | endpoint identity handling 問題 |
+| broker 成功但 GATT insufficient auth | bond stale、protection level 或 firmware security mismatch |
+
+## 20. 目前不應做的事
+
+- 不應再把目前 basic `PairAsync()` helper 當 production 候選。
+- 不應用更多 retry 取代 pairing state machine。
+- 不應從 background transport 或冷啟動自動彈 PIN。
+- 不應在配對成功前寫入新 device address。
+- 不應把 `Failed` 直接宣告為 PIN 錯、節點拒絕或權限錯誤。
+- 不應把改成 MSIX／MSI／取消 hidden window 視為 API 支援修復。
+- 不應把 Kable版本升級視為 explicit pairing API。
+- 不應把 Microsoft UWP sample 成功直接等同 Compose JVM production path 成功。
+- 不應一次宣告所有 pairing kinds 而不做真機 ceremony 驗證。
+- 不應靜默降低 protection level。
+- 不應記錄 PIN、完整 MAC、AEP ID、PSK、message payload 或其他敏感資料。
+- 不應讓 Windows helper code 進入 `commonMain` 或影響 Android Gateway。
+
+## 21. 參考資料
+
+### Microsoft
+
+- [WinRT APIs not supported in desktop apps](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/winrt-api-desktop-app-support)
+- [`0x80650005` / `E_BLUETOOTH_ATT_INSUFFICIENT_AUTHENTICATION`](https://learn.microsoft.com/en-us/windows/win32/com/com-error-codes-9#e_bluetooth_att_insufficient_authentication)
+- [Pair devices](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/pair-devices)
+- [DeviceInformationCustomPairing](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.deviceinformationcustompairing)
+- [DeviceInformationCustomPairing.PairingRequested](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.deviceinformationcustompairing.pairingrequested)
+- [DevicePairingKinds](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.devicepairingkinds)
+- [DevicePairingResultStatus](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.devicepairingresultstatus)
+- [DevicePairingProtectionLevel](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.devicepairingprotectionlevel)
+- [BluetoothLEDevice.FromBluetoothAddressAsync](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.bluetoothledevice.frombluetoothaddressasync)
+- [Device enumeration and pairing sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/deviceenumerationandpairing/)
+- [Custom pairing sample source](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/DeviceEnumerationAndPairing/cs/Scenario9_CustomPairDevice.xaml.cs)
+- [Launch Windows Settings](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings)
+- [App capability declarations](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/app-capability-declarations)
+- [Bluetooth Test Platform pairing tests](https://learn.microsoft.com/en-us/windows-hardware/drivers/bluetooth/testing-btp-tests-pairing)
+
+### Upstream與 dependencies
+
+- [Meshtastic Android/Desktop Kable PR #4818](https://github.com/meshtastic/Meshtastic-Android/pull/4818)
+- [Meshtastic Desktop documentation](https://github.com/meshtastic/Meshtastic-Android/blob/main/docs/en/user/desktop.md)
+- [Kable 0.42.0 JVM BtleplugPeripheral](https://github.com/JuulLabs/kable/blob/0.42.0/kable-core/src/jvmMain/kotlin/com/juul/kable/btleplug/BtleplugPeripheral.kt)
+
+## 22. 最終結論
+
+目前可確定的 failure stack：
+
+```text
+BLE advertisement / device list             正常
+Windows device metadata lookup               可用
+上游 Desktop explicit bonding                未實作
+fork PowerShell basic PairAsync               Desktop 不受支援，實測失敗
+App PIN/custom pairing state                  未實作
+Kable GATT connect（新路徑）                  未到達
+Meshtastic protocol exchange                 未發生
+```
+
+所以本案不是「改 Logo 後 BLE 莫名壞掉」，而是：
+
+> 上游從未交付完整 Windows first-pair/PIN；fork 加入的補丁又選用了 Microsoft 明列不支援於
+> Desktop apps 的 basic `DeviceInformationPairing.PairAsync()`。
+
+工程上應立即停止修補這條 PowerShell basic-pairing 路徑，先建立：
+
+```text
+Windows Settings pairing
+→ paired-state verification
+→ Kable protected GATT
+→ Meshtastic Stage 1/2
+```
+
+的可用基線，再以真機 viability gate 選擇 full-trust custom broker 或 packaged Windows broker。
+最終實作必須把 pairing 放在使用者明確觸發的 Connections flow，成功後才提交 radio address；transport
+只負責已配對後的 GATT 與可重試連線錯誤。
