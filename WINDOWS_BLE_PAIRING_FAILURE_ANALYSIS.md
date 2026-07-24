@@ -462,8 +462,10 @@ helper 丟失：
 - Windows Settings 能否從乾淨無 bond 狀態完成同一節點 pairing。
 - Settings 預配對後，現有 Kable能否完成受保護 GATT read/write 與 Meshtastic handshake。
 - 節點實際要求的 ceremony：`ProvidePin`、`DisplayPin`、`ConfirmPinMatch`、`ConfirmOnly` 或其他。
-- `DeviceInformationCustomPairing.PairAsync()` 在選定 full-trust Desktop helper app model 是否實機可用。
-- 若 full-trust custom helper 不可用，packaged UWP／WinUI broker 的必要 identity／capability。
+- `DeviceInformationCustomPairing.PairAsync()` 在選定的 full-trust Desktop app model 是否受支援且實機可用。
+- 若 full-trust custom helper 不可用，哪一種 Microsoft 明確支援的 API／app model 可行；應分開評估
+  unpackaged Win32／Windows App SDK full-trust、packaged full-trust、AppContainer／UWP 類模型，
+  以及各自的 identity、capability、activation、IPC 與 deployment。
 - 節點 hardware model、firmware version、pairing mode 與殘留 bond。
 - Windows build、Intel driver 與特定 firmware 組合是否另有相容問題。
 - 停止所有 scan 後是否消除額外 contention。
@@ -486,32 +488,41 @@ helper 丟失：
 flowchart TD
     A["BLE scan"] --> B["使用者明確點選裝置"]
     B --> C["停止本次 UI scan"]
-    C --> D["非互動式查詢 Windows paired state"]
-    D --> E{"已配對？"}
-    E -- "是" --> J["transactional commit: name + device address"]
-    E -- "否" --> F{"目前交付階段"}
-    F -- "Phase 1" --> G["開啟 Windows Bluetooth 設定並等待使用者配對"]
-    F -- "Phase 2" --> H["Windows native custom-pairing broker"]
+    C --> D["解析 AssociationState + PairingRequirement"]
+    D --> E{"ConnectionPrerequisite"}
+    E -- "READY" --> V["一次受保護 GATT readiness probe"]
+    E -- "INDETERMINATE" --> Q["僅由本次使用者操作觸發一次 preflight；不得自動 retry"]
+    Q -- "GATT 成功" --> V
+    Q -- "authentication required" --> F
+    E -- "NEEDS_USER_PAIRING" --> F{"已通過 viability 的交付路徑"}
+    F -- "Settings 候選通過" --> G["開啟 Windows Bluetooth 設定並等待使用者配對"]
+    F -- "Custom broker 候選通過" --> H["Windows native custom-pairing broker"]
     H --> I["PairingRequested → Compose PIN／確認 UI"]
-    G --> K["重新查詢 IsPaired"]
+    G --> K["重新列舉 AEP 並查詢 IsPaired"]
     I --> K
-    K --> L{"IsPaired + result 驗證成功？"}
-    L -- "否／取消" --> M["保留原裝置；不啟動 transport；不自動 retry"]
-    L -- "是" --> J
-    J --> N["建立 BleRadioTransport"]
+    K --> L{"Association + protected GATT readiness 成功？"}
+    L -- "否／取消" --> M["不提交候選；查 late pairing；不自動 retry"]
+    L -- "是" --> V
+    V --> J["兩階段 commit: name，最後寫 address"]
+    J --> N["啟動持久 BleRadioTransport"]
     N --> O["Kable GATT"]
     O --> P["Meshtastic Stage 1/2 + Connected"]
 ```
+
+`IsPaired=true` 只代表 Windows association；它不是 BLE security keys 一定可用的充分證據。真正的
+readiness gate 還要包含一次受保護 GATT 存取。反過來，`IsPaired=false` 也不必然代表 `NO_PIN`
+裝置一定要先做 interactive pairing；這必須由 Phase 0 的 firmware／mode matrix 決定。
 
 ### 9.2 必要架構規則
 
 1. pairing 只能由使用者在 Connections UI 明確觸發。
 2. `BleRadioTransport` 不得啟動 PIN／consent ceremony。
-3. pairing 成功前不得切換或持久化新 radio address。
+3. prerequisite 與 pairing 成功前不得切換或持久化新 radio address。
 4. pairing 失敗、取消、PIN 錯誤不得自動重開 UI。
 5. transport 只可自動重試真正 transient 的 GATT／連線錯誤。
 6. 配對期間只允許一個 active request，並停止會競爭的 scan。
-7. Windows paired state 必須是 per-device、可重新查詢的真實狀態。
+7. Windows association 必須是 per-device、以新 AEP object 可重新查詢的真實狀態；不得把它冒充
+   protected-GATT readiness。
 8. App 冷啟動若發現保存的 bond 已消失，只回報「需要重新配對」，不可自行彈出 PIN。
 9. Kable仍負責配對成功後的 GATT；不要重寫 Meshtastic BLE protocol。
 10. Windows-native integration 留在 Desktop/platform boundary。`commonMain` 只能放平台中立的狀態、結果
@@ -519,12 +530,17 @@ flowchart TD
 11. Android `createBond()` 行為必須保留；任何 common interface 變更都要同步更新 Android implementation
     和測試。
 12. macOS／Linux 保持現有 non-Windows policy，不能因 Windows helper 而被迫繼承 Windows UI。
+13. cancel／timeout 後不得自動 unpair；必須重新查詢 association。若 Windows 在取消後才完成配對，
+    UI 應告知「系統已完成配對，可重新選取」，但本次 request 仍不得提交 radio address。
+14. 是否能在舊 radio transport 持續連線時配對新節點，要先做 Phase 0 concurrency test；若 adapter
+    不允許，暫停舊 transport，失敗時恢復。保證的是舊選取 metadata 可回復，不是無條件保證 GATT
+    全程不中斷。
 
 ## 10. 具體修改辦法
 
 以下名稱是建議規格；工程師可以依現有命名微調，但責任邊界與語意必須保留。
 
-### 10.1 `BluetoothRepository`：分離狀態查詢與互動式配對
+### 10.1 分開 association、pairing requirement 與連線 readiness
 
 目標檔案：
 
@@ -535,34 +551,56 @@ core/ble/src/jvmMain/kotlin/com/ntsocial/meshlink/core/ble/KableBluetoothReposit
 core/testing/src/commonMain/kotlin/com/ntsocial/meshlink/core/testing/FakeBle.kt
 ```
 
-現行 `fun isBonded(address: String): Boolean` 無法在 Windows 安全執行 async WinRT query。建議改為或新增：
+現行 `fun isBonded(address: String): Boolean` 無法表達 async WinRT query，也把三個不同概念壓成一個
+Boolean。建議先新增平台中立模型：
 
 ```kotlin
-enum class BluetoothBondState {
-    BONDED,
-    NOT_BONDED,
+enum class BluetoothAssociationState {
+    PAIRED,
+    UNPAIRED,
+    PLATFORM_MANAGED,
+    UNKNOWN,
+}
+
+enum class PairingRequirement {
+    REQUIRED,
     NOT_REQUIRED,
     UNKNOWN,
 }
 
-interface BluetoothRepository {
-    val state: StateFlow<BluetoothState>
-
-    fun refreshState()
-    fun isValid(bleAddress: String): Boolean
-    suspend fun bondState(address: String): BluetoothBondState
-    suspend fun bond(device: BleDevice)
+sealed interface ConnectionPrerequisite {
+    data object Ready : ConnectionPrerequisite
+    data class NeedsUserPairing(val reason: PairingReason) : ConnectionPrerequisite
+    data class Indeterminate(val reason: PrerequisiteUnknownReason) : ConnectionPrerequisite
 }
 ```
 
 必要語意：
 
-- Android `bondState()` 可沿用 `BluetoothAdapter.getRemoteDevice(address).bondState`。
-- Windows `bondState()` 必須查詢指定 AEP／`IsPaired`，不能用 OS 名稱或全域 flag 推導。
-- macOS／Linux 可依目前 Kable/OS 策略返回 `NOT_REQUIRED`，但要有明確測試。
-- `bond()` 只可從 user-driven coordinator 呼叫，transport 不得呼叫。
-- 若不想立刻改 public interface，可先新增 Desktop pairing-status service；但最終不能保留 Windows
-  永遠 false 的 `isBonded()`。
+- Android 可把 `BluetoothAdapter.getRemoteDevice(address).bondState` 映射到 `PAIRED`／`UNPAIRED`，
+  並保留現行由使用者點選觸發的 `createBond()`。
+- Windows `IsPaired` 只映射 `PAIRED`／`UNPAIRED`，不能直接推導 `Ready`。
+- macOS／Linux 若 pairing 由 OS／Kable 管理，應回 `PLATFORM_MANAGED`，不能宣稱 `NOT_REQUIRED`。
+- `PairingRequirement.NOT_REQUIRED` 描述的是已由 firmware／mode 實測證明可直接建立所需安全層的節點，
+  不是 bond 狀態。
+- `UNKNOWN` 不得自動視為 ready，也不得永久封鎖；只能進入一次、使用者觸發、無 reconnect 的
+  prerequisite preflight，或要求外部配對。
+- 可以保留 `BluetoothRepository.bond()` 供 Android 現有 user-driven flow 使用，但
+  `BleRadioTransport` 不得呼叫它。Windows association query 應由 Desktop coordinator／provider
+  注入，不應把 WinRT 寫進 transport repository。
+
+若調整 `BluetoothRepository` public contract，工程師必須一次盤點並更新：
+
+```text
+core/ble/.../AndroidBluetoothRepository.kt
+core/ble/.../KableBluetoothRepository.kt
+core/testing/.../FakeBle.kt
+core/network/.../BleRadioTransport*Test.kt
+feature/connections/.../ScannerViewModel*Test.kt
+```
+
+先以 `rg "isBonded|bond\\(|BluetoothRepository"` 建立完整 call-site 清單，避免只修改兩個 production
+implementer 而漏掉 fake、Android bonding 或 reconnect tests。
 
 ### 10.2 退役現行 PowerShell basic pairing
 
@@ -591,57 +629,60 @@ core/ble/src/jvmTest/kotlin/com/ntsocial/meshlink/core/ble/
 若保留舊 helper 作診斷，檔名與 UI 必須明示 `UnsupportedDiagnosticProbe`，不得由 production selection
 path 呼叫，也不得據此宣稱 pairing 支援。
 
-### 10.3 新增平台中立 pairing coordinator contract
+### 10.3 新增平台中立 domain model與 Desktop coordinator contract
 
 建議新增：
 
 ```text
+core/ble/src/commonMain/kotlin/com/ntsocial/meshlink/core/ble/
+  PairingModels.kt
+  ConnectionPrerequisite.kt
 core/ble/src/jvmMain/kotlin/com/ntsocial/meshlink/core/ble/
   DesktopBluetoothPairingCoordinator.kt
-  WindowsPairingBrokerClient.kt
 feature/connections/src/commonMain/kotlin/com/ntsocial/meshlink/feature/connections/
   PairingUiState.kt
+desktop/src/main/kotlin/com/ntsocial/meshlink/desktop/ble/
+  WindowsBluetoothPairingCoordinator.kt
+  WindowsPairingBrokerProcessClient.kt
 ```
 
-建議介面：
+`commonMain` 只放平台中立 enum／sealed types。`DesktopBluetoothPairingCoordinator` 是不含 WinRT、
+Settings URI 或 process 細節的 JVM Desktop contract，只由 `JvmScannerViewModel` 使用，再映射到
+common `PairingUiState`；共同 UI 不得直接引用 `jvmMain` type。Windows process/client 實作全部留在
+`desktop` host。
+
+coordinator 對 UI 只提供一個 authoritative pending-prompt mailbox：
 
 ```kotlin
 interface DesktopBluetoothPairingCoordinator {
     val state: StateFlow<PairingSessionState>
-    val prompts: Flow<PairingPrompt>
+    val pendingPrompt: StateFlow<PendingPairingPrompt?>
 
-    suspend fun query(device: BleDevice): BluetoothBondState
-    suspend fun beginPairing(device: BleDevice): PairingResult
-    suspend fun respond(requestId: String, promptId: String, response: PairingPromptResponse)
-    suspend fun cancel(requestId: String)
-}
-
-interface WindowsPairingBrokerClient {
-    suspend fun query(request: PairingQuery): NativePairingState
-
-    suspend fun pair(
-        request: PairingRequest,
-        onPrompt: suspend (PairingPrompt) -> PairingPromptResponse,
-    ): NativePairingResult
-
+    suspend fun query(target: PairingTarget): BluetoothAssociationState
+    suspend fun resolvePrerequisite(target: PairingTarget): ConnectionPrerequisite
+    suspend fun beginPairing(target: PairingTarget): PairingOutcome
+    suspend fun answerPrompt(
+        requestId: String,
+        promptId: String,
+        response: PairingPromptResponse,
+    )
     suspend fun cancel(requestId: String)
 }
 ```
 
 `PairingSessionState` 是 `core:ble` 的平台中立 session/domain 狀態，不引用 Compose resources，也不含
-PIN。`feature:connections` 再把它映射成 `PairingUiState`：
+UI 文案。`feature:connections` 再把它映射成 `PairingUiState`。建議補上取消後再查詢與 post-pair
+readiness 狀態：
 
 ```kotlin
 sealed interface PairingSessionState {
     data object Idle : PairingSessionState
     data class Checking(val requestId: String, val deviceLabel: String) : PairingSessionState
     data class WaitingForExternalPairing(val requestId: String, val deviceLabel: String) : PairingSessionState
-    data class WaitingForUserInput(
-        val requestId: String,
-        val promptId: String,
-        val kind: PairingPromptKind,
-    ) : PairingSessionState
     data class Pairing(val requestId: String, val deviceLabel: String) : PairingSessionState
+    data class VerifyingAssociation(val requestId: String) : PairingSessionState
+    data class VerifyingProtectedGatt(val requestId: String) : PairingSessionState
+    data class CancelledButPaired(val requestId: String) : PairingSessionState
     data class Failed(
         val requestId: String,
         val code: PairingFailureCode,
@@ -650,9 +691,15 @@ sealed interface PairingSessionState {
 }
 ```
 
-`PairingPrompt` 必須透過 non-replaying `Flow`／`Channel` 傳遞。`DisplayPin`／`ConfirmPinMatch` 的 PIN
-只存在單一 prompt 與 dialog local memory，terminal path 後立即清除；不可放入 long-lived/replaying
-`StateFlow`、DataStore 或 exception。
+broker callback 由 coordinator 私下持有；它建立 `PendingPairingPrompt`，等待 UI 透過
+`answerPrompt(requestId, promptId, ...)` 回覆。不得同時再公開第二個 callback／Channel，否則會有兩個
+真相來源。
+
+pending prompt 使用 session-scoped `StateFlow` 是刻意的：Compose recomposition、視窗短暫失焦後仍要
+看得到尚未回覆的 prompt。每個 prompt 只接受一次 response；UI 收到 acknowledgement 後立即清除，
+terminal／cancel／timeout 時強制清除，late／duplicate response 一律拒絕。使用者輸入的 `ProvidePin`
+保留在 dialog local state；只有 `DisplayPin`／`ConfirmPinMatch` 的 Windows-provided PIN 可短暫存在
+pending prompt。兩者都不得持久化、寫 log 或進 exception。
 
 錯誤文案由 `feature:connections` 依 `PairingFailureCode` 映射到 Compose Multiplatform string
 resources；`core:ble` 不應持有 hardcoded UI text 或 resource key。
@@ -670,29 +717,47 @@ feature/connections/src/androidMain/kotlin/com/ntsocial/meshlink/feature/connect
   AndroidScannerViewModel.kt
 ```
 
-建議新增共用 helper：
+不要把三個獨立 preferences write 誤稱為原子操作。建議新增 `RadioSelectionTransaction`，先保存舊
+name／address，候選值只存在記憶體：
 
 ```kotlin
-protected fun commitDeviceSelection(entry: DeviceListEntry) {
-    radioPrefs.setDevName(entry.name)
-    addRecentAddress(entry.fullAddress, entry.name)
-    changeDeviceAddress(entry.fullAddress)
+data class PendingBleSelection(
+    val address: String,
+    val displayName: String,
+)
+
+suspend fun commitBleSelection(selection: PendingBleSelection) {
+    val previousName = radioPrefs.devName
+    val previousAddress = radioPrefs.deviceAddress
+    try {
+        radioPrefs.setDevName(selection.displayName)
+        changeDeviceAddress(selection.address) // 最後寫；此操作會觸發 transport
+        awaitCandidateReady()
+    } catch (error: Throwable) {
+        radioPrefs.setDevName(previousName)
+        changeDeviceAddress(previousAddress)
+        throw error
+    }
 }
 ```
 
 BLE selection 必須：
 
-1. 不先寫 `radioPrefs.devName`。
+1. snapshot 舊 name／address；不先寫 candidate preferences。
 2. 暫停 BLE scan。
-3. 查 paired state。
-4. 已配對：`commitDeviceSelection(entry)`。
-5. 未配對：啟動外部 Settings flow 或 native broker。
-6. 只有成功後 commit。
-7. 失敗／取消：保留舊 address 與舊連線。
-8. terminal 後依 `bleAutoScan` 恢復 scan。
+3. 解析 prerequisite；必要時執行外部 Settings 或已通過 viability 的 native broker。
+4. 執行 protected-GATT readiness probe。
+5. 通過後先寫 name，最後寫會觸發 transport 的 address。
+6. 新 transport 未 ready 時 rollback 舊 name／address，並嘗試恢復舊 transport。
+7. pairing 失敗／取消：不提交 candidate；不得自動 unpair。
+8. cancel／timeout 後重新列舉 AEP；若系統 late-paired，只提示重新選取。
+9. terminal 後依 `bleAutoScan` 恢復 scan。
 
 `JvmScannerViewModel` 必須 override Desktop bonding，不能再依賴 base class 的「直接 connect」。
 Android `AndroidScannerViewModel` 維持既有 user-triggered `createBond()`，成功後才 commit。
+
+目前 `addRecentAddress()` 是 TCP recent-address 語意，不應無條件套到 BLE。若產品確實要保存 BLE recent
+devices，先定義獨立 model／storage；本修復不要順手混用 TCP helper。
 
 ### 10.5 UI：新增 pairing state 與安全對話框
 
@@ -701,7 +766,7 @@ Android `AndroidScannerViewModel` 維持既有 user-triggered `createBond()`，�
 ```text
 feature/connections/src/commonMain/kotlin/com/ntsocial/meshlink/feature/connections/ui/
   ConnectionsScreen.kt
-feature/connections/src/commonMain/kotlin/com/ntsocial/meshlink/feature/connections/ui/component/
+feature/connections/src/commonMain/kotlin/com/ntsocial/meshlink/feature/connections/ui/components/
   BluetoothPairingDialog.kt
 ```
 
@@ -726,7 +791,8 @@ Meshtastic proto 定義 `RANDOM_PIN`、`FIXED_PIN`、`NO_PIN`；目前專案的 
 安全要求：
 
 - PIN field 使用 numeric password keyboard／visual transformation。
-- PIN 不放入 ViewModel persistent state。
+- `ProvidePin` 不放入 ViewModel persistent state；session-scoped pending prompt 只保存完成互動所需的
+  最小資料。
 - submit、cancel、timeout、dialog dispose 後清除 local value。
 - `DisplayPin`／`ConfirmPinMatch` 的 PIN 也不得寫 log。
 - 不在 UI 顯示完整 MAC。
@@ -753,13 +819,13 @@ core/ble/src/commonMain/kotlin/com/ntsocial/meshlink/core/ble/
   BleExceptionClassifier.kt
 ```
 
-`BleRadioTransport.attemptConnection()` 應改為：
+正常 `BleRadioTransport.attemptConnection()` 應改為：
 
 ```text
 find device
-→ 非互動式檢查 bond/auth prerequisite
-→ 未配對：PAIRING_REQUIRED，立即結束本次 transport
-→ 已配對／平台不要求：connectAndAwait()
+→ 讀取 coordinator 已解析的 ConnectionPrerequisite
+→ NEEDS_USER_PAIRING／INDETERMINATE：立即結束本次 transport
+→ READY：connectAndAwait()
 → service discovery
 → subscribe
 ```
@@ -770,48 +836,48 @@ find device
 bluetoothRepository.bond(device)
 ```
 
-建議錯誤模型：
+`NO_PIN`／未知狀態的探索性 direct GATT 只能由 selection coordinator 建立短生命週期 preflight，
+且每次使用者點選最多一次、沒有 reconnect/backoff、不寫 preferences。成功才標成
+`PairingRequirement.NOT_REQUIRED`；若回 authentication-required，轉為 `NeedsUserPairing`。若工程上
+暫時重用 `BleRadioTransport`，必須提供 isolated preflight mode，禁止 persistence、background retry
+與自動 UI，並在完成後恢復舊 transport。
+
+不要讓 WinRT／broker error 直接滲入 reconnect policy。分成三層：
 
 ```kotlin
-enum class PairingFailureCode {
-    PAIRING_REQUIRED,
-    DEVICE_NOT_FOUND,
-    NOT_READY,
-    USER_CANCELLED,
-    PIN_REJECTED,
-    AUTHENTICATION_TIMEOUT,
-    PROTECTION_LEVEL_NOT_MET,
-    ACCESS_DENIED,
-    UNSUPPORTED_CEREMONY,
-    OPERATION_IN_PROGRESS,
-    BROKER_UNAVAILABLE,
-    BROKER_CRASHED,
-    BROKER_PROTOCOL_ERROR,
-    WINDOWS_FAILURE,
-}
-
-enum class RetryDirective {
-    NONE,
-    USER_ACTION,
-    TRANSIENT_CONNECTION,
-}
+sealed interface BrokerFailure // process、activation、IPC、protocol
+sealed interface PairingOutcome // paired、already paired、cancelled、native pairing failure
+enum class ConnectionRetryDisposition { GIVE_UP, USER_ACTION_REQUIRED, TRANSIENT_GATT }
 ```
 
-`BlePairingException` 應帶：
+`PairingFailureCode` 的 domain allowlist 至少包含：
 
-- failure code
-- retry directive
-- 可公開的 resource/message key
-- 可選 native status
-- 可選 HRESULT
+- `PAIRING_REQUIRED`
+- `DEVICE_NOT_FOUND`
+- `NOT_READY_TO_PAIR`
+- `USER_CANCELLED`
+- `AUTHENTICATION_FAILED`
+- `AUTHENTICATION_TIMEOUT`
+- `PROTECTION_LEVEL_NOT_MET`
+- `ACCESS_DENIED`
+- `UNSUPPORTED_CEREMONY`
+- `OPERATION_IN_PROGRESS`
+- `BROKER_UNAVAILABLE`
+- `BROKER_CRASHED`
+- `BROKER_PROTOCOL_ERROR`
+- `WINDOWS_FAILURE`
 
-不可包含 PIN、完整 address、DeviceInformation.Id 或原始 protocol line。
+`AuthenticationFailure` 不等於 PIN 錯誤；只有已知 ceremony、handler state 與原生證據都能證明時，
+UI 才可顯示 PIN-specific 提示。`NotReadyToPair` 也只能建議檢查 node pairing mode，不能宣告 firmware
+mode 就是原因。
 
-`BleReconnectPolicy.Outcome.Failed` 必須攜帶 retry directive，或 policy 必須呼叫
-`classifyBleException()`：
+對外診斷只允許 enum、numeric HRESULT 與 allowlist exception category；不可包含 PIN、完整 address、
+`DeviceInformation.Id`、原始 exception message 或 protocol line。
 
-- `NONE`／`USER_ACTION`：立即 `GiveUp`，通知 UI。
-- `TRANSIENT_CONNECTION`：才使用現有 backoff。
+`BleReconnectPolicy` 只接收 `ConnectionRetryDisposition`：
+
+- `GIVE_UP`／`USER_ACTION_REQUIRED`：立即 `GiveUp`，通知 UI。
+- `TRANSIENT_GATT`：才使用現有 backoff。
 - `maxFailures=Int.MAX_VALUE` 不得覆蓋 permanent classification。
 
 ### 10.7 Desktop DI 與平台邊界
@@ -819,6 +885,8 @@ enum class RetryDirective {
 目標檔案：
 
 ```text
+core/ble/src/jvmMain/kotlin/com/ntsocial/meshlink/core/ble/
+  DesktopBluetoothPairingCoordinator.kt
 desktop/src/main/kotlin/com/ntsocial/meshlink/desktop/di/DesktopKoinModule.kt
 desktop/src/main/kotlin/com/ntsocial/meshlink/desktop/ble/
   WindowsBluetoothPairingCoordinator.kt
@@ -828,10 +896,12 @@ desktop/src/main/kotlin/com/ntsocial/meshlink/desktop/ble/
 
 建議：
 
-- `core:ble` 定義 contract 與平台中立 DTO。
-- `desktop` host 提供 Windows process／WinRT broker integration。
-- Windows 綁定 real implementation。
-- macOS／Linux 綁定明確 no-op／not-required implementation。
+- `core:ble/commonMain` 只定義跨平台 domain model；`core:ble/jvmMain` 的 Desktop contract 不含任何
+  Windows API。
+- `desktop` host 提供 Windows process、WinRT、Settings launcher 與 broker lifecycle。
+- `DesktopKoinModule` 依 `DesktopOS` 恰好綁定一個 implementation。
+- Windows 綁定 real implementation；macOS／Linux 綁定明確 `PlatformManaged` fallback，不回
+  `NOT_REQUIRED`、不顯示 Windows UI。
 - 移除 `JvmDesktopBluetoothPairingService` 上會與 host binding 衝突的自動 `@Single`，由
   `DesktopKoinModule` 明確組裝。
 - 新增 `DesktopKoinTest`，驗證三個 OS branch 都只有一個 pairing coordinator binding。
