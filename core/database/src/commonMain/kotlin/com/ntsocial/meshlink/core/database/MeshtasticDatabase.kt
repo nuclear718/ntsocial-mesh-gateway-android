@@ -44,6 +44,7 @@ import com.ntsocial.meshlink.core.database.entity.ContactSettings
 import com.ntsocial.meshlink.core.database.entity.DeviceHardwareEntity
 import com.ntsocial.meshlink.core.database.entity.DeviceLinkEntity
 import com.ntsocial.meshlink.core.database.entity.FirmwareReleaseEntity
+import com.ntsocial.meshlink.core.database.entity.GatewayMetadata
 import com.ntsocial.meshlink.core.database.entity.MeshLog
 import com.ntsocial.meshlink.core.database.entity.MetadataEntity
 import com.ntsocial.meshlink.core.database.entity.MyNodeEntity
@@ -70,6 +71,7 @@ import com.ntsocial.meshlink.core.database.entity.TracerouteNodePositionEntity
         DeviceLinkEntity::class,
         FirmwareReleaseEntity::class,
         TracerouteNodePositionEntity::class,
+        GatewayMetadata::class,
     ],
     autoMigrations =
     [
@@ -111,8 +113,9 @@ import com.ntsocial.meshlink.core.database.entity.TracerouteNodePositionEntity
         AutoMigration(from = 38, to = 39),
         AutoMigration(from = 39, to = 40),
         AutoMigration(from = 40, to = 41),
+        AutoMigration(from = 41, to = 42),
     ],
-    version = 41,
+    version = 42,
     exportSchema = true,
 )
 @androidx.room3.ConstructedBy(MeshtasticDatabaseConstructor::class)

@@ -28,20 +28,27 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.ntsocial.meshlink.core.gateway.NtsocialGatewayContract
+import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
+import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.ChannelSet
+import java.util.UUID
 
 /**
  * Publishes sanitized Gateway metadata after Koin has started.
@@ -59,14 +66,20 @@ internal constructor(
     private val serviceRepository: ServiceRepository,
     private val nodeRepository: NodeRepository,
     private val radioConfigRepository: RadioConfigRepository,
+    private val packetRepository: PacketRepository,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) {
     private val _channelSet = MutableStateFlow(ChannelSet())
+    private val catalogGenerationTracker = GatewayCatalogGenerationTracker()
+    private val _radioGeneration = MutableStateFlow(catalogGenerationTracker.currentGeneration)
+    private val _historyState = MutableStateFlow(NtsocialGatewayHistoryState(HISTORY_NOT_READY, 0L))
     private val deliveredEnvelopeKeys = mutableSetOf<String>()
 
     private var started = false
 
     val channelSet: StateFlow<ChannelSet> = _channelSet.asStateFlow()
+    val radioGeneration: StateFlow<String> = _radioGeneration.asStateFlow()
+    val historyState: StateFlow<NtsocialGatewayHistoryState> = _historyState.asStateFlow()
 
     fun start() {
         synchronized(this) {
@@ -76,7 +89,12 @@ internal constructor(
 
         gatewayRepository.cachedEnvelopes.onEach(::onCachedEnvelopes).launchIn(scope)
         gatewayRepository.defaultChannelStatus.onEach { publishDataChanged(statusUri) }.launchIn(scope)
-        serviceRepository.connectionState.onEach { publishDataChanged(statusUri) }.launchIn(scope)
+        serviceRepository.connectionState
+            .onEach {
+                publishDataChanged(statusUri)
+                publishDataChanged(v2StatusUri)
+            }
+            .launchIn(scope)
         nodeRepository.nodeDBbyNum
             .onEach {
                 publishDataChanged(nodesUri)
@@ -88,8 +106,21 @@ internal constructor(
         radioConfigRepository.channelSetFlow
             .onEach { channelSet ->
                 _channelSet.value = channelSet
+                _radioGeneration.value = catalogGenerationTracker.update(channelSet)
                 publishDataChanged(channelsUri)
                 publishDataChanged(statusUri)
+                publishDataChanged(v2ChannelsUri, NtsocialGatewayContract.EVENT_CHANNEL_CATALOG_CHANGED)
+                publishDataChanged(v2StatusUri)
+            }
+            .launchIn(scope)
+        radioConfigRepository.channelSetFlow
+            .map { channelSet -> channelSet.settings.indices.map { index -> "$index${DataPacket.ID_BROADCAST}" } }
+            .distinctUntilChanged()
+            .flatMapLatest(packetRepository::getGatewayHistoryState)
+            .onEach { historyState ->
+                _historyState.value = historyState
+                publishDataChanged(v2MessageChangesUri, NtsocialGatewayContract.EVENT_MESSAGE_CHANGES_AVAILABLE)
+                publishDataChanged(v2StatusUri)
             }
             .launchIn(scope)
     }
@@ -167,4 +198,34 @@ internal constructor(
 
     private val channelsUri: Uri
         get() = NtsocialGatewayContract.channelsUri(authority)
+
+    private val v2StatusUri: Uri
+        get() = NtsocialGatewayContract.v2StatusUri(authority)
+
+    private val v2ChannelsUri: Uri
+        get() = NtsocialGatewayContract.v2ChannelsUri(authority)
+
+    private val v2MessageChangesUri: Uri
+        get() = NtsocialGatewayContract.v2MessageChangesUri(authority)
+
+    private companion object {
+        const val HISTORY_NOT_READY = "not-ready"
+    }
+}
+
+/** Opaque runtime generation: no exported value is derived from ChannelSet or its PSKs. */
+internal class GatewayCatalogGenerationTracker(
+    private val newGeneration: () -> String = { UUID.randomUUID().toString() },
+) {
+    private var lastChannelSet: ChannelSet? = null
+    var currentGeneration: String = newGeneration()
+        private set
+
+    fun update(channelSet: ChannelSet): String {
+        if (lastChannelSet != channelSet) {
+            lastChannelSet = channelSet
+            currentGeneration = newGeneration()
+        }
+        return currentGeneration
+    }
 }

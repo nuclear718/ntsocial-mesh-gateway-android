@@ -167,7 +167,14 @@ class StoreForwardPacketHandlerImplTest {
         handler.handleStoreAndForward(packet, dataPacket, myNodeNum)
         advanceUntilIdle()
 
-        verify { dataHandler.rememberDataPacket(any(), myNodeNum) }
+        verify {
+            dataHandler.rememberDataPacket(
+                any(),
+                myNodeNum,
+                updateNotification = true,
+                captureGatewayIdentity = true,
+            )
+        }
     }
 
     @Test

@@ -22,13 +22,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.repository
+package com.ntsocial.meshlink.core.database.entity
 
-/**
- * Interface for durably enqueuing background work for transmitting messages. A successful return means the
- * platform-specific queue has committed the work strongly enough to survive process death; it does not mean the radio
- * accepted or delivered the packet.
- */
-interface MessageQueue {
-    suspend fun enqueue(packetId: Int)
-}
+import androidx.room3.ColumnInfo
+import androidx.room3.Entity
+import androidx.room3.PrimaryKey
+
+/** Durable metadata scoped to one physical Room history domain. */
+@Entity(tableName = "gateway_metadata")
+data class GatewayMetadata(
+    @PrimaryKey @ColumnInfo(name = "metadata_key") val key: String,
+    @ColumnInfo(name = "metadata_value") val value: String,
+)

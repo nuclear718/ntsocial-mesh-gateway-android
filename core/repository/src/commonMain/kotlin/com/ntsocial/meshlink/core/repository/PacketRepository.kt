@@ -31,6 +31,9 @@ import com.ntsocial.meshlink.core.model.Message
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Reaction
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import kotlinx.coroutines.flow.Flow
 import org.meshtastic.proto.ChannelSettings
 
@@ -81,6 +84,22 @@ interface PacketRepository {
     /** Returns all packets currently queued for transmission. */
     suspend fun getQueuedPackets(): List<DataPacket>
 
+    /** Highest durable native-text sequence, including current configured legacy broadcast contacts. */
+    fun getGatewayMessageChangeSeq(legacyBroadcastContactKeys: List<String> = emptyList()): Flow<Long>
+
+    /** Atomic, durable history domain and high-water pair for the active per-radio database. */
+    fun getGatewayHistoryState(legacyBroadcastContactKeys: List<String>): Flow<NtsocialGatewayHistoryState>
+
+    /** Returns a bounded page including captured rows and best-effort legacy rows on [legacyBroadcastContactKeys]. */
+    suspend fun getGatewayMessageChanges(
+        after: Long,
+        limit: Int,
+        legacyBroadcastContactKeys: List<String> = emptyList(),
+    ): List<NtsocialGatewayMessageChange>
+
+    /** Returns a bounded page containing only rows with a captured stable Gateway identity. */
+    suspend fun getGatewayStableMessageChanges(after: Long, limit: Int): List<NtsocialGatewayMessageChange>
+
     /**
      * Persists a packet in the database.
      *
@@ -98,6 +117,7 @@ interface PacketRepository {
         receivedTime: Long,
         read: Boolean = true,
         filtered: Boolean = false,
+        gatewayIdentity: NtsocialGatewayMessageIdentity? = null,
     )
 
     /**
@@ -181,6 +201,7 @@ interface PacketRepository {
         receivedTime: Long,
         read: Boolean = true,
         filtered: Boolean = false,
+        gatewayIdentity: NtsocialGatewayMessageIdentity? = null,
     )
 
     /** Updates an existing packet in the database, optionally setting a routing error code. */

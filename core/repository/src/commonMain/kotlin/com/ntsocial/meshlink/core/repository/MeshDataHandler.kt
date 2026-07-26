@@ -46,6 +46,12 @@ interface MeshDataHandler {
      * @param dataPacket The data packet to remember.
      * @param myNodeNum The local node number.
      * @param updateNotification Whether to trigger a notification for this packet.
+     * @param captureGatewayIdentity Whether this is a genuine native text packet eligible for Gateway v2 history.
      */
-    fun rememberDataPacket(dataPacket: DataPacket, myNodeNum: Int, updateNotification: Boolean = true)
+    fun rememberDataPacket(
+        dataPacket: DataPacket,
+        myNodeNum: Int,
+        updateNotification: Boolean = true,
+        captureGatewayIdentity: Boolean = false,
+    )
 }

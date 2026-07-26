@@ -1,5 +1,19 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-26 - Gateway v2 and parent channel-unification contracts reconciled
+- Re-audited the current uncommitted Gateway v2 worktree at base `ee6059281` together with the parent
+  `NTsocial_release` channel-unification implementation. Updated both repositories' `AGENTS.md` files
+  so automatic per-catalog projections and manual many-to-one parent bindings remain distinct.
+- Recorded the exact v2 Provider, Room 42 insertion-cursor, route-token, capability, stable identity,
+  WorkManager/ledger admission, provisioning, platform-key, and acceptance semantics. Gateway v1
+  remains immutable; native Meshtastic text send and Windows Gateway IPC remain unimplemented.
+- Corrected an important live-state limitation: whole-history clear transactionally writes a new
+  Room epoch, but the active publisher currently retains its captured old epoch while sequence resets
+  to zero until the history flow is resubscribed. Do not claim live clear/reset correctness yet.
+- Replaced stale full-green guidance with the current low-parallel 2,417-test result and the three
+  pre-existing root-Detekt findings in `JvmDesktopBluetoothPairingService.kt`. No Gradle task was
+  rerun for this documentation-only reconciliation; both repository diffs pass `git diff --check`.
+
 ## 2026-07-26 - NTsocial cross-signer Gateway IPC and four-device FB27 field validation
 - Expanded the Gateway trust boundary so MeshLink release/debug builds accept only the pinned NTsocial release
   (`com.ntsocial.android`, signer `29EF...646`) and team-debug (`com.ntsocial.android.debug`, signer `C67E...D61`)
@@ -878,6 +892,34 @@
   `DeviceInformation.Pairing.Custom`, `PairingRequested`, and an ephemeral Compose pairing state/PIN flow, followed by
   real Windows Settings/reference-helper and Meshtastic hardware testing. A Windows Settings pre-pair flow is the
   lowest-risk interim workaround. No product code or OS Bluetooth state was changed in this investigation.
+
+## 2026-07-26 - Android Gateway v2 native-channel unification MVP
+- Kept Gateway v1 immutable and added protected v2 status, configured-channel catalog, bounded native broadcast-text
+  changes, catalog/history wakeups, caller-bound route tokens, and route-aware raw NTsocial overlay commands.
+  Capabilities deliberately report `native_text_send=0` and overlay send only; ordinary Meshtastic native-text send was
+  not added.
+- Captured stable channel/message identity when native text is persisted from live ingress, Store & Forward ingress,
+  and MeshLink's own outgoing UI path. Outgoing local authors are resolved to the stable own-node ID and `!local`
+  fails closed. Nonzero Meshtastic channel IDs survive rename/reorder. Zero-ID CLEAR/WELL_KNOWN channels derive a
+  cross-install public ID from the resolved, locale-independently normalized channel name plus resolved public PSK, so
+  empty default names converge with explicit `LongFast`. Zero-ID CUSTOM-PSK channels use an install-local HMAC key and
+  intentionally do not converge between installs.
+- Advanced Room to schema 42 with nullable captured gateway identity, non-unique lookup indexes, and a metadata table.
+  Each active per-radio history database owns a durable random `history_epoch`; full-history clear rotates it
+  atomically, and switching/replacing databases changes cursor domain even when the new sequence is lower. Status
+  high-water includes stable rows and currently mappable legacy broadcast rows; legacy reads are bounded and read-only.
+- Routed v2 command acceptance now persists the deterministic packet to Room, awaits unique WorkManager admission,
+  then commits the bounded PENDING/ACCEPTED idempotency ledger before emitting accepted. SharedPreferences failures
+  restore prior in-memory state. Acceptance proves local durable admission only, not firmware airtime, RF delivery, or
+  remote receipt; overlay packets are not ordinary Meshtastic native-text messages.
+- Automatic NTsocial channel provisioning still updates a canonical/same-PSK slot or uses a free secondary slot and
+  now fails closed with `NO_SPACE` when all slots are occupied, preserving every user channel.
+- Focused validation passed:
+  `:core:model:jvmTest :core:repository:jvmTest :core:data:jvmTest :core:database:testAndroidHostTest
+  :core:service:testAndroidHostTest :feature:messaging:compileAndroidMain :desktop:compileKotlin
+  --no-configuration-cache` (`BUILD SUCCESSFUL`, 1m22s, 346 actionable tasks). This is source/host evidence only; the
+  v2 Provider, current Room migration on a retained device database, connected-radio queue, and remote RF reception
+  still need current-artifact device testing.
 
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.

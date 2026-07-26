@@ -86,6 +86,8 @@ data class PacketEntity(
         Index(value = ["received_time"]),
         Index(value = ["filtered"]),
         Index(value = ["read"]),
+        Index(value = ["gateway_source_message_id"]),
+        Index(value = ["gateway_source_channel_id", "uuid"]),
     ],
 )
 data class Packet(
@@ -104,6 +106,8 @@ data class Packet(
     @ColumnInfo(name = "sfpp_hash") val sfpp_hash: ByteString? = null,
     @ColumnInfo(name = "filtered", defaultValue = "0") val filtered: Boolean = false,
     @ColumnInfo(name = "message_text", defaultValue = "") val messageText: String = "",
+    @ColumnInfo(name = "gateway_source_channel_id") val gatewaySourceChannelId: String? = null,
+    @ColumnInfo(name = "gateway_source_message_id") val gatewaySourceMessageId: String? = null,
 ) {
     companion object {
         const val RELAY_NODE_SUFFIX_MASK = 0xFF

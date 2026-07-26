@@ -30,8 +30,17 @@ import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeCodec
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeDirection
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.CommandSender
+import com.ntsocial.meshlink.core.repository.MessageQueue
+import com.ntsocial.meshlink.core.repository.PacketRepository
+import dev.mokkery.MockMode
+import dev.mokkery.answering.returns
+import dev.mokkery.everySuspend
+import dev.mokkery.matcher.any
+import dev.mokkery.mock
+import dev.mokkery.verifySuspend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.test.runTest
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
@@ -47,7 +56,10 @@ import kotlin.test.assertTrue
 class NtsocialGatewayRepositoryImplTest {
 
     private val commandSender = RecordingCommandSender()
-    private val repository = NtsocialGatewayRepositoryImpl(commandSender, CoroutineScope(SupervisorJob()))
+    private val packetRepository = mock<PacketRepository>(MockMode.autofill)
+    private val messageQueue = RecordingMessageQueue()
+    private val repository =
+        NtsocialGatewayRepositoryImpl(commandSender, packetRepository, messageQueue, CoroutineScope(SupervisorJob()))
 
     @Test
     fun `cacheInbound caches valid PRIVATE_APP NTsocial envelope`() {
@@ -171,6 +183,7 @@ class NtsocialGatewayRepositoryImplTest {
                 channelIndex = 2,
                 hopLimit = 3,
                 wantAck = false,
+                packetId = 77,
             )
 
         val sent = commandSender.sentData.single()
@@ -178,6 +191,8 @@ class NtsocialGatewayRepositoryImplTest {
         assertEquals(NtsocialTransport.PRIVATE_APP_PORT_NUM, sent.dataType)
         assertEquals(2, sent.channel)
         assertEquals(3, sent.hopLimit)
+        assertEquals(77, sent.id)
+        assertEquals(77, cached.packetId)
         assertFalse(sent.wantAck)
         assertEquals(raw, cached.rawBytes)
         assertEquals(NtsocialEnvelopeDirection.OUTBOUND, cached.direction)
@@ -200,6 +215,27 @@ class NtsocialGatewayRepositoryImplTest {
         assertFailsWith<IllegalArgumentException> {
             repository.sendRawEnvelope(rawEnvelope = oversizedRaw, channelIndex = 0)
         }
+        assertTrue(commandSender.sentData.isEmpty())
+    }
+
+    @Test
+    fun `durable raw envelope is persisted before platform retry work is admitted`() = runTest {
+        val raw = NtsocialEnvelopeCodec.encode(testHeaderMsgId(), "durable".encodeToByteArray().toByteString())
+        everySuspend { packetRepository.getPacketByPacketId(77) } returns null
+
+        val queued =
+            repository.persistAndQueueRawEnvelope(
+                rawEnvelope = raw,
+                to = DataPacket.ID_BROADCAST,
+                channelIndex = 2,
+                hopLimit = 3,
+                wantAck = true,
+                packetId = 77,
+            )
+
+        verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any()) }
+        assertEquals(listOf(77), messageQueue.packetIds)
+        assertEquals(77, queued.packetId)
         assertTrue(commandSender.sentData.isEmpty())
     }
 
@@ -259,5 +295,13 @@ class NtsocialGatewayRepositoryImplTest {
         override fun requestTelemetry(requestId: Int, destNum: Int, typeValue: Int) = Unit
 
         override fun requestNeighborInfo(requestId: Int, destNum: Int) = Unit
+    }
+
+    private class RecordingMessageQueue : MessageQueue {
+        val packetIds = mutableListOf<Int>()
+
+        override suspend fun enqueue(packetId: Int) {
+            packetIds += packetId
+        }
     }
 }

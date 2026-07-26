@@ -27,6 +27,7 @@ package com.ntsocial.meshlink.feature.messaging.worker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.await
 import androidx.work.workDataOf
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.service.worker.SendMessageWorker
@@ -42,10 +43,12 @@ class WorkManagerMessageQueue(private val workManager: WorkManager) : MessageQue
                 .setInputData(workDataOf(SendMessageWorker.KEY_PACKET_ID to packetId))
                 .build()
 
-        workManager.enqueueUniqueWork(
-            "${SendMessageWorker.WORK_NAME_PREFIX}$packetId",
-            ExistingWorkPolicy.REPLACE,
-            workRequest,
-        )
+        workManager
+            .enqueueUniqueWork(
+                "${SendMessageWorker.WORK_NAME_PREFIX}$packetId",
+                ExistingWorkPolicy.REPLACE,
+                workRequest,
+            )
+            .await()
     }
 }

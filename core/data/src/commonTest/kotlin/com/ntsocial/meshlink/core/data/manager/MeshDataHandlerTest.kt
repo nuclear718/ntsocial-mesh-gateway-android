@@ -27,6 +27,7 @@ package com.ntsocial.meshlink.core.data.manager
 import com.ntsocial.meshlink.core.model.ContactSettings
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.MeshDataMapper
 import com.ntsocial.meshlink.core.repository.AdminPacketHandler
@@ -95,6 +96,10 @@ class MeshDataHandlerTest {
     private val telemetryHandler: TelemetryPacketHandler = mock(MockMode.autofill)
     private val adminPacketHandler: AdminPacketHandler = mock(MockMode.autofill)
     private val ntsocialGatewayRepository: NtsocialGatewayRepository = mock(MockMode.autofill)
+    private val ntsocialGatewayIdentityKeyProvider =
+        object : NtsocialGatewayIdentityKeyProvider {
+            override val legacyChannelHmacKey = ByteArray(32) { 7 }.toByteString()
+        }
 
     private val testDispatcher = StandardTestDispatcher()
     private val testScope = TestScope(testDispatcher)
@@ -120,6 +125,7 @@ class MeshDataHandlerTest {
                 telemetryHandler = telemetryHandler,
                 adminPacketHandler = adminPacketHandler,
                 ntsocialGatewayRepository = ntsocialGatewayRepository,
+                ntsocialGatewayIdentityKeyProvider = ntsocialGatewayIdentityKeyProvider,
                 scope = testScope,
             )
 

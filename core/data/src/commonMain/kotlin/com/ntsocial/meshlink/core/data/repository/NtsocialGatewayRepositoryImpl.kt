@@ -29,13 +29,16 @@ package com.ntsocial.meshlink.core.data.repository
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.model.DataPacket
+import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannelStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeCodec
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeDirection
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.CommandSender
+import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
+import com.ntsocial.meshlink.core.repository.PacketRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +57,8 @@ import kotlin.random.Random
 @Single(binds = [NtsocialGatewayRepository::class])
 class NtsocialGatewayRepositoryImpl(
     private val commandSender: CommandSender,
+    private val packetRepository: PacketRepository,
+    private val messageQueue: MessageQueue,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : NtsocialGatewayRepository {
     private val _cachedEnvelopes = MutableStateFlow<List<NtsocialCachedEnvelope>>(emptyList())
@@ -117,6 +122,7 @@ class NtsocialGatewayRepositoryImpl(
         channelIndex: Int,
         hopLimit: Int,
         wantAck: Boolean,
+        packetId: Int?,
     ): NtsocialCachedEnvelope {
         require(rawEnvelope.size <= NtsocialTransport.MAX_CLIENT_ENVELOPE_SIZE_BYTES) {
             "NTsocial command envelope exceeds the external gateway limit"
@@ -130,7 +136,7 @@ class NtsocialGatewayRepositoryImpl(
                 to = to,
                 bytes = rawEnvelope,
                 dataType = NtsocialTransport.PRIVATE_APP_PORT_NUM,
-                id = commandSender.generatePacketId(),
+                id = packetId ?: commandSender.generatePacketId(),
                 channel = channelIndex,
                 hopLimit = hopLimit,
                 wantAck = wantAck,
@@ -156,6 +162,44 @@ class NtsocialGatewayRepositoryImpl(
             cachedAtMillis = nowMillis,
         )
             .also(::cache)
+    }
+
+    override suspend fun persistAndQueueRawEnvelope(
+        rawEnvelope: ByteString,
+        to: String?,
+        channelIndex: Int,
+        hopLimit: Int,
+        wantAck: Boolean,
+        packetId: Int,
+    ): NtsocialCachedEnvelope {
+        val (packet, record) =
+            prepareRawEnvelope(
+                rawEnvelope = rawEnvelope,
+                to = to,
+                channelIndex = channelIndex,
+                hopLimit = hopLimit,
+                wantAck = wantAck,
+                packetId = packetId,
+            )
+        val existing = packetRepository.getPacketByPacketId(packetId)
+        when {
+            existing == null ->
+                packetRepository.savePacket(
+                    myNodeNum = 0,
+                    contactKey = "$channelIndex${to ?: DataPacket.ID_BROADCAST}",
+                    packet = packet,
+                    receivedTime = nowMillis,
+                )
+
+            !existing.matchesDurableGatewayPacket(packet) ->
+                throw IllegalArgumentException("Gateway packet ID already belongs to different content")
+        }
+
+        if (existing == null || existing.status == MessageStatus.QUEUED) {
+            messageQueue.enqueue(packetId)
+        }
+        cache(record)
+        return record
     }
 
     override fun updateDefaultChannelStatus(status: NtsocialDefaultChannelStatus) {
@@ -196,6 +240,59 @@ class NtsocialGatewayRepositoryImpl(
             )
         }
     }
+
+    private fun prepareRawEnvelope(
+        rawEnvelope: ByteString,
+        to: String?,
+        channelIndex: Int,
+        hopLimit: Int,
+        wantAck: Boolean,
+        packetId: Int,
+    ): Pair<DataPacket, NtsocialCachedEnvelope> {
+        require(rawEnvelope.size <= NtsocialTransport.MAX_CLIENT_ENVELOPE_SIZE_BYTES) {
+            "NTsocial command envelope exceeds the external gateway limit"
+        }
+        require(channelIndex >= 0) { "channelIndex must not be negative" }
+        require(hopLimit >= 0) { "hopLimit must not be negative" }
+        require(packetId > 0) { "packetId must be positive" }
+
+        val envelope = requireNotNull(NtsocialEnvelopeCodec.decode(rawEnvelope)) { "Invalid NTsocial command envelope" }
+        val packet =
+            DataPacket(
+                to = to,
+                bytes = rawEnvelope,
+                dataType = NtsocialTransport.PRIVATE_APP_PORT_NUM,
+                id = packetId,
+                channel = channelIndex,
+                hopLimit = hopLimit,
+                wantAck = wantAck,
+            )
+                .apply {
+                    from = DataPacket.ID_LOCAL
+                    status = MessageStatus.QUEUED
+                    time = nowMillis
+                }
+        return packet to
+            NtsocialCachedEnvelope(
+                direction = NtsocialEnvelopeDirection.OUTBOUND,
+                envelope = envelope,
+                rawBytes = rawEnvelope,
+                packetId = packet.id,
+                from = packet.from,
+                to = packet.to,
+                channelIndex = packet.channel,
+                portNum = packet.dataType,
+                cachedAtMillis = nowMillis,
+            )
+    }
+
+    private fun DataPacket.matchesDurableGatewayPacket(expected: DataPacket): Boolean = id == expected.id &&
+        bytes == expected.bytes &&
+        dataType == expected.dataType &&
+        to == expected.to &&
+        channel == expected.channel &&
+        hopLimit == expected.hopLimit &&
+        wantAck == expected.wantAck
 
     private fun cache(record: NtsocialCachedEnvelope) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {

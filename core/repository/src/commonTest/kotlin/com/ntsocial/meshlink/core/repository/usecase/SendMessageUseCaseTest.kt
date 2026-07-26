@@ -26,20 +26,34 @@ package com.ntsocial.meshlink.core.repository.usecase
 
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.PacketRepository
+import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.testing.FakeAppPreferences
 import com.ntsocial.meshlink.core.testing.FakeNodeRepository
 import com.ntsocial.meshlink.core.testing.FakeRadioController
 import dev.mokkery.MockMode
+import dev.mokkery.answering.calls
+import dev.mokkery.answering.returns
+import dev.mokkery.every
+import dev.mokkery.everySuspend
+import dev.mokkery.matcher.any
 import dev.mokkery.mock
+import dev.mokkery.verifySuspend
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.User
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 
 class SendMessageUseCaseTest {
 
@@ -48,7 +62,12 @@ class SendMessageUseCaseTest {
     private lateinit var radioController: FakeRadioController
     private lateinit var appPreferences: FakeAppPreferences
     private lateinit var messageQueue: MessageQueue
+    private lateinit var radioConfigRepository: RadioConfigRepository
     private lateinit var useCase: SendMessageUseCase
+    private val gatewayIdentityKeyProvider =
+        object : NtsocialGatewayIdentityKeyProvider {
+            override val legacyChannelHmacKey = ByteArray(32) { 9 }.toByteString()
+        }
 
     @BeforeTest
     fun setUp() {
@@ -57,6 +76,8 @@ class SendMessageUseCaseTest {
         radioController = FakeRadioController()
         appPreferences = FakeAppPreferences()
         messageQueue = mock(MockMode.autofill)
+        radioConfigRepository = mock(MockMode.autofill)
+        every { radioConfigRepository.channelSetFlow } returns MutableStateFlow(ChannelSet())
 
         useCase =
             SendMessageUseCaseImpl(
@@ -65,6 +86,8 @@ class SendMessageUseCaseTest {
                 radioController = radioController,
                 homoglyphEncodingPrefs = appPreferences.homoglyph,
                 messageQueue = messageQueue,
+                radioConfigRepository = radioConfigRepository,
+                gatewayIdentityKeyProvider = gatewayIdentityKeyProvider,
             )
     }
 
@@ -81,6 +104,29 @@ class SendMessageUseCaseTest {
         // Assert
         radioController.favoritedNodes.size shouldBe 0
         radioController.sentSharedContacts.size shouldBe 0
+    }
+
+    @Test
+    fun `id zero well known channel still persists and queues native outgoing text`() = runTest {
+        nodeRepository.setOurNode(Node(num = 0x1234, user = User(id = DataPacket.ID_LOCAL)))
+        var savedPacket: DataPacket? = null
+        var savedGatewayIdentity: Any? = null
+        everySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any()) } calls
+            { call ->
+                savedPacket = call.arg(2)
+                savedGatewayIdentity = call.arg(6)
+            }
+        every { radioConfigRepository.channelSetFlow } returns
+            MutableStateFlow(
+                ChannelSet(settings = listOf(ChannelSettings(name = "LongFast", psk = byteArrayOf(1).toByteString()))),
+            )
+
+        useCase("Hello LongFast", "0${DataPacket.ID_BROADCAST}", null)
+
+        verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any()) }
+        verifySuspend { messageQueue.enqueue(any()) }
+        assertEquals("!00001234", savedPacket?.from)
+        assertNotNull(savedGatewayIdentity)
     }
 
     @Test

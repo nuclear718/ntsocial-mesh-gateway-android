@@ -100,6 +100,31 @@ class NtsocialGatewayServiceContractTest {
     }
 
     @Test
+    fun `gateway v2 contract is additive overlay only`() {
+        val authority = NtsocialGatewayContract.authorityFor("com.ntsocial.meshlink")
+
+        assertEquals(1, NtsocialGatewayContract.API_VERSION)
+        assertEquals(2, NtsocialGatewayContract.API_VERSION_V2)
+        assertEquals(
+            "content://com.ntsocial.meshlink.gateway/v2/status",
+            NtsocialGatewayContract.v2StatusUri(authority).toString(),
+        )
+        assertEquals(
+            "content://com.ntsocial.meshlink.gateway/v2/channels",
+            NtsocialGatewayContract.v2ChannelsUri(authority).toString(),
+        )
+        assertEquals(
+            "content://com.ntsocial.meshlink.gateway/v2/message-changes?after=7&limit=20",
+            NtsocialGatewayContract.v2MessageChangesUri(authority, after = 7, limit = 20).toString(),
+        )
+        assertEquals("SEND_NTSOCIAL_ENVELOPE_TO_ROUTE", NtsocialGatewayContract.COMMAND_SEND_NTSOCIAL_ENVELOPE_TO_ROUTE)
+        assertEquals(32, NtsocialGatewayContract.SOURCE_MESSAGE_ID_HEX_LENGTH)
+        assertEquals("source_channel_id", NtsocialGatewayContract.COLUMN_SOURCE_CHANNEL_ID)
+        assertEquals("source_message_id", NtsocialGatewayContract.COLUMN_SOURCE_MESSAGE_ID)
+        assertEquals("route_token", NtsocialGatewayContract.EXTRA_ROUTE_TOKEN)
+    }
+
+    @Test
     fun `mapper exposes only NTsocial envelope metadata`() {
         val headerMsgId = ByteArray(NtsocialTransport.HEADER_MSG_ID_SIZE_BYTES) { it.toByte() }.toByteString()
         val payload = byteArrayOf(0x01, 0x02, 0x03).toByteString()

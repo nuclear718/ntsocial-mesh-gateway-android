@@ -111,34 +111,36 @@ class NtsocialChannelProvisionerTest {
     }
 
     @Test
-    fun `replaces last secondary slot when channel slots are full`() = runTest {
+    fun `preserves every existing slot when channel slots are full`() = runTest {
         val fixture = fixture()
         val fullChannelSet = (0 until 8).map { index -> otherSettings("Channel$index") }
         fixture.repository.setChannelSet(ChannelSet(settings = fullChannelSet))
-        fixture.repository.setLocalConfigDirect(configuredLocalConfig)
+        fixture.repository.setLocalConfigDirect(
+            LocalConfig(lora = Config.LoRaConfig(region = Config.LoRaConfig.RegionCode.UNSET)),
+        )
 
         val result = fixture.provisioner.ensureDefaultChannel(MY_NODE_NUM, maxChannels = 8)
 
-        val provisioned = assertIs<NtsocialChannelProvisionResult.Provisioned>(result)
-        assertEquals(NtsocialChannelChange.REPLACED, provisioned.channelChange)
-        assertEquals(7, provisioned.channelIndex)
-        assertEquals(canonicalSettings, fixture.repository.currentChannelSet.settings[7])
-        assertEquals(Channel.Role.SECONDARY, fixture.commandSender.setChannels.single().role)
+        assertEquals(NtsocialChannelProvisionResult.NoSpace, result)
+        assertEquals(fullChannelSet, fixture.repository.currentChannelSet.settings)
+        assertEquals(emptyList(), fixture.commandSender.events)
+        assertEquals(null, fixture.repository.lastSetLocalConfig)
+        assertFalse(result.toDefaultChannelStatus(channelIndex = null).ready)
+        assertEquals("NO_SPACE", result.toDefaultChannelStatus(channelIndex = null).provisioningState)
     }
 
     @Test
-    fun `replaces primary as last resort when radio supports one channel`() = runTest {
+    fun `preserves primary when radio supports one full channel`() = runTest {
         val fixture = fixture()
-        fixture.repository.setChannelSet(ChannelSet(settings = listOf(otherSettings("Primary"))))
+        val primary = otherSettings("Primary")
+        fixture.repository.setChannelSet(ChannelSet(settings = listOf(primary)))
         fixture.repository.setLocalConfigDirect(configuredLocalConfig)
 
         val result = fixture.provisioner.ensureDefaultChannel(MY_NODE_NUM, maxChannels = 1)
 
-        val provisioned = assertIs<NtsocialChannelProvisionResult.Provisioned>(result)
-        assertEquals(NtsocialChannelChange.REPLACED, provisioned.channelChange)
-        assertEquals(0, provisioned.channelIndex)
-        assertEquals(canonicalSettings, fixture.repository.currentChannelSet.settings[0])
-        assertEquals(Channel.Role.PRIMARY, fixture.commandSender.setChannels.single().role)
+        assertEquals(NtsocialChannelProvisionResult.NoSpace, result)
+        assertEquals(listOf(primary), fixture.repository.currentChannelSet.settings)
+        assertEquals(emptyList(), fixture.commandSender.events)
     }
 
     @Test

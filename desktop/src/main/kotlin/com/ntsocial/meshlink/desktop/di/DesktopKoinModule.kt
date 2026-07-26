@@ -38,6 +38,7 @@ import com.ntsocial.meshlink.core.model.NetworkDeviceHardware
 import com.ntsocial.meshlink.core.model.NetworkDeviceLinksResponse
 import com.ntsocial.meshlink.core.model.NetworkFirmwareReleases
 import com.ntsocial.meshlink.core.model.RadioController
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.network.HttpClientDefaults
 import com.ntsocial.meshlink.core.network.KermitHttpLogger
 import com.ntsocial.meshlink.core.network.repository.MQTTRepository
@@ -66,6 +67,7 @@ import com.ntsocial.meshlink.desktop.notification.MacOSNotificationSender
 import com.ntsocial.meshlink.desktop.notification.NativeNotificationSender
 import com.ntsocial.meshlink.desktop.notification.WindowsNotificationSender
 import com.ntsocial.meshlink.desktop.radio.DesktopMessageQueue
+import com.ntsocial.meshlink.desktop.radio.DesktopNtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.desktop.radio.DesktopRadioTransportFactory
 import com.ntsocial.meshlink.desktop.stub.NoopAppWidgetUpdater
 import com.ntsocial.meshlink.desktop.stub.NoopCompassHeadingProvider
@@ -196,6 +198,7 @@ private fun desktopPlatformStubsModule() = module {
     single<AppWidgetUpdater> { NoopAppWidgetUpdater() }
     single<MeshWorkerManager> { NoopMeshWorkerManager() }
     single<MessageQueue> { DesktopMessageQueue(packetRepository = get(), radioController = get(), dispatchers = get()) }
+    single<NtsocialGatewayIdentityKeyProvider> { DesktopNtsocialGatewayIdentityKeyProvider() }
     single<MeshLocationManager> { NoopMeshLocationManager() }
     single<LocationRepository> { NoopLocationRepository() }
     single<MQTTRepository> { NoopMQTTRepository() }

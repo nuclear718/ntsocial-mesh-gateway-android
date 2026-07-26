@@ -36,13 +36,19 @@ object NtsocialGatewayContract {
     private const val PREFIX = "com.ntsocial.meshlink"
 
     const val API_VERSION = 1
+    const val API_VERSION_V2 = 2
     const val AUTHORITY_SUFFIX = ".gateway"
 
     const val PATH_VERSION = "v1"
+    const val PATH_VERSION_V2 = "v2"
     const val PATH_STATUS = "status"
     const val PATH_ENVELOPES = "envelopes"
     const val PATH_NODES = "nodes"
     const val PATH_CHANNELS = "channels"
+    const val PATH_MESSAGE_CHANGES = "message-changes"
+
+    const val QUERY_AFTER = "after"
+    const val QUERY_LIMIT = "limit"
 
     const val ACTION_COMMAND = "$PREFIX.gateway.COMMAND"
     const val ACTION_EVENT = "$PREFIX.gateway.EVENT"
@@ -61,8 +67,13 @@ object NtsocialGatewayContract {
     const val METHOD_ISSUE_COMMAND_CAPABILITY = "issue_command_capability"
 
     const val EXTRA_REQUEST_ID = "request_id"
+    const val EXTRA_COMMAND_TYPE = "command_type"
     const val EXTRA_PAYLOAD = "payload"
     const val EXTRA_CHANNEL_INDEX = "channel_index"
+    const val EXTRA_SOURCE_CHANNEL_ID = "source_channel_id"
+    const val EXTRA_ROUTE_TOKEN = "route_token"
+    const val EXTRA_CLIENT_MESSAGE_ID = "client_message_id"
+    const val CLIENT_MESSAGE_ID_HEX_LENGTH = 32
     const val EXTRA_TO = "to"
     const val EXTRA_HOP_LIMIT = "hop_limit"
     const val EXTRA_WANT_ACK = "want_ack"
@@ -77,6 +88,18 @@ object NtsocialGatewayContract {
     const val EVENT_COMMAND_ACCEPTED = "COMMAND_ACCEPTED"
     const val EVENT_COMMAND_REJECTED = "COMMAND_REJECTED"
     const val EVENT_STATUS_CHANGED = "STATUS_CHANGED"
+    const val EVENT_CHANNEL_CATALOG_CHANGED = "CHANNEL_CATALOG_CHANGED"
+    const val EVENT_MESSAGE_CHANGES_AVAILABLE = "MESSAGE_CHANGES_AVAILABLE"
+
+    const val COMMAND_SEND_NTSOCIAL_ENVELOPE_TO_ROUTE = "SEND_NTSOCIAL_ENVELOPE_TO_ROUTE"
+
+    const val CAPABILITY_CHANNEL_CATALOG = 1L
+    const val CAPABILITY_NATIVE_TEXT_HISTORY = 1L shl 1
+    const val CAPABILITY_ROUTE_OVERLAY_SEND = 1L shl 2
+    const val CAPABILITY_MESSAGE_CHANGE_EVENTS = 1L shl 3
+
+    /** SHA-256 prefix exported as 16 bytes / 32 uppercase hexadecimal characters. */
+    const val SOURCE_MESSAGE_ID_HEX_LENGTH = 32
 
     const val COLUMN_API_VERSION = "api_version"
     const val COLUMN_CONNECTION_STATE = "connection_state"
@@ -97,6 +120,14 @@ object NtsocialGatewayContract {
     const val COLUMN_GATEWAY_VOLTAGE = "gateway_voltage"
     const val COLUMN_GATEWAY_CHANNEL_UTILIZATION = "gateway_channel_utilization"
     const val COLUMN_GATEWAY_AIR_UTIL_TX = "gateway_air_util_tx"
+    const val COLUMN_CAPABILITIES = "capabilities"
+    const val COLUMN_BEARER = "bearer"
+    const val COLUMN_RADIO_GENERATION = "radio_generation"
+    const val COLUMN_HISTORY_EPOCH = "history_epoch"
+    const val COLUMN_MESSAGE_CHANGE_SEQ = "message_change_seq"
+    const val COLUMN_NATIVE_HISTORY_AVAILABLE = "native_history_available"
+    const val COLUMN_NATIVE_TEXT_SEND_AVAILABLE = "native_text_send_available"
+    const val COLUMN_ARBITRARY_ROUTE_OVERLAY_AVAILABLE = "arbitrary_route_overlay_available"
 
     const val COLUMN_DIRECTION = "direction"
     const val COLUMN_VERSION = "version"
@@ -124,13 +155,33 @@ object NtsocialGatewayContract {
     const val COLUMN_ROLE = "role"
 
     const val COLUMN_CHANNEL_NAME = "channel_name"
+    const val COLUMN_SOURCE_CHANNEL_ID = "source_channel_id"
+    const val COLUMN_ROUTE_TOKEN = "route_token"
+    const val COLUMN_SLOT_INDEX = "slot_index"
+    const val COLUMN_CONFIGURED_NAME = "configured_name"
+    const val COLUMN_DISPLAY_NAME = "display_name"
+    const val COLUMN_SECURITY_CLASS = "security_class"
     const val COLUMN_UPLINK_ENABLED = "uplink_enabled"
     const val COLUMN_DOWNLINK_ENABLED = "downlink_enabled"
+    const val COLUMN_CAN_READ_NATIVE_TEXT = "can_read_native_text"
+    const val COLUMN_CAN_SEND_NATIVE_TEXT = "can_send_native_text"
+    const val COLUMN_CAN_SEND_NT_OVERLAY = "can_send_nt_overlay"
+
+    const val COLUMN_SOURCE_MESSAGE_ID = "source_message_id"
+    const val COLUMN_CHANGE_SEQ = "change_seq"
+    const val COLUMN_FROM_NODE_ID = "from_node_id"
+    const val COLUMN_FROM_DISPLAY_NAME = "from_display_name"
+    const val COLUMN_TEXT = "text"
+    const val COLUMN_SENDER_TIMESTAMP_MILLIS = "sender_timestamp_millis"
+    const val COLUMN_RECEIVED_AT_MILLIS = "received_at_millis"
+    const val COLUMN_STATUS = "status"
+    const val COLUMN_VIA_MQTT = "via_mqtt"
 
     const val MIME_STATUS = "vnd.android.cursor.item/vnd.$PREFIX.gateway.status"
     const val MIME_ENVELOPES = "vnd.android.cursor.dir/vnd.$PREFIX.gateway.envelope"
     const val MIME_NODES = "vnd.android.cursor.dir/vnd.$PREFIX.gateway.node"
     const val MIME_CHANNELS = "vnd.android.cursor.dir/vnd.$PREFIX.gateway.channel"
+    const val MIME_MESSAGE_CHANGES = "vnd.android.cursor.dir/vnd.$PREFIX.gateway.message-change"
 
     fun authorityFor(applicationId: String): String = applicationId + AUTHORITY_SUFFIX
 
@@ -142,6 +193,20 @@ object NtsocialGatewayContract {
 
     fun channelsUri(authority: String): Uri = endpointUri(authority, PATH_CHANNELS)
 
+    fun v2StatusUri(authority: String): Uri = v2EndpointUri(authority, PATH_STATUS)
+
+    fun v2ChannelsUri(authority: String): Uri = v2EndpointUri(authority, PATH_CHANNELS)
+
+    fun v2MessageChangesUri(authority: String, after: Long = 0, limit: Int = 100): Uri =
+        v2EndpointUri(authority, PATH_MESSAGE_CHANGES)
+            .buildUpon()
+            .appendQueryParameter(QUERY_AFTER, after.toString())
+            .appendQueryParameter(QUERY_LIMIT, limit.toString())
+            .build()
+
     private fun endpointUri(authority: String, path: String): Uri =
         Uri.Builder().scheme("content").authority(authority).appendPath(PATH_VERSION).appendPath(path).build()
+
+    private fun v2EndpointUri(authority: String, path: String): Uri =
+        Uri.Builder().scheme("content").authority(authority).appendPath(PATH_VERSION_V2).appendPath(path).build()
 }

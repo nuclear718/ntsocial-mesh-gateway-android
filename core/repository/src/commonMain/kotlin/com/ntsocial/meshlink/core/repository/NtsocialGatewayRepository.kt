@@ -67,6 +67,22 @@ interface NtsocialGatewayRepository {
         channelIndex: Int,
         hopLimit: Int = 0,
         wantAck: Boolean = true,
+        packetId: Int? = null,
+    ): NtsocialCachedEnvelope
+
+    /**
+     * Persists an encoded NTsocial envelope as a queued packet and commits platform retry work before returning.
+     *
+     * Repeating the same [packetId] and packet body is safe. A packet-ID collision with different content fails closed.
+     * Successful return proves only local durable queue admission, never RF or remote delivery.
+     */
+    suspend fun persistAndQueueRawEnvelope(
+        rawEnvelope: ByteString,
+        to: String? = DataPacket.ID_BROADCAST,
+        channelIndex: Int,
+        hopLimit: Int = 0,
+        wantAck: Boolean = true,
+        packetId: Int,
     ): NtsocialCachedEnvelope
 
     /** Updates the ephemeral provisioning/readiness snapshot exposed through the Android gateway provider. */

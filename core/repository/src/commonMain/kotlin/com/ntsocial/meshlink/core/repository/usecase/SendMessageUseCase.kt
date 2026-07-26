@@ -32,10 +32,14 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.RadioController
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
+import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import kotlinx.coroutines.flow.first
 import org.meshtastic.proto.Config
 import kotlin.random.Random
 
@@ -62,6 +66,8 @@ class SendMessageUseCaseImpl(
     private val radioController: RadioController,
     private val homoglyphEncodingPrefs: HomoglyphPrefs,
     private val messageQueue: MessageQueue,
+    private val radioConfigRepository: RadioConfigRepository,
+    private val gatewayIdentityKeyProvider: NtsocialGatewayIdentityKeyProvider,
 ) : SendMessageUseCase {
 
     /**
@@ -77,7 +83,11 @@ class SendMessageUseCaseImpl(
         val dest = if (channel != null) contactKey.substring(1) else contactKey
 
         val ourNode = nodeRepository.ourNodeInfo.value
-        val fromId = ourNode?.user?.id ?: DataPacket.ID_LOCAL
+        val fromId =
+            ourNode?.user?.id?.takeIf { it.isNotBlank() && it != DataPacket.ID_LOCAL }
+                ?: nodeRepository.myId.value?.takeIf { it.isNotBlank() && it != DataPacket.ID_LOCAL }
+                ?: ourNode?.num?.takeIf { it != 0 }?.let(DataPacket::nodeNumToDefaultId)
+                ?: DataPacket.ID_LOCAL
 
         // Direct message side-effects: share the contact's public key (PKI) or
         // favorite the node (legacy) before sending the first message.  PKI DMs use
@@ -121,12 +131,31 @@ class SendMessageUseCaseImpl(
             }
 
         try {
+            val channelSet = radioConfigRepository.channelSetFlow.first()
+            val gatewayIdentity =
+                channel
+                    ?.takeIf { dest == DataPacket.ID_BROADCAST }
+                    ?.let { channelIndex ->
+                        channelSet.settings.getOrNull(channelIndex)?.let { settings ->
+                            runCatching {
+                                NtsocialGatewayIdentity.nativeBroadcastText(
+                                    settings = settings,
+                                    loraConfig = channelSet.lora_config ?: Config.LoRaConfig(),
+                                    channelIndex = channelIndex,
+                                    packet = packet,
+                                    legacyChannelHmacKey = gatewayIdentityKeyProvider.legacyChannelHmacKey,
+                                )
+                            }
+                                .getOrNull()
+                        }
+                    }
             // Write to the DB to immediately reflect the queued state on the UI
             packetRepository.savePacket(
                 myNodeNum = ourNode?.num ?: 0,
                 contactKey = contactKey,
                 packet = packet,
                 receivedTime = nowMillis,
+                gatewayIdentity = gatewayIdentity,
             )
 
             // Enqueue for durable transmission via the platform-specific queue

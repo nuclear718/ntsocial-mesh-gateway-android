@@ -25,10 +25,12 @@
 package com.ntsocial.meshlink.core.repository.di
 
 import com.ntsocial.meshlink.core.model.RadioController
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
+import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.usecase.SendMessageUseCase
 import com.ntsocial.meshlink.core.repository.usecase.SendMessageUseCaseImpl
 import org.koin.core.annotation.Module
@@ -44,6 +46,15 @@ class CoreRepositoryModule {
         @Provided radioController: RadioController,
         @Provided homoglyphEncodingPrefs: HomoglyphPrefs,
         @Provided messageQueue: MessageQueue,
-    ): SendMessageUseCase =
-        SendMessageUseCaseImpl(nodeRepository, packetRepository, radioController, homoglyphEncodingPrefs, messageQueue)
+        @Provided radioConfigRepository: RadioConfigRepository,
+        @Provided gatewayIdentityKeyProvider: NtsocialGatewayIdentityKeyProvider,
+    ): SendMessageUseCase = SendMessageUseCaseImpl(
+        nodeRepository,
+        packetRepository,
+        radioController,
+        homoglyphEncodingPrefs,
+        messageQueue,
+        radioConfigRepository,
+        gatewayIdentityKeyProvider,
+    )
 }

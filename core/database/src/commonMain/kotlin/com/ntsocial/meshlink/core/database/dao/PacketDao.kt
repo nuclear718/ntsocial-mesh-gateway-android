@@ -35,6 +35,7 @@ import androidx.room3.Update
 import androidx.room3.Upsert
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.database.entity.ContactSettings
+import com.ntsocial.meshlink.core.database.entity.GatewayMetadata
 import com.ntsocial.meshlink.core.database.entity.Packet
 import com.ntsocial.meshlink.core.database.entity.PacketEntity
 import com.ntsocial.meshlink.core.database.entity.ReactionEntity
@@ -47,6 +48,73 @@ import org.meshtastic.proto.ChannelSettings
 @Suppress("TooManyFunctions")
 @Dao
 interface PacketDao {
+
+    @Query(
+        """
+        SELECT * FROM packet
+        WHERE uuid > :after
+            AND port_num = 1
+            AND filtered = 0
+            AND contact_key LIKE '%^all'
+            AND (
+                (gateway_source_message_id IS NOT NULL AND gateway_source_channel_id IS NOT NULL)
+                OR
+                (
+                    gateway_source_message_id IS NULL
+                    AND gateway_source_channel_id IS NULL
+                    AND contact_key IN (:legacyBroadcastContactKeys)
+                )
+            )
+        ORDER BY uuid ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getGatewayMessageChanges(
+        after: Long,
+        limit: Int,
+        legacyBroadcastContactKeys: List<String>,
+    ): List<Packet>
+
+    @Query(
+        """
+        SELECT * FROM packet
+        WHERE uuid > :after
+            AND port_num = 1
+            AND filtered = 0
+            AND contact_key LIKE '%^all'
+            AND gateway_source_message_id IS NOT NULL
+            AND gateway_source_channel_id IS NOT NULL
+        ORDER BY uuid ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun getGatewayStableMessageChanges(after: Long, limit: Int): List<Packet>
+
+    @Query(
+        """
+        SELECT COALESCE(MAX(uuid), 0) FROM packet
+        WHERE port_num = 1
+            AND filtered = 0
+            AND contact_key LIKE '%^all'
+            AND (
+                (
+                    gateway_source_message_id IS NOT NULL
+                    AND gateway_source_channel_id IS NOT NULL
+                )
+                OR contact_key IN (:legacyBroadcastContactKeys)
+            )
+        """,
+    )
+    fun getGatewayMessageChangeSeq(legacyBroadcastContactKeys: List<String>): Flow<Long>
+
+    @Query("SELECT metadata_value FROM gateway_metadata WHERE metadata_key = :key LIMIT 1")
+    suspend fun getGatewayMetadata(key: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertGatewayMetadata(metadata: GatewayMetadata)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun setGatewayMetadata(metadata: GatewayMetadata)
 
     @Query(
         """
@@ -486,6 +554,12 @@ interface PacketDao {
         deleteAllPackets()
         deleteAllReactions()
         deleteAllContactSettings()
+    }
+
+    @Transaction
+    suspend fun deleteAllAndRotateGatewayHistoryEpoch(historyEpoch: GatewayMetadata) {
+        deleteAll()
+        setGatewayMetadata(historyEpoch)
     }
 
     @Query("DELETE FROM packet")

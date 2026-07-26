@@ -9,10 +9,12 @@ project-owned packages use `com.ntsocial.meshlink.*`. Governance does not erase 
 contributor rights; follow `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and
 `docs/copyright-and-attribution.md`.
 
-Android Gateway v1 Provider/capability/IPC/cache/channel-provisioning behavior is concrete code.
+Android Gateway v1 remains immutable and concrete. Additive Gateway v2 status/catalog/native-history
+changes, wakeup events, caller-bound route tokens, and route-aware raw NTsocial overlay sending are
+also implemented; native Meshtastic text send is not.
 Windows branding, installer identity, theme, and cold-start splash are concrete code, but
 `NTsocial_Windows` IPC, Windows Service, Authenticator, code signing, and parent-App interoperability
-are not implemented. RF scheduler expansion, node policy, persistent/reliable delivery, MeshCore
+are not implemented. Routed v2 commands now have local Room + WorkManager durable admission; RF scheduler expansion, node policy, MeshCore
 transport, and remote RF verification remain roadmap work.
 
 ## Build, Test & Lint
@@ -250,8 +252,24 @@ a coroutine-cleanup timeout flake under the full parallel baseline.
 - Planned NTsocial overlay transport is `PRIVATE_APP / port 256`; legacy `497` is receive-only.
 - NTsocial `channelId` is the logical route; Meshtastic `channelIndex` is the RF lane.
 - NTsocial MeshLink must bundle and automatically register the canonical public NTsocial Meshtastic
-  channel after node DB readiness. Preserve primary when possible, replace the last secondary when
-  full, and apply QR LoRa/RF config only when the radio is unconfigured or `region == UNSET`.
+  channel after node DB readiness. Add only into a free slot; if every slot is occupied, fail closed
+  with `NO_SPACE` and preserve every primary/secondary. Apply QR LoRa/RF config only when the radio is
+  unconfigured or `region == UNSET`.
+- Preserve Gateway v1 exactly. Gateway v2 may expose sanitized status/catalog/bounded native text
+  history and route-aware port-256 overlay sends; it must not expose PSKs/configuration, mutate via the
+  Provider, claim native text send, or make MeshLink the canonical NTsocial history owner.
+- Gateway v2 `history_epoch` is stored per active Room history domain and rotates on whole-history
+  reset/database switch. `radio_generation` is opaque random runtime state, never a ChannelSet/PSK
+  digest. Legacy history scanning is bounded and the status high-water includes currently mappable
+  legacy-only native broadcast rows.
+- A routed command is accepted only after its packet is in Room, WorkManager admission completes,
+  and the durable idempotency ledger commits. SharedPreferences failures roll memory back and must
+  never publish accepted. Acceptance is not RF or remote-delivery proof.
+- Zero-ID CLEAR/WELL_KNOWN channel identity is public and cross-install deterministic: resolve the
+  effective channel name first, locale-independently trim/lowercase it, and combine it with the
+  resolved public PSK. This makes an empty default name converge with explicit `LongFast`. Only
+  zero-ID CUSTOM-PSK identity uses the install-local HMAC key; never export PSK-derived unkeyed
+  digests or `!local` as an external author.
 - `rebroadcast_mode = ALL` must be applied with user consent and verification.
 - Do not send image, voice, or PTT media bytes over LoRa.
 - Do not describe planned gateway behavior as shipped until implemented.

@@ -188,7 +188,11 @@ class StoreForwardPacketHandlerImpl(
                     dataPacket.to = DataPacket.ID_BROADCAST
                 }
                 val u = dataPacket.copy(bytes = s.text, dataType = PortNum.TEXT_MESSAGE_APP.value)
-                dataHandler.value.rememberDataPacket(u, myNodeNum)
+                dataHandler.value.rememberDataPacket(
+                    u,
+                    myNodeNum,
+                    captureGatewayIdentity = s.rr == StoreAndForward.RequestResponse.ROUTER_TEXT_BROADCAST,
+                )
             }
 
             else -> {}

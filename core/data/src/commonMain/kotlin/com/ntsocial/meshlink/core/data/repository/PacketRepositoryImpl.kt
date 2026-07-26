@@ -30,6 +30,7 @@ import androidx.paging.PagingData
 import androidx.paging.map
 import com.ntsocial.meshlink.core.database.DatabaseProvider
 import com.ntsocial.meshlink.core.database.dao.NodeInfoDao
+import com.ntsocial.meshlink.core.database.entity.GatewayMetadata
 import com.ntsocial.meshlink.core.database.entity.PacketEntity
 import com.ntsocial.meshlink.core.database.entity.toReaction
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
@@ -39,8 +40,12 @@ import com.ntsocial.meshlink.core.model.Message
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Reaction
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import com.ntsocial.meshlink.core.model.util.getShortDateTime
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -51,6 +56,7 @@ import okio.ByteString.Companion.toByteString
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.PortNum
+import kotlin.uuid.Uuid
 import com.ntsocial.meshlink.core.database.entity.ContactSettings as ContactSettingsEntity
 import com.ntsocial.meshlink.core.database.entity.Packet as RoomPacket
 import com.ntsocial.meshlink.core.database.entity.ReactionEntity as RoomReaction
@@ -125,6 +131,67 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         dbManager.currentDb.value.packetDao().getAllDataPackets().filter { it.status == MessageStatus.QUEUED }
     }
 
+    override fun getGatewayMessageChangeSeq(legacyBroadcastContactKeys: List<String>): Flow<Long> =
+        dbManager.currentDb.flatMapLatest { db ->
+            db.packetDao().getGatewayMessageChangeSeq(legacyBroadcastContactKeys)
+        }
+
+    override fun getGatewayHistoryState(legacyBroadcastContactKeys: List<String>): Flow<NtsocialGatewayHistoryState> =
+        dbManager.currentDb.flatMapLatest { db ->
+            flow {
+                val dao = db.packetDao()
+                val epoch =
+                    dao.getGatewayMetadata(GATEWAY_HISTORY_EPOCH_KEY)
+                        ?: Uuid.random()
+                            .toString()
+                            .also { proposed ->
+                                dao.insertGatewayMetadata(
+                                    GatewayMetadata(key = GATEWAY_HISTORY_EPOCH_KEY, value = proposed),
+                                )
+                            }
+                            .let { dao.getGatewayMetadata(GATEWAY_HISTORY_EPOCH_KEY) ?: it }
+                emitAll(
+                    dao.getGatewayMessageChangeSeq(legacyBroadcastContactKeys).map { changeSeq ->
+                        NtsocialGatewayHistoryState(historyEpoch = epoch, messageChangeSeq = changeSeq)
+                    },
+                )
+            }
+        }
+
+    override suspend fun getGatewayMessageChanges(
+        after: Long,
+        limit: Int,
+        legacyBroadcastContactKeys: List<String>,
+    ): List<NtsocialGatewayMessageChange> = withContext(dispatchers.io) {
+        dbManager.currentDb.value
+            .packetDao()
+            .getGatewayMessageChanges(after, limit, legacyBroadcastContactKeys)
+            .map(::toGatewayMessageChange)
+    }
+
+    override suspend fun getGatewayStableMessageChanges(after: Long, limit: Int): List<NtsocialGatewayMessageChange> =
+        withContext(dispatchers.io) {
+            dbManager.currentDb.value
+                .packetDao()
+                .getGatewayStableMessageChanges(after, limit)
+                .map(::toGatewayMessageChange)
+        }
+
+    private fun toGatewayMessageChange(row: RoomPacket): NtsocialGatewayMessageChange {
+        val identity =
+            row.gatewaySourceChannelId?.let { sourceChannelId ->
+                row.gatewaySourceMessageId?.let { sourceMessageId ->
+                    NtsocialGatewayMessageIdentity(sourceChannelId = sourceChannelId, sourceMessageId = sourceMessageId)
+                }
+            }
+        return NtsocialGatewayMessageChange(
+            changeSeq = row.uuid,
+            identity = identity,
+            packet = row.data,
+            receivedAtMillis = row.received_time,
+        )
+    }
+
     suspend fun insertRoomPacket(packet: RoomPacket) =
         withContext(dispatchers.io) { dbManager.currentDb.value.packetDao().insert(packet) }
 
@@ -135,6 +202,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         receivedTime: Long,
         read: Boolean,
         filtered: Boolean,
+        gatewayIdentity: NtsocialGatewayMessageIdentity?,
     ) {
         val packetToSave =
             RoomPacket(
@@ -151,6 +219,8 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 hopsAway = packet.hopsAway,
                 filtered = filtered,
                 messageText = packet.text.orEmpty(),
+                gatewaySourceChannelId = gatewayIdentity?.sourceChannelId,
+                gatewaySourceMessageId = gatewayIdentity?.sourceMessageId,
             )
         insertRoomPacket(packetToSave)
     }
@@ -275,6 +345,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         receivedTime: Long,
         read: Boolean,
         filtered: Boolean,
+        gatewayIdentity: NtsocialGatewayMessageIdentity?,
     ) {
         val packetToSave =
             RoomPacket(
@@ -291,6 +362,8 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 hopsAway = packet.hopsAway,
                 filtered = filtered,
                 messageText = packet.text.orEmpty(),
+                gatewaySourceChannelId = gatewayIdentity?.sourceChannelId,
+                gatewaySourceMessageId = gatewayIdentity?.sourceMessageId,
             )
         insertRoomPacket(packetToSave)
     }
@@ -479,8 +552,13 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
             dbManager.currentDb.value.packetDao().setContactFilteringDisabled(contactKey, disabled)
         }
 
-    override suspend fun clearPacketDB() =
-        withContext(dispatchers.io) { dbManager.currentDb.value.packetDao().deleteAll() }
+    override suspend fun clearPacketDB() = withContext(dispatchers.io) {
+        dbManager.currentDb.value
+            .packetDao()
+            .deleteAllAndRotateGatewayHistoryEpoch(
+                GatewayMetadata(key = GATEWAY_HISTORY_EPOCH_KEY, value = Uuid.random().toString()),
+            )
+    }
 
     override suspend fun migrateChannelsByPSK(oldSettings: List<ChannelSettings>, newSettings: List<ChannelSettings>) =
         withContext(dispatchers.io) {
@@ -585,5 +663,6 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         private const val MESSAGES_PAGE_SIZE = 50
         private const val DELETE_CHUNK_SIZE = 500
         private const val MILLISECONDS_IN_SECOND = 1000L
+        private const val GATEWAY_HISTORY_EPOCH_KEY = "history_epoch_v2"
     }
 }

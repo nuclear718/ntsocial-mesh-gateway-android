@@ -33,6 +33,8 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Reaction
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.MeshDataMapper
 import com.ntsocial.meshlink.core.model.util.decodeOrNull
@@ -106,6 +108,7 @@ class MeshDataHandlerImpl(
     private val telemetryHandler: TelemetryPacketHandler,
     private val adminPacketHandler: AdminPacketHandler,
     private val ntsocialGatewayRepository: NtsocialGatewayRepository,
+    private val ntsocialGatewayIdentityKeyProvider: NtsocialGatewayIdentityKeyProvider,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshDataHandler {
 
@@ -261,7 +264,7 @@ class MeshDataHandlerImpl(
         if (decoded.reply_id != 0 && decoded.emoji != 0) {
             rememberReaction(packet)
         } else {
-            rememberDataPacket(dataPacket, myNodeNum)
+            rememberDataPacket(dataPacket, myNodeNum, captureGatewayIdentity = true)
         }
     }
 
@@ -344,7 +347,12 @@ class MeshDataHandlerImpl(
         }
     }
 
-    override fun rememberDataPacket(dataPacket: DataPacket, myNodeNum: Int, updateNotification: Boolean) {
+    override fun rememberDataPacket(
+        dataPacket: DataPacket,
+        myNodeNum: Int,
+        updateNotification: Boolean,
+        captureGatewayIdentity: Boolean,
+    ) {
         if (dataPacket.dataType !in rememberDataType) return
         val fromLocal =
             dataPacket.from == DataPacket.ID_LOCAL || dataPacket.from == DataPacket.nodeNumToDefaultId(myNodeNum)
@@ -377,6 +385,26 @@ class MeshDataHandlerImpl(
                     nowMillis,
                     read = fromLocal || isFiltered,
                     filtered = isFiltered,
+                    gatewayIdentity =
+                    if (captureGatewayIdentity && !isFiltered) {
+                        val channelSet = radioConfigRepository.channelSetFlow.first()
+                        channelSet.settings.getOrNull(dataPacket.channel)?.let { settings ->
+                            runCatching {
+                                NtsocialGatewayIdentity.nativeBroadcastText(
+                                    settings = settings,
+                                    loraConfig =
+                                    channelSet.lora_config ?: org.meshtastic.proto.Config.LoRaConfig(),
+                                    channelIndex = dataPacket.channel,
+                                    packet = dataPacket,
+                                    legacyChannelHmacKey =
+                                    ntsocialGatewayIdentityKeyProvider.legacyChannelHmacKey,
+                                )
+                            }
+                                .getOrNull()
+                        }
+                    } else {
+                        null
+                    },
                 )
                 if (!isFiltered) {
                     handlePacketNotification(dataPacket, contactKey, updateNotification)

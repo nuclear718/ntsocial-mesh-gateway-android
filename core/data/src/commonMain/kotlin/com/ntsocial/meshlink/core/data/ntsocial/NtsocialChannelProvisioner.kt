@@ -70,7 +70,12 @@ open class NtsocialChannelProvisioner(
                 defaultChannelSet.lora_config?.takeIf { shouldApplyDefaultLora(currentLocalConfig.lora) }
 
             when {
-                channelPlan == null && defaultLoraConfig == null -> {
+                channelPlan.noSpace -> {
+                    Logger.w { "NTsocial channel provisioning skipped: no free channel slot" }
+                    NtsocialChannelProvisionResult.NoSpace
+                }
+
+                channelPlan.channel == null && defaultLoraConfig == null -> {
                     Logger.d { "NTsocial channel already provisioned" }
                     NtsocialChannelProvisionResult.AlreadyPresent
                 }
@@ -80,7 +85,7 @@ open class NtsocialChannelProvisioner(
                     NtsocialChannelProvisionResult.SessionTimeout
                 }
 
-                else -> applyProvisioning(myNodeNum, defaultLoraConfig, channelPlan)
+                else -> applyProvisioning(myNodeNum, defaultLoraConfig, channelPlan.channel)
             }
         }
     }
@@ -99,35 +104,31 @@ open class NtsocialChannelProvisioner(
         currentSettings: List<ChannelSettings>,
         defaultSettings: ChannelSettings,
         maxChannels: Int,
-    ): ChannelPlan? {
+    ): ChannelPlanResult {
         val existingIndex = currentSettings.indexOfFirst { it.matchesNtsocial(defaultSettings) }
-        if (existingIndex >= 0) {
-            return if (currentSettings[existingIndex] == defaultSettings) {
-                null
-            } else {
-                ChannelPlan(
-                    channel = defaultSettings.toChannel(index = existingIndex),
-                    change = NtsocialChannelChange.UPDATED,
+        return when {
+            existingIndex >= 0 && currentSettings[existingIndex] == defaultSettings -> ChannelPlanResult()
+
+            existingIndex >= 0 ->
+                ChannelPlanResult(
+                    channel =
+                    ChannelPlan(
+                        channel = defaultSettings.toChannel(index = existingIndex),
+                        change = NtsocialChannelChange.UPDATED,
+                    ),
                 )
-            }
+
+            currentSettings.size >= maxChannels -> ChannelPlanResult(noSpace = true)
+
+            else ->
+                ChannelPlanResult(
+                    channel =
+                    ChannelPlan(
+                        channel = defaultSettings.toChannel(index = currentSettings.size),
+                        change = NtsocialChannelChange.ADDED,
+                    ),
+                )
         }
-
-        val targetIndex =
-            if (currentSettings.size < maxChannels) {
-                currentSettings.size
-            } else if (maxChannels > 1) {
-                maxChannels - 1
-            } else {
-                0
-            }
-        val change =
-            if (targetIndex < currentSettings.size) {
-                NtsocialChannelChange.REPLACED
-            } else {
-                NtsocialChannelChange.ADDED
-            }
-
-        return ChannelPlan(channel = defaultSettings.toChannel(index = targetIndex), change = change)
     }
 
     private fun ChannelSettings.matchesNtsocial(defaultSettings: ChannelSettings): Boolean =
@@ -211,6 +212,8 @@ open class NtsocialChannelProvisioner(
 
     private data class ChannelPlan(val channel: Channel, val change: NtsocialChannelChange)
 
+    private data class ChannelPlanResult(val channel: ChannelPlan? = null, val noSpace: Boolean = false)
+
     private companion object {
         val ADMIN_SESSION_TIMEOUT = 10.seconds
     }
@@ -220,6 +223,8 @@ sealed interface NtsocialChannelProvisionResult {
     data object AlreadyPresent : NtsocialChannelProvisionResult
 
     data object InvalidDefaultChannel : NtsocialChannelProvisionResult
+
+    data object NoSpace : NtsocialChannelProvisionResult
 
     data object RadioRejected : NtsocialChannelProvisionResult
 
@@ -253,6 +258,8 @@ internal fun NtsocialChannelProvisionResult.toDefaultChannelStatus(channelIndex:
 
         NtsocialChannelProvisionResult.InvalidDefaultChannel ->
             NtsocialDefaultChannelStatus(provisioningState = "INVALID_DEFAULT_CHANNEL")
+
+        NtsocialChannelProvisionResult.NoSpace -> NtsocialDefaultChannelStatus(provisioningState = "NO_SPACE")
 
         NtsocialChannelProvisionResult.RadioRejected ->
             NtsocialDefaultChannelStatus(
