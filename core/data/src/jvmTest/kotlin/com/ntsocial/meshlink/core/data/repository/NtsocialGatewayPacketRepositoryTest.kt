@@ -68,41 +68,45 @@ class NtsocialGatewayPacketRepositoryTest {
     }
 
     @Test
-    fun `captured rows retain identity and legacy broadcasts remain best effort`() = runTest(dispatcher) {
+    fun `stable export and high water exclude an uncaptured row after slot reuse`() = runTest(dispatcher) {
         val packet = DataPacket(DataPacket.ID_BROADCAST, 1, "native").apply { id = 9 }
-        val identity =
+        val capturedIdentity =
             NtsocialGatewayMessageIdentity(
-                sourceChannelId = "meshtastic:channel",
+                sourceChannelId = "meshtastic:channel-a",
                 sourceMessageId = "0123456789ABCDEF0123456789ABCDEF",
             )
 
-        repository.savePacket(1, "1${DataPacket.ID_BROADCAST}", packet, 100L, gatewayIdentity = identity)
+        repository.savePacket(1, "1${DataPacket.ID_BROADCAST}", packet, 100L, gatewayIdentity = capturedIdentity)
         repository.savePacket(1, "1${DataPacket.ID_BROADCAST}", packet.copy(id = 10), 101L)
 
-        val page =
+        val compatibilityPage =
             repository.getGatewayMessageChanges(
                 after = 0,
                 limit = 10,
                 legacyBroadcastContactKeys = listOf("1${DataPacket.ID_BROADCAST}"),
             )
-        assertEquals(2, page.size)
-        assertEquals(identity, page.first().identity)
-        assertEquals(100L, page.first().receivedAtMillis)
-        assertEquals(null, page.last().identity)
-        assertEquals(page.first().changeSeq, repository.getGatewayMessageChangeSeq().first())
+        val stablePage = repository.getGatewayStableMessageChanges(after = 0, limit = 10)
+
+        assertEquals(2, compatibilityPage.size)
+        assertEquals(capturedIdentity, compatibilityPage.first().identity)
+        assertEquals(100L, compatibilityPage.first().receivedAtMillis)
+        assertEquals(null, compatibilityPage.last().identity)
+        assertEquals(listOf(capturedIdentity), stablePage.map { it.identity })
+        assertEquals(stablePage.single().changeSeq, repository.getGatewayMessageChangeSeq().first())
         assertEquals(
-            page.last().changeSeq,
+            stablePage.single().changeSeq,
+            repository.getGatewayHistoryState(emptyList()).first().messageChangeSeq,
+        )
+        assertTrue(stablePage.single().changeSeq < compatibilityPage.last().changeSeq)
+        assertEquals(
+            compatibilityPage.last().changeSeq,
             repository.getGatewayMessageChangeSeq(listOf("1${DataPacket.ID_BROADCAST}")).first(),
         )
         assertEquals(
-            page.last().changeSeq,
+            compatibilityPage.last().changeSeq,
             repository.getGatewayHistoryState(listOf("1${DataPacket.ID_BROADCAST}")).first().messageChangeSeq,
         )
-        assertTrue(repository.getGatewayMessageChanges(page.last().changeSeq, 10).isEmpty())
-        assertEquals(
-            listOf(identity),
-            repository.getGatewayStableMessageChanges(after = 0, limit = 10).map { it.identity },
-        )
+        assertTrue(repository.getGatewayMessageChanges(compatibilityPage.last().changeSeq, 10).isEmpty())
     }
 
     @Test

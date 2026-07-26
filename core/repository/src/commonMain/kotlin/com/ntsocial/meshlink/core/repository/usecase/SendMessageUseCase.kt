@@ -33,7 +33,6 @@ import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
-import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.NodeRepository
@@ -67,7 +66,6 @@ class SendMessageUseCaseImpl(
     private val homoglyphEncodingPrefs: HomoglyphPrefs,
     private val messageQueue: MessageQueue,
     private val radioConfigRepository: RadioConfigRepository,
-    private val gatewayIdentityKeyProvider: NtsocialGatewayIdentityKeyProvider,
 ) : SendMessageUseCase {
 
     /**
@@ -143,7 +141,6 @@ class SendMessageUseCaseImpl(
                                     loraConfig = channelSet.lora_config ?: Config.LoRaConfig(),
                                     channelIndex = channelIndex,
                                     packet = packet,
-                                    legacyChannelHmacKey = gatewayIdentityKeyProvider.legacyChannelHmacKey,
                                 )
                             }
                                 .getOrNull()

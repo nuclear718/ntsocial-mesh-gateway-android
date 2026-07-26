@@ -26,7 +26,8 @@ package com.ntsocial.meshlink.core.repository.usecase
 
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
-import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
@@ -45,6 +46,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
@@ -64,10 +66,6 @@ class SendMessageUseCaseTest {
     private lateinit var messageQueue: MessageQueue
     private lateinit var radioConfigRepository: RadioConfigRepository
     private lateinit var useCase: SendMessageUseCase
-    private val gatewayIdentityKeyProvider =
-        object : NtsocialGatewayIdentityKeyProvider {
-            override val legacyChannelHmacKey = ByteArray(32) { 9 }.toByteString()
-        }
 
     @BeforeTest
     fun setUp() {
@@ -87,7 +85,6 @@ class SendMessageUseCaseTest {
                 homoglyphEncodingPrefs = appPreferences.homoglyph,
                 messageQueue = messageQueue,
                 radioConfigRepository = radioConfigRepository,
-                gatewayIdentityKeyProvider = gatewayIdentityKeyProvider,
             )
     }
 
@@ -110,23 +107,26 @@ class SendMessageUseCaseTest {
     fun `id zero well known channel still persists and queues native outgoing text`() = runTest {
         nodeRepository.setOurNode(Node(num = 0x1234, user = User(id = DataPacket.ID_LOCAL)))
         var savedPacket: DataPacket? = null
-        var savedGatewayIdentity: Any? = null
+        var savedGatewayIdentity: NtsocialGatewayMessageIdentity? = null
         everySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any()) } calls
             { call ->
                 savedPacket = call.arg(2)
                 savedGatewayIdentity = call.arg(6)
             }
+        val channelSettings = ChannelSettings(name = "LongFast", psk = byteArrayOf(1).toByteString())
         every { radioConfigRepository.channelSetFlow } returns
-            MutableStateFlow(
-                ChannelSet(settings = listOf(ChannelSettings(name = "LongFast", psk = byteArrayOf(1).toByteString()))),
-            )
+            MutableStateFlow(ChannelSet(settings = listOf(channelSettings)))
 
         useCase("Hello LongFast", "0${DataPacket.ID_BROADCAST}", null)
 
         verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any()) }
         verifySuspend { messageQueue.enqueue(any()) }
         assertEquals("!00001234", savedPacket?.from)
-        assertNotNull(savedGatewayIdentity)
+        assertEquals(
+            NtsocialGatewayIdentity.channel(Channel(index = 0, role = Channel.Role.PRIMARY, settings = channelSettings))
+                .sourceChannelId,
+            assertNotNull(savedGatewayIdentity).sourceChannelId,
+        )
     }
 
     @Test

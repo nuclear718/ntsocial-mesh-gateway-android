@@ -58,9 +58,4 @@ class NtsocialGatewayProviderQueryTest {
                 }
             }
     }
-
-    @Test
-    fun `legacy scan budget is explicitly bounded`() {
-        assertEquals(1_000, MAX_GATEWAY_LEGACY_SCAN_ROWS)
-    }
 }

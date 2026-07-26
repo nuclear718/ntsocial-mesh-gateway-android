@@ -27,7 +27,8 @@ package com.ntsocial.meshlink.core.data.manager
 import com.ntsocial.meshlink.core.model.ContactSettings
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
-import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.MeshDataMapper
 import com.ntsocial.meshlink.core.repository.AdminPacketHandler
@@ -47,6 +48,7 @@ import com.ntsocial.meshlink.core.repository.StoreForwardPacketHandler
 import com.ntsocial.meshlink.core.repository.TelemetryPacketHandler
 import com.ntsocial.meshlink.core.repository.TracerouteHandler
 import dev.mokkery.MockMode
+import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
 import dev.mokkery.every
 import dev.mokkery.everySuspend
@@ -62,6 +64,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NeighborInfo
@@ -73,6 +77,7 @@ import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.User
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -96,11 +101,6 @@ class MeshDataHandlerTest {
     private val telemetryHandler: TelemetryPacketHandler = mock(MockMode.autofill)
     private val adminPacketHandler: AdminPacketHandler = mock(MockMode.autofill)
     private val ntsocialGatewayRepository: NtsocialGatewayRepository = mock(MockMode.autofill)
-    private val ntsocialGatewayIdentityKeyProvider =
-        object : NtsocialGatewayIdentityKeyProvider {
-            override val legacyChannelHmacKey = ByteArray(32) { 7 }.toByteString()
-        }
-
     private val testDispatcher = StandardTestDispatcher()
     private val testScope = TestScope(testDispatcher)
 
@@ -125,7 +125,6 @@ class MeshDataHandlerTest {
                 telemetryHandler = telemetryHandler,
                 adminPacketHandler = adminPacketHandler,
                 ntsocialGatewayRepository = ntsocialGatewayRepository,
-                ntsocialGatewayIdentityKeyProvider = ntsocialGatewayIdentityKeyProvider,
                 scope = testScope,
             )
 
@@ -554,10 +553,18 @@ class MeshDataHandlerTest {
                 bytes = "hello".encodeToByteArray().toByteString(),
                 dataType = PortNum.TEXT_MESSAGE_APP.value,
             )
+        val channelSettings = ChannelSettings(id = 77, name = "rescue", psk = ByteArray(32) { 3 }.toByteString())
+        var savedGatewayIdentity: NtsocialGatewayMessageIdentity? = null
         every { dataMapper.toDataPacket(packet) } returns dataPacket
         everySuspend { packetRepository.findPacketsWithId(42) } returns emptyList()
         everySuspend { packetRepository.getContactSettings(any()) } returns ContactSettings(contactKey = "test")
         every { messageFilter.shouldFilter(any(), any()) } returns false
+        every { radioConfigRepository.channelSetFlow } returns
+            MutableStateFlow(ChannelSet(settings = listOf(channelSettings)))
+        everySuspend { packetRepository.insert(any(), any(), any(), any(), any(), any(), any()) } calls
+            { call ->
+                savedGatewayIdentity = call.arg(6)
+            }
         // Provide sender node so getSenderName() doesn't fall back to getString (requires Skiko)
         every { nodeManager.nodeDBbyID } returns
             mapOf(
@@ -568,7 +575,16 @@ class MeshDataHandlerTest {
         handler.handleReceivedData(packet, 123)
         advanceUntilIdle()
 
-        verifySuspend { packetRepository.insert(any(), 123, any(), any(), any(), any()) }
+        verifySuspend { packetRepository.insert(any(), 123, any(), any(), any(), any(), any()) }
+        assertEquals(
+            NtsocialGatewayIdentity.nativeBroadcastText(
+                settings = channelSettings,
+                loraConfig = Config.LoRaConfig(),
+                channelIndex = 0,
+                packet = dataPacket,
+            ),
+            savedGatewayIdentity,
+        )
     }
 
     @Test

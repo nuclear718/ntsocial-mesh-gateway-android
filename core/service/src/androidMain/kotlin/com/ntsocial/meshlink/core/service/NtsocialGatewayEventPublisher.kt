@@ -28,7 +28,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.ntsocial.meshlink.core.gateway.NtsocialGatewayContract
-import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
 import com.ntsocial.meshlink.core.repository.NodeRepository
@@ -40,10 +39,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
@@ -113,10 +109,8 @@ internal constructor(
                 publishDataChanged(v2StatusUri)
             }
             .launchIn(scope)
-        radioConfigRepository.channelSetFlow
-            .map { channelSet -> channelSet.settings.indices.map { index -> "$index${DataPacket.ID_BROADCAST}" } }
-            .distinctUntilChanged()
-            .flatMapLatest(packetRepository::getGatewayHistoryState)
+        packetRepository
+            .getGatewayHistoryState(emptyList())
             .onEach { historyState ->
                 _historyState.value = historyState
                 publishDataChanged(v2MessageChangesUri, NtsocialGatewayContract.EVENT_MESSAGE_CHANGES_AVAILABLE)

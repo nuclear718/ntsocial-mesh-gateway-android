@@ -35,7 +35,6 @@ import com.ntsocial.meshlink.core.gateway.NtsocialGatewayContract
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
-import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
@@ -67,7 +66,6 @@ class NtsocialGatewayProvider :
     private val routeTokenStore: NtsocialGatewayRouteTokenStore by inject()
     private val serviceRepository: ServiceRepository by inject()
     private val nodeRepository: NodeRepository by inject()
-    private val identityKeyProvider: NtsocialGatewayIdentityKeyProvider by inject()
     private val cursorFactory by lazy {
         NtsocialGatewaySnapshotCursorFactory(
             gatewayRepository = gatewayRepository,
@@ -76,7 +74,6 @@ class NtsocialGatewayProvider :
             eventPublisher = eventPublisher,
             packetRepository = packetRepository,
             routeTokenStore = routeTokenStore,
-            identityKeyProvider = identityKeyProvider,
         )
     }
 
@@ -191,7 +188,6 @@ private class NtsocialGatewaySnapshotCursorFactory(
     private val eventPublisher: NtsocialGatewayEventPublisher,
     private val packetRepository: PacketRepository,
     private val routeTokenStore: NtsocialGatewayRouteTokenStore,
-    private val identityKeyProvider: NtsocialGatewayIdentityKeyProvider,
 ) {
     fun create(endpoint: GatewayEndpoint, projection: Array<String>?, caller: NtsocialGatewayCaller, uri: Uri): Cursor =
         when (endpoint) {
@@ -335,11 +331,7 @@ private class NtsocialGatewaySnapshotCursorFactory(
         channelSet.settings.forEachIndexed { index, settings ->
             val role = if (index == 0) Channel.Role.PRIMARY else Channel.Role.SECONDARY
             val identity =
-                NtsocialGatewayIdentity.channel(
-                    Channel(index = index, role = role, settings = settings),
-                    loraConfig,
-                    identityKeyProvider.legacyChannelHmacKey,
-                )
+                NtsocialGatewayIdentity.channel(Channel(index = index, role = role, settings = settings), loraConfig)
             val routeToken =
                 routeTokenStore.issue(
                     caller = caller,
@@ -373,47 +365,15 @@ private class NtsocialGatewaySnapshotCursorFactory(
     private fun v2MessageChangesCursor(projection: Array<String>?, uri: Uri): Cursor {
         val query = parseGatewayMessageChangesQuery(uri)
         val cursor = MatrixCursor(resolveProjection(projection, V2_MESSAGE_CHANGE_COLUMNS))
-        val channelSet = eventPublisher.channelSet.value
-        val loraConfig = channelSet.lora_config ?: Config.LoRaConfig()
-        gatewayMessageCandidates(query, channelSet.settings.indices)
+        runBlocking { packetRepository.getGatewayStableMessageChanges(after = query.after, limit = query.limit) }
             .asSequence()
-            .mapNotNull { change -> mapGatewayMessageChange(change, channelSet.settings, loraConfig) }
-            .take(query.limit)
+            .mapNotNull(::mapGatewayMessageChange)
             .forEach { mapped -> cursor.addGatewayMessageChange(mapped) }
         return cursor
     }
 
-    private fun gatewayMessageCandidates(
-        query: GatewayMessageChangesQuery,
-        channelIndices: IntRange,
-    ): List<NtsocialGatewayMessageChange> {
-        val legacyContactKeys = channelIndices.map { channelIndex -> "$channelIndex${DataPacket.ID_BROADCAST}" }
-        val boundedLegacyWindow =
-            if (legacyContactKeys.isEmpty()) {
-                emptyList()
-            } else {
-                runBlocking {
-                    packetRepository.getGatewayMessageChanges(
-                        after = query.after,
-                        limit = MAX_GATEWAY_LEGACY_SCAN_ROWS,
-                        legacyBroadcastContactKeys = legacyContactKeys,
-                    )
-                }
-            }
-        val stableWindow = runBlocking {
-            packetRepository.getGatewayStableMessageChanges(after = query.after, limit = query.limit)
-        }
-        return (boundedLegacyWindow + stableWindow)
-            .associateBy(NtsocialGatewayMessageChange::changeSeq)
-            .values
-            .sortedBy(NtsocialGatewayMessageChange::changeSeq)
-    }
-
-    private fun mapGatewayMessageChange(
-        change: NtsocialGatewayMessageChange,
-        settings: List<org.meshtastic.proto.ChannelSettings>,
-        loraConfig: Config.LoRaConfig,
-    ): MappedGatewayMessageChange? {
+    private fun mapGatewayMessageChange(change: NtsocialGatewayMessageChange): MappedGatewayMessageChange? {
+        val identity = change.identity ?: return null
         val packet = change.packet
         val fromNodeId =
             when (packet.from) {
@@ -423,22 +383,7 @@ private class NtsocialGatewaySnapshotCursorFactory(
                 else -> packet.from?.takeIf { it.isNotBlank() }
             }
         return fromNodeId?.let { normalizedFromNodeId ->
-            val normalizedPacket =
-                if (packet.from == normalizedFromNodeId) packet else packet.copy(from = normalizedFromNodeId)
-            val identity =
-                change.identity
-                    ?: settings.getOrNull(packet.channel)?.let { channelSettings ->
-                        NtsocialGatewayIdentity.nativeBroadcastText(
-                            settings = channelSettings,
-                            loraConfig = loraConfig,
-                            channelIndex = packet.channel,
-                            packet = normalizedPacket,
-                            legacyChannelHmacKey = identityKeyProvider.legacyChannelHmacKey,
-                        )
-                    }
-            identity?.let {
-                MappedGatewayMessageChange(change = change, identity = it, fromNodeId = normalizedFromNodeId)
-            }
+            MappedGatewayMessageChange(change = change, identity = identity, fromNodeId = normalizedFromNodeId)
         }
     }
 
@@ -661,7 +606,6 @@ private fun Boolean.asInt(): Int = if (this) 1 else 0
 private const val DEFAULT_MESSAGE_CHANGES_AFTER = 0L
 private const val DEFAULT_MESSAGE_CHANGES_LIMIT = 100
 private const val MAX_MESSAGE_CHANGES_LIMIT = 200
-internal const val MAX_GATEWAY_LEGACY_SCAN_ROWS = 1_000
 
 private fun ConnectionState.toStatusName(): String = when (this) {
     ConnectionState.Connected -> "CONNECTED"

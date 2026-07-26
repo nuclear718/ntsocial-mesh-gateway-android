@@ -31,11 +31,14 @@ import org.meshtastic.proto.Config.LoRaConfig
 import org.meshtastic.proto.Config.LoRaConfig.ModemPreset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
+import com.ntsocial.meshlink.core.model.Channel as ModelChannel
 
 class NtsocialGatewayIdentityTest {
     @Test
-    fun `fixed channel id survives rename and slot reorder`() {
+    fun `clear fixed channel id keeps its existing identity across rename and slot reorder`() {
         val first =
             NtsocialGatewayIdentity.channel(
                 Channel(
@@ -54,70 +57,118 @@ class NtsocialGatewayIdentityTest {
             )
 
         assertEquals(first.sourceChannelId, reordered.sourceChannelId)
+        assertEquals(
+            "meshtastic:1269c4dd268486fadee555a320f5148d6bdb0725dffcd6f3e7673c1c446df23f",
+            first.sourceChannelId,
+        )
+        assertEquals("CLEAR", first.securityClass)
         assertNotEquals(first.displayName, reordered.displayName)
     }
 
     @Test
-    fun `legacy zero id includes name and resolved key`() {
-        val psk = byteArrayOf(1).toByteString()
-        val alpha =
-            NtsocialGatewayIdentity.channel(Channel(settings = ChannelSettings(id = 0, name = "alpha", psk = psk)))
-        val beta =
-            NtsocialGatewayIdentity.channel(Channel(settings = ChannelSettings(id = 0, name = "beta", psk = psk)))
+    fun `encrypted channel identity depends only on resolved psk`() {
+        val psk = ByteArray(32) { 3 }.toByteString()
+        val primary =
+            NtsocialGatewayIdentity.channel(
+                Channel(
+                    index = 0,
+                    role = Channel.Role.PRIMARY,
+                    settings = ChannelSettings(id = 7, name = "rescue", psk = psk),
+                ),
+            )
+        val renamedAndReordered =
+            NtsocialGatewayIdentity.channel(
+                Channel(
+                    index = 5,
+                    role = Channel.Role.SECONDARY,
+                    settings = ChannelSettings(id = 99, name = "renamed", psk = psk),
+                ),
+            )
 
-        assertNotEquals(alpha.sourceChannelId, beta.sourceChannelId)
-        assertEquals("WELL_KNOWN", alpha.securityClass)
+        assertEquals(primary.sourceChannelId, renamedAndReordered.sourceChannelId)
+        assertEquals(
+            "meshtastic:c948852f19e8ccc0d59f71d94edc1fa02bdffc0a399a43dd447b5ac2d634fb4a",
+            primary.sourceChannelId,
+        )
+        assertEquals("CUSTOM", primary.securityClass)
+        assertTrue(primary.sourceChannelId.matches(Regex("meshtastic:[0-9a-f]{64}")))
+        assertFalse(primary.sourceChannelId == "meshtastic:${psk.hex()}")
     }
 
     @Test
-    fun `public zero id is cross install stable while custom zero id is install local`() {
-        val installA = ByteArray(32) { 1 }.toByteString()
-        val installB = ByteArray(32) { 2 }.toByteString()
-        val publicSettings = ChannelSettings(name = "LongFast", psk = byteArrayOf(1).toByteString())
-        val customSettings = ChannelSettings(name = "rescue", psk = ByteArray(32) { 3 }.toByteString())
+    fun `different resolved psks never alias even with the same numeric id`() {
+        val first =
+            NtsocialGatewayIdentity.channel(
+                Channel(settings = ChannelSettings(id = 7, name = "ops", psk = ByteArray(32) { 1 }.toByteString())),
+            )
+        val second =
+            NtsocialGatewayIdentity.channel(
+                Channel(settings = ChannelSettings(id = 7, name = "ops", psk = ByteArray(32) { 2 }.toByteString())),
+            )
 
-        val publicA =
-            NtsocialGatewayIdentity.channel(Channel(settings = publicSettings), legacyChannelHmacKey = installA)
-        val publicB =
-            NtsocialGatewayIdentity.channel(Channel(settings = publicSettings), legacyChannelHmacKey = installB)
-        val customA =
-            NtsocialGatewayIdentity.channel(Channel(settings = customSettings), legacyChannelHmacKey = installA)
-        val customARepeat =
-            NtsocialGatewayIdentity.channel(Channel(settings = customSettings), legacyChannelHmacKey = installA)
-        val customB =
-            NtsocialGatewayIdentity.channel(Channel(settings = customSettings), legacyChannelHmacKey = installB)
-
-        assertEquals(publicA.sourceChannelId, publicB.sourceChannelId)
-        assertEquals(customA.sourceChannelId, customARepeat.sourceChannelId)
-        assertNotEquals(customA.sourceChannelId, customB.sourceChannelId)
+        assertNotEquals(first.sourceChannelId, second.sourceChannelId)
     }
 
     @Test
-    fun `public zero id resolves blank default name and normalizes across installs`() {
-        val installA = ByteArray(32) { 1 }.toByteString()
-        val installB = ByteArray(32) { 2 }.toByteString()
-        val psk = byteArrayOf(1).toByteString()
+    fun `well known shorthand and expanded key share identity and classification`() {
+        (1..10).forEach { index ->
+            val shorthand = byteArrayOf(index.toByte()).toByteString()
+            val expanded = ModelChannel(ChannelSettings(psk = shorthand)).psk
+            val shorthandIdentity =
+                NtsocialGatewayIdentity.channel(
+                    Channel(settings = ChannelSettings(id = index, name = "simple$index", psk = shorthand)),
+                )
+            val expandedIdentity =
+                NtsocialGatewayIdentity.channel(
+                    Channel(settings = ChannelSettings(id = 100 + index, name = "renamed", psk = expanded)),
+                )
+
+            assertEquals(shorthandIdentity.sourceChannelId, expandedIdentity.sourceChannelId)
+            assertEquals("WELL_KNOWN", shorthandIdentity.securityClass)
+            assertEquals("WELL_KNOWN", expandedIdentity.securityClass)
+        }
+    }
+
+    @Test
+    fun `resolved psk classification distinguishes clear and custom keys`() {
+        val emptyClear = NtsocialGatewayIdentity.channel(Channel(settings = ChannelSettings(name = "clear")))
+        val shorthandClear =
+            NtsocialGatewayIdentity.channel(
+                Channel(settings = ChannelSettings(name = "clear", psk = byteArrayOf(0).toByteString())),
+            )
+        val custom =
+            NtsocialGatewayIdentity.channel(
+                Channel(settings = ChannelSettings(name = "custom", psk = ByteArray(16) { 42 }.toByteString())),
+            )
+        val invalidShorthand =
+            NtsocialGatewayIdentity.channel(
+                Channel(settings = ChannelSettings(name = "custom", psk = byteArrayOf(11).toByteString())),
+            )
+
+        assertEquals("CLEAR", emptyClear.securityClass)
+        assertEquals("CLEAR", shorthandClear.securityClass)
+        assertEquals("CUSTOM", custom.securityClass)
+        assertEquals("CUSTOM", invalidShorthand.securityClass)
+    }
+
+    @Test
+    fun `clear zero id keeps its existing resolved name fallback`() {
         val longFast = LoRaConfig(use_preset = true, modem_preset = ModemPreset.LONG_FAST)
         val blankName =
             NtsocialGatewayIdentity.channel(
-                Channel(settings = ChannelSettings(id = 0, name = "", psk = psk)),
+                Channel(settings = ChannelSettings(id = 0, name = "")),
                 loraConfig = longFast,
-                legacyChannelHmacKey = installA,
-            )
-        val explicitResolvedName =
-            NtsocialGatewayIdentity.channel(
-                Channel(settings = ChannelSettings(id = 0, name = "LongFast", psk = psk)),
-                loraConfig = longFast,
-                legacyChannelHmacKey = installB,
             )
         val normalizedName =
             NtsocialGatewayIdentity.channel(
-                Channel(settings = ChannelSettings(id = 0, name = " longfast ", psk = psk)),
+                Channel(settings = ChannelSettings(id = 0, name = " longfast ")),
                 loraConfig = longFast,
-                legacyChannelHmacKey = installB,
             )
 
-        assertEquals(blankName.sourceChannelId, explicitResolvedName.sourceChannelId)
         assertEquals(blankName.sourceChannelId, normalizedName.sourceChannelId)
+        assertEquals(
+            "meshtastic:a8b0dcf7f9b36ba34e75187fccb820dc8d2d6ec4939f63023ed83769fb07d4ea",
+            blankName.sourceChannelId,
+        )
     }
 }

@@ -34,7 +34,6 @@ import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Reaction
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
-import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentityKeyProvider
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.MeshDataMapper
 import com.ntsocial.meshlink.core.model.util.decodeOrNull
@@ -108,7 +107,6 @@ class MeshDataHandlerImpl(
     private val telemetryHandler: TelemetryPacketHandler,
     private val adminPacketHandler: AdminPacketHandler,
     private val ntsocialGatewayRepository: NtsocialGatewayRepository,
-    private val ntsocialGatewayIdentityKeyProvider: NtsocialGatewayIdentityKeyProvider,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshDataHandler {
 
@@ -396,8 +394,6 @@ class MeshDataHandlerImpl(
                                     channelSet.lora_config ?: org.meshtastic.proto.Config.LoRaConfig(),
                                     channelIndex = dataPacket.channel,
                                     packet = dataPacket,
-                                    legacyChannelHmacKey =
-                                    ntsocialGatewayIdentityKeyProvider.legacyChannelHmacKey,
                                 )
                             }
                                 .getOrNull()

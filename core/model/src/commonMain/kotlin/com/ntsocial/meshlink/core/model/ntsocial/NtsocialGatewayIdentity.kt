@@ -28,6 +28,7 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import okio.Buffer
 import okio.ByteString
 import okio.ByteString.Companion.encodeUtf8
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
@@ -56,58 +57,45 @@ data class NtsocialGatewayMessageChange(
 /** Atomic history cursor domain exposed by Gateway v2 status. */
 data class NtsocialGatewayHistoryState(val historyEpoch: String, val messageChangeSeq: Long)
 
-/** Install-local key used only to blind legacy channel identity material. */
-interface NtsocialGatewayIdentityKeyProvider {
-    val legacyChannelHmacKey: ByteString
-}
-
 /**
  * Domain-separated gateway identities.
  *
- * Zero-ID CLEAR/WELL_KNOWN settings use public material so separate installs converge. Only zero-ID CUSTOM settings
- * require an install-local HMAC key, preventing exported IDs from becoming offline PSK dictionary oracles.
+ * Encrypted channels use only a domain-separated SHA-256 digest of their resolved PSK. Meshtastic's one-byte well-known
+ * shorthand is expanded first, so shorthand and full-key forms converge while name, slot, role, and numeric channel ID
+ * changes cannot split or merge encrypted-channel history. CLEAR channels retain their existing deterministic
+ * identities.
  */
 object NtsocialGatewayIdentity {
     private const val CHANNEL_PREFIX = "meshtastic:"
     private const val SOURCE_MESSAGE_ID_HEX_LENGTH = 32
+    private const val MAX_WELL_KNOWN_PSK_INDEX = 10
+    private val WELL_KNOWN_PSKS =
+        (1..MAX_WELL_KNOWN_PSK_INDEX)
+            .map { index -> ModelChannel(ChannelSettings(psk = byteArrayOf(index.toByte()).toByteString())).psk }
+            .toSet()
 
-    fun channel(
-        channel: Channel,
-        loraConfig: Config.LoRaConfig = Config.LoRaConfig(),
-        legacyChannelHmacKey: ByteString? = null,
-    ): NtsocialGatewayChannelIdentity {
+    fun channel(channel: Channel, loraConfig: Config.LoRaConfig = Config.LoRaConfig()): NtsocialGatewayChannelIdentity {
         val settings = channel.settings ?: ChannelSettings()
         val model = ModelChannel(settings, loraConfig)
         val securityClass =
             when {
-                settings.psk.size == 0 || (settings.psk.size == 1 && settings.psk[0].toInt() == 0) -> "CLEAR"
-                settings.psk.size == 1 -> "WELL_KNOWN"
+                model.psk.size == 0 -> "CLEAR"
+                model.psk in WELL_KNOWN_PSKS -> "WELL_KNOWN"
                 else -> "CUSTOM"
             }
         val stableMaterial =
             when {
+                model.psk.size > 0 -> digest("ntsocial-gateway-channel-psk-v3".encodeUtf8(), model.psk)
+
                 settings.id != 0 ->
                     digest("ntsocial-gateway-channel-id-v2".encodeUtf8(), settings.id.toUInt().toString().encodeUtf8())
 
-                securityClass != "CUSTOM" ->
+                else ->
                     digest(
                         "ntsocial-gateway-channel-public-v2".encodeUtf8(),
                         canonicalPublicName(model.name).encodeUtf8(),
                         model.psk,
                     )
-
-                else -> {
-                    val key =
-                        requireNotNull(legacyChannelHmacKey?.takeIf { it.size >= MIN_LEGACY_HMAC_KEY_BYTES }) {
-                            "Custom legacy channel identity requires an install-local HMAC key"
-                        }
-                    framed(
-                        "ntsocial-gateway-channel-custom-v2".encodeUtf8(),
-                        canonicalPublicName(model.name).encodeUtf8(),
-                        model.psk,
-                    )
-                        .hmacSha256(key)
-                }
             }
         return NtsocialGatewayChannelIdentity(
             sourceChannelId = CHANNEL_PREFIX + stableMaterial.hex(),
@@ -150,7 +138,6 @@ object NtsocialGatewayIdentity {
         loraConfig: Config.LoRaConfig,
         channelIndex: Int,
         packet: DataPacket,
-        legacyChannelHmacKey: ByteString? = null,
     ): NtsocialGatewayMessageIdentity? = nativeBroadcastText(
         channel =
         channel(
@@ -160,7 +147,6 @@ object NtsocialGatewayIdentity {
                 settings = settings,
             ),
             loraConfig,
-            legacyChannelHmacKey,
         ),
         packet = packet,
     )
@@ -181,6 +167,4 @@ object NtsocialGatewayIdentity {
         }
         return buffer.readByteString()
     }
-
-    private const val MIN_LEGACY_HMAC_KEY_BYTES = 32
 }

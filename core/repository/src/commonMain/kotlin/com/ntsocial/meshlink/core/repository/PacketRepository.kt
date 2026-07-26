@@ -84,10 +84,16 @@ interface PacketRepository {
     /** Returns all packets currently queued for transmission. */
     suspend fun getQueuedPackets(): List<DataPacket>
 
-    /** Highest durable native-text sequence, including current configured legacy broadcast contacts. */
+    /**
+     * Highest durable native-text sequence. An empty [legacyBroadcastContactKeys] list counts only rows with a captured
+     * stable Gateway identity; non-empty keys additionally expose the internal best-effort legacy compatibility view.
+     */
     fun getGatewayMessageChangeSeq(legacyBroadcastContactKeys: List<String> = emptyList()): Flow<Long>
 
-    /** Atomic, durable history domain and high-water pair for the active per-radio database. */
+    /**
+     * Atomic, durable history domain and high-water pair for the active per-radio database. Gateway v2 passes an empty
+     * [legacyBroadcastContactKeys] list so its high-water matches the stable-only insertion cursor.
+     */
     fun getGatewayHistoryState(legacyBroadcastContactKeys: List<String>): Flow<NtsocialGatewayHistoryState>
 
     /** Returns a bounded page including captured rows and best-effort legacy rows on [legacyBroadcastContactKeys]. */

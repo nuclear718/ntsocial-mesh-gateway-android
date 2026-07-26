@@ -1,5 +1,30 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-26 - PSK-derived Gateway identity and stable-only history correction
+- Encrypted Meshtastic channels now derive `source_channel_id` from a domain-separated SHA-256 digest
+  of the resolved PSK only. Name, slot, role, numeric channel ID, and install state are excluded;
+  shorthand PSKs 1 through 10 converge with their expanded full keys.
+- `security_class` now follows the resolved PSK: empty is `CLEAR`, the ten expanded built-in keys are
+  `WELL_KNOWN`, and every other non-empty key is `CUSTOM`. Raw PSKs remain unexported.
+- CLEAR compatibility is retained byte-for-byte: nonzero IDs keep the v2 unsigned numeric-ID domain,
+  and zero-ID CLEAR channels keep the v2 canonical resolved-name plus empty-key domain.
+- Gateway v2 message history now exports only rows that captured stable identity at insertion, and
+  its status high-water uses that same stable-only predicate. Nullable upgraded rows remain in Room
+  for local compatibility but are never recomputed from a reused current slot, backfilled, or deleted.
+- Rows that already captured an older identity remain in their original partition; no alias or
+  rewrite is introduced. The obsolete install-local HMAC providers and Android/Desktop DI seams are
+  removed; any old private preference is inert.
+- Final low-parallel `spotlessApply spotlessCheck assembleDebug test allTests` passed in 8m33s;
+  `kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug` passed in 1m56s, and changed-module
+  Spotless/Detekt passed. Root Detekt still reports only the three documented pre-existing findings in
+  the unmodified JVM desktop BLE pairing service.
+
+## 2026-07-26 - Gateway v2 publication-state correction
+- Gateway v2/channel unification is no longer an uncommitted worktree: commit
+  `5fc0ae898b83bf0dace8dbec2162e23d1f923534` is present on `origin/main`.
+- Updated `AGENTS.md` to bind its current implementation and validation claims to that published
+  commit. Any older same-day handover wording that calls this work uncommitted is superseded.
+
 ## 2026-07-26 - Gateway v2 and parent channel-unification contracts reconciled
 - Re-audited the current uncommitted Gateway v2 worktree at base `ee6059281` together with the parent
   `NTsocial_release` channel-unification implementation. Updated both repositories' `AGENTS.md` files
