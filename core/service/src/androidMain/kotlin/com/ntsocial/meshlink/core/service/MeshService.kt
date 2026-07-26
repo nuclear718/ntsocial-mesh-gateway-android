@@ -55,6 +55,8 @@ import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.meshtastic.proto.PortNum
 
@@ -98,6 +100,7 @@ class MeshService : Service() {
     private val serviceScope by lazy { CoroutineScope(dispatchers.io + serviceJob) }
 
     private var isServiceInitialized = false
+    private var pendingDeviceSelectionStopJob: Job? = null
 
     private val myNodeNum: Int
         get() = nodeManager.myNodeNum.value ?: throw RadioNotConnectedException()
@@ -150,8 +153,7 @@ class MeshService : Service() {
             return START_NOT_STICKY
         }
 
-        val a = radioInterfaceService.getDeviceAddress()
-        val wantForeground = a != null && a != "n"
+        val deviceAddress = radioInterfaceService.getDeviceAddress()
 
         connectionManager.updateStatusNotification()
         val notification = androidNotifications.getServiceNotification()
@@ -169,14 +171,26 @@ class MeshService : Service() {
 
         startForegroundSafely(notification, foregroundServiceType)
 
-        return if (!wantForeground) {
-            Logger.i { "Stopping mesh service because no device is selected" }
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            START_NOT_STICKY
-        } else {
-            START_STICKY
+        pendingDeviceSelectionStopJob?.cancel()
+        pendingDeviceSelectionStopJob = null
+        if (
+            meshServiceStartupDecision(deviceAddress, graceElapsed = false) == MeshServiceStartupDecision.AWAIT_DEVICE
+        ) {
+            Logger.i { "Mesh service is awaiting persisted device selection before deciding whether to stop" }
+            pendingDeviceSelectionStopJob =
+                serviceScope.launch {
+                    delay(DEVICE_SELECTION_STARTUP_GRACE_MS)
+                    if (
+                        meshServiceStartupDecision(radioInterfaceService.getDeviceAddress(), graceElapsed = true) ==
+                        MeshServiceStartupDecision.STOP
+                    ) {
+                        Logger.i { "Stopping mesh service because no device was selected after startup grace" }
+                        ServiceCompat.stopForeground(this@MeshService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                        stopSelf(startId)
+                    }
+                }
         }
+        return START_STICKY
     }
 
     private fun startForegroundSafely(notification: android.app.Notification, foregroundServiceType: Int) {
@@ -222,6 +236,8 @@ class MeshService : Service() {
 
     override fun onDestroy() {
         Logger.i { "Destroying mesh service" }
+        pendingDeviceSelectionStopJob?.cancel()
+        pendingDeviceSelectionStopJob = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         if (isServiceInitialized) {
             orchestrator.stop()
@@ -411,3 +427,20 @@ class MeshService : Service() {
                 }
         }
 }
+
+internal enum class MeshServiceStartupDecision {
+    KEEP_RUNNING,
+    AWAIT_DEVICE,
+    STOP,
+}
+
+internal fun meshServiceStartupDecision(deviceAddress: String?, graceElapsed: Boolean): MeshServiceStartupDecision {
+    val hasSelectedDevice = !deviceAddress.isNullOrBlank() && !deviceAddress.equals("n", ignoreCase = true)
+    return when {
+        hasSelectedDevice -> MeshServiceStartupDecision.KEEP_RUNNING
+        graceElapsed -> MeshServiceStartupDecision.STOP
+        else -> MeshServiceStartupDecision.AWAIT_DEVICE
+    }
+}
+
+private const val DEVICE_SELECTION_STARTUP_GRACE_MS = 15_000L

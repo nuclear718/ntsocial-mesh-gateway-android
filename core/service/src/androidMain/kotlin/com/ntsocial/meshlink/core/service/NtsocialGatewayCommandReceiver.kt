@@ -28,6 +28,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.gateway.NtsocialGatewayContract
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
@@ -61,19 +62,28 @@ class NtsocialGatewayCommandReceiver :
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != NtsocialGatewayContract.ACTION_COMMAND) return
 
+        val broadcastSender = trustedBroadcastSenderOrNull()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            Logger.i {
+                "ntsocial_gateway_tx stage=received senderUid=${getSentFromUid()} " +
+                    "senderPackage=${getSentFromPackage() ?: "none"} trusted=${broadcastSender != null}"
+            }
+        } else {
+            Logger.i { "ntsocial_gateway_tx stage=received senderIdentity=capability_only" }
+        }
         val pendingResult = goAsync()
         scope.launch {
             try {
-                processCommand(intent)
+                processCommand(intent, broadcastSender)
             } finally {
                 pendingResult.finish()
             }
         }
     }
 
-    private fun processCommand(intent: Intent) {
+    private fun processCommand(intent: Intent, broadcastSender: NtsocialGatewayCaller?) {
         commandRequestOrNull(intent)?.let { request ->
-            authorizedCallerOrNull(request)?.let { caller ->
+            authorizedCallerOrNull(request, broadcastSender)?.let { caller ->
                 canonicalChannelIndexOrNull(caller, request)?.let { channelIndex ->
                     outboundCommandOrNull(caller, request)?.let { command ->
                         dispatchCommand(caller, request.requestId, channelIndex, command)
@@ -105,20 +115,23 @@ class NtsocialGatewayCommandReceiver :
         }
     }
 
-    private fun authorizedCallerOrNull(request: CommandRequest): NtsocialGatewayCaller? {
-        val sender = trustedBroadcastSenderOrNull()
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && sender == null) {
-            null
-        } else {
-            capabilityStore.consume(
-                request.authorizationToken,
-                request.requestId,
-                sender?.uid,
-            )?.takeIf { capabilityCaller ->
-                sender == null || sender == capabilityCaller
-            }
+    private fun authorizedCallerOrNull(
+        request: CommandRequest,
+        broadcastSender: NtsocialGatewayCaller?,
+    ): NtsocialGatewayCaller? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && broadcastSender == null) {
+            Logger.w { "ntsocial_gateway_tx stage=authorization result=rejected reason=sender_untrusted" }
+            return null
         }
+
+        val capabilityCaller =
+            capabilityStore.consume(request.authorizationToken, request.requestId, broadcastSender?.uid)
+        val authorized = capabilityCaller?.takeIf { broadcastSender == null || broadcastSender == it }
+        Logger.i {
+            "ntsocial_gateway_tx stage=authorization result=${if (authorized == null) "rejected" else "accepted"} " +
+                "senderUid=${broadcastSender?.uid ?: -1} capabilityUid=${capabilityCaller?.uid ?: -1}"
+        }
+        return authorized
     }
 
     private fun canonicalChannelIndexOrNull(caller: NtsocialGatewayCaller, request: CommandRequest): Int? {
@@ -173,6 +186,10 @@ class NtsocialGatewayCommandReceiver :
         command: OutboundCommand,
     ) {
         try {
+            Logger.i {
+                "ntsocial_gateway_tx stage=dispatch requestId=$requestId caller=${caller.packageName} " +
+                    "channelIndex=$channelIndex bytes=${command.rawEnvelope.size} wantAck=${command.wantAck}"
+            }
             val queued =
                 gatewayRepository.sendRawEnvelope(
                     rawEnvelope = command.rawEnvelope,
@@ -181,13 +198,19 @@ class NtsocialGatewayCommandReceiver :
                     hopLimit = command.hopLimit,
                     wantAck = command.wantAck,
                 )
+            Logger.i {
+                "ntsocial_gateway_tx stage=accepted requestId=$requestId packetId=${queued.packetId} " +
+                    "channelIndex=$channelIndex"
+            }
             eventPublisher.publishCommandAccepted(caller.packageName, requestId, queued.packetId)
         } catch (_: IllegalArgumentException) {
+            Logger.w { "ntsocial_gateway_tx stage=rejected requestId=$requestId reason=$REASON_INVALID_ENVELOPE" }
             reject(caller, requestId, REASON_INVALID_ENVELOPE)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             // Do not log raw payloads, destinations, credentials, or packet contents from an external caller.
+            Logger.w { "ntsocial_gateway_tx stage=rejected requestId=$requestId reason=$REASON_QUEUE_FAILED" }
             reject(caller, requestId, REASON_QUEUE_FAILED)
         }
     }

@@ -32,6 +32,7 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MeshLog
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.RadioNotConnectedException
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.toOneLineString
 import com.ntsocial.meshlink.core.repository.MeshLogRepository
 import com.ntsocial.meshlink.core.repository.PacketHandler
@@ -136,7 +137,14 @@ class PacketHandlerImpl(
     override fun sendToRadio(packet: MeshPacket) {
         // Non-suspend entry point — order-preserving via unbounded channel drained by
         // a single consumer coroutine. trySend on UNLIMITED never fails for capacity.
-        outboundChannel.trySend(packet)
+        val enqueueResult = outboundChannel.trySend(packet)
+        if (packet.decoded?.portnum?.value == NtsocialTransport.PRIVATE_APP_PORT_NUM) {
+            Logger.i {
+                "ntsocial_gateway_tx stage=packet_handler_enqueue packetId=${packet.id} " +
+                    "channelIndex=${packet.channel} connectionState=${serviceRepository.connectionState.value} " +
+                    "accepted=${enqueueResult.isSuccess}"
+            }
+        }
     }
 
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
@@ -215,6 +223,13 @@ class PacketHandlerImpl(
                 try {
                     while (serviceRepository.connectionState.value == ConnectionState.Connected) {
                         val packet = queueMutex.withLock { queuedPackets.removeFirstOrNull() } ?: break
+                        if (packet.decoded?.portnum?.value == NtsocialTransport.PRIVATE_APP_PORT_NUM) {
+                            Logger.i {
+                                "ntsocial_gateway_tx stage=packet_queue_dequeue packetId=${packet.id} " +
+                                    "channelIndex=${packet.channel} " +
+                                    "connectionState=${serviceRepository.connectionState.value}"
+                            }
+                        }
                         @Suppress("TooGenericExceptionCaught", "SwallowedException")
                         try {
                             val response = sendPacket(packet)
@@ -275,6 +290,12 @@ class PacketHandlerImpl(
         try {
             if (serviceRepository.connectionState.value != ConnectionState.Connected) {
                 throw RadioNotConnectedException()
+            }
+            if (packet.decoded?.portnum?.value == NtsocialTransport.PRIVATE_APP_PORT_NUM) {
+                Logger.i {
+                    "ntsocial_gateway_tx stage=to_radio packetId=${packet.id} channelIndex=${packet.channel} " +
+                        "bytes=${packet.decoded?.payload?.size ?: 0}"
+                }
             }
             sendToRadio(ToRadio(packet = packet))
         } catch (ex: RadioNotConnectedException) {

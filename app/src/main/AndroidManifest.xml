@@ -41,10 +41,10 @@
         android:protectionLevel="signature" />
 
     <!--
-      Android 12+ can grant these to the released NTsocial signer using knownSigner. API 26-30 cannot express that
-      cross-signer grant, so the exported Provider and command receiver additionally enforce a UID/package/certificate
-      allow-list in-process. Do not attach these permissions as a manifest component gate: that would reject the
-      intended F-Droid/release pairing before the compatibility verifier can run.
+      Android 12+ can grant these to the approved NTsocial release and team-debug signers using knownSigner. API 26-30
+      cannot express that cross-signer grant, so the exported Provider and command receiver additionally enforce a
+      UID/package/certificate allow-list in-process. Do not attach these permissions as a manifest component gate:
+      that would reject an intended debug/release pairing before the compatibility verifier can run.
     -->
     <permission
         android:name="com.ntsocial.meshlink.permission.ACCESS_NTSOCIAL_GATEWAY"

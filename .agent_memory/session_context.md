@@ -1,5 +1,34 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-26 - NTsocial cross-signer Gateway IPC and four-device FB27 field validation
+- Expanded the Gateway trust boundary so MeshLink release/debug builds accept only the pinned NTsocial release
+  (`com.ntsocial.android`, signer `29EF...646`) and team-debug (`com.ntsocial.android.debug`, signer `C67E...D61`)
+  identities. Provider/command Receiver authorization is enforced in-process by package ownership, UID, and signing
+  certificate; manifest component permission gates no longer prevent intended debug/release cross-pairing.
+- Fixed Android 14+ command delivery with sender identity sharing in the parent app. In MeshLink, the trusted broadcast
+  caller is now captured synchronously during `onReceive()` and passed into async work; reading
+  `getSentFromUid()`/`getSentFromPackage()` after `onReceive()` had returned produced a false `sender_untrusted`.
+- Added payload-free `ntsocial_gateway_tx` stages from Receiver authorization through `CommandSender`, packet queue,
+  and `to_radio`. Device evidence showed `received -> authorization accepted -> dispatch -> enqueue -> dequeue ->
+  to_radio`, followed by an actual BLE write to each Meshtastic node. No message text, PSK, capability token, or raw
+  payload is logged.
+- Fixed `MeshService` startup so a persisted selected device gets a bounded 15-second preference-load grace instead of
+  losing started-service ownership. Both S24 MeshLink processes remained connected to their existing nodes while the
+  parent NTsocial app was foregrounded.
+- Installed the same final Google debug ARM64 APK on SM-S9080, two SM-S9280 devices, and OPPO CPH2695. Installed
+  `base.apk` SHA-256 was identical on all four:
+  `3C6B1330BFD22D65F0200B2D60B6A31C370208F1150407AFB0F6EA96D72C6E58`.
+- Both S24 devices retained their dedicated Meshtastic BLE nodes. All four phones joined NTsocial channel
+  `F44571CB-E21E-523F-BA13-126DA61EFB27`; a four-device canonical-history observation converged within 940 ms of the
+  sender's canonical append.
+- Validation passed for `spotlessApply`, `:core:data:allTests`, `:core:service:testAndroidHostTest`,
+  `:app:assembleGoogleDebug`, and `:app:verifyGoogleDebugNoCloudRuntimeComponents`; the final sender-capture change was
+  followed by a successful `spotlessApply :app:assembleGoogleDebug --parallel`. The broader combined baseline still
+  has unrelated existing detekt debt in `JvmDesktopBluetoothPairingService.kt` and `BleRadioTransport.kt`.
+- Scope boundary: Gateway IPC and radio TX/ToRadio are hardware-verified, but the Ping run did not produce an NTsocial
+  `viaLoRa=true` ingress. Do not claim pure LoRa receiver E2E from these artifacts. The full field report is
+  `C:\Users\cth\Documents\GitHub\NTsocial_release\docs\meshlink_interop_field_report_2026-07-26.md`.
+
 ## 2026-07-23 - NTsocial butterfly foreground-service notification branding
 - Replaced the remaining Meshtastic mountain notification small-icon resource with a dedicated 24dp NTsocial
   butterfly vector. The simplified segmented-wing silhouette is derived from the established NTsocial butterfly

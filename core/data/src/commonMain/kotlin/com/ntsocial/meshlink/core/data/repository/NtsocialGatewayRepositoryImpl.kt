@@ -26,6 +26,7 @@
 
 package com.ntsocial.meshlink.core.data.repository
 
+import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
@@ -134,7 +135,14 @@ class NtsocialGatewayRepositoryImpl(
                 hopLimit = hopLimit,
                 wantAck = wantAck,
             )
+        Logger.i {
+            "ntsocial_gateway_tx stage=data_packet packetId=${dataPacket.id} channelIndex=${dataPacket.channel} " +
+                "port=${dataPacket.dataType} bytes=${rawEnvelope.size} wantAck=$wantAck"
+        }
         commandSender.sendData(dataPacket)
+        Logger.i {
+            "ntsocial_gateway_tx stage=command_sender_return packetId=${dataPacket.id} status=${dataPacket.status}"
+        }
 
         return NtsocialCachedEnvelope(
             direction = NtsocialEnvelopeDirection.OUTBOUND,

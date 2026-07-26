@@ -30,18 +30,45 @@ import kotlin.test.assertTrue
 
 class NtsocialGatewayCallerVerifierTest {
     @Test
-    fun `debug caller is accepted only when a host signer matches`() {
-        assertTrue(
-            signerDigestsMatch(
-                trustedDigests = setOf("HOST_SIGNER", "ROTATED_HOST_SIGNER"),
-                callerDigests = setOf("HOST_SIGNER"),
-            ),
-        )
+    fun `debug and release clients are accepted by either MeshLink build type`() {
+        listOf("debug", "release").forEach { meshLinkBuildType ->
+            assertTrue(
+                NtsocialGatewayClientTrust.isTrusted(
+                    NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                    setOf(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+                ),
+                meshLinkBuildType,
+            )
+            assertTrue(
+                NtsocialGatewayClientTrust.isTrusted(
+                    NtsocialGatewayClientTrust.RELEASE_PACKAGE,
+                    setOf(NtsocialGatewayClientTrust.RELEASE_CERTIFICATE_SHA256),
+                ),
+                meshLinkBuildType,
+            )
+        }
     }
 
     @Test
-    fun `debug caller rejects different or missing host signers`() {
-        assertFalse(signerDigestsMatch(trustedDigests = setOf("HOST_SIGNER"), callerDigests = setOf("OTHER_SIGNER")))
-        assertFalse(signerDigestsMatch(trustedDigests = emptySet(), callerDigests = setOf("HOST_SIGNER")))
+    fun `package and signer must match the same approved client identity`() {
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                setOf(NtsocialGatewayClientTrust.RELEASE_CERTIFICATE_SHA256),
+            ),
+        )
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.RELEASE_PACKAGE,
+                setOf(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+            ),
+        )
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                "com.example.fake.ntsocial",
+                setOf(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+            ),
+        )
+        assertFalse(NtsocialGatewayClientTrust.isTrusted(NtsocialGatewayClientTrust.DEBUG_PACKAGE, emptySet()))
     }
 }

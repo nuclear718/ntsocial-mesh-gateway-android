@@ -291,6 +291,10 @@ installed variants on a device:
 - After changing native dependencies, verify the target APK with `zipalign -c -P 16` and audit all
   packaged arm64 ELF `PT_LOAD` alignments.
 
+Both MeshLink build types may interoperate with the exact NTsocial debug and release packages only
+when their package-specific stable team-debug or approved release signer is pinned. Keep private
+keys outside the repository and preserve Provider capability plus sender verification.
+
 ## Deeper Guidance
 
 Consult `.skills/` for detailed playbooks:

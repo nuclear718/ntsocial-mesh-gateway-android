@@ -30,6 +30,7 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Position
 import com.ntsocial.meshlink.core.model.TelemetryType
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.isWithinSizeLimit
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.NeighborInfoHandler
@@ -139,6 +140,12 @@ class CommandSenderImpl(
         if (p.id == 0) p.id = generatePacketId()
         val bytes = p.bytes ?: ByteString.EMPTY
         require(p.dataType != 0) { "Port numbers must be non-zero!" }
+        if (p.dataType == NtsocialTransport.PRIVATE_APP_PORT_NUM) {
+            Logger.i {
+                "ntsocial_gateway_tx stage=command_sender packetId=${p.id} channelIndex=${p.channel} " +
+                    "port=${p.dataType} bytes=${bytes.size} wantAck=${p.wantAck}"
+            }
+        }
 
         // Use Wire extension for accurate size validation
         val data =
@@ -176,6 +183,12 @@ class CommandSenderImpl(
                     emoji = p.emoji,
                 ),
             )
+        if (p.dataType == NtsocialTransport.PRIVATE_APP_PORT_NUM) {
+            Logger.i {
+                "ntsocial_gateway_tx stage=mesh_packet packetId=${meshPacket.id} channelIndex=${meshPacket.channel} " +
+                    "port=${p.dataType} hopLimit=${meshPacket.hop_limit}"
+            }
+        }
         p.time = nowMillis
         packetHandler.sendToRadio(meshPacket)
     }

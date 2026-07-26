@@ -3,5 +3,6 @@
 <resources>
     <string-array name="ntsocial_gateway_known_signers">
         <item>29EF6EF5F0BE97EF1B8F2B405CEE99643FECFF11B71AC3B54D637EE01D0AE646</item>
+        <item>C67E44DEE96374FC9E44FCE30B97CEA190FCD3124B266E05D0A9944D4E74FD61</item>
     </string-array>
 </resources>

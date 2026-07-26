@@ -25,7 +25,6 @@
 package com.ntsocial.meshlink.core.service
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
@@ -35,6 +34,30 @@ import java.security.MessageDigest
 
 /** A caller whose UID, package ownership, and signing certificate have all been verified. */
 internal data class NtsocialGatewayCaller(val uid: Int, val packageName: String)
+
+/**
+ * Exact NTsocial client package and signer allow-list shared by debug and release MeshLink builds.
+ *
+ * The private signing keys remain outside this repository. Keeping package and certificate checks independent from the
+ * MeshLink host build type allows controlled debug/release cross-testing without accepting arbitrary locally signed
+ * applications.
+ */
+internal object NtsocialGatewayClientTrust {
+    const val RELEASE_PACKAGE = "com.ntsocial.android"
+    const val DEBUG_PACKAGE = "com.ntsocial.android.debug"
+
+    const val RELEASE_CERTIFICATE_SHA256 = "29EF6EF5F0BE97EF1B8F2B405CEE99643FECFF11B71AC3B54D637EE01D0AE646"
+    const val TEAM_DEBUG_CERTIFICATE_SHA256 = "C67E44DEE96374FC9E44FCE30B97CEA190FCD3124B266E05D0A9944D4E74FD61"
+
+    private val allowedSigners =
+        mapOf(
+            RELEASE_PACKAGE to setOf(RELEASE_CERTIFICATE_SHA256),
+            DEBUG_PACKAGE to setOf(TEAM_DEBUG_CERTIFICATE_SHA256),
+        )
+
+    fun isTrusted(packageName: String, signerDigests: Set<String>): Boolean =
+        allowedSigners[packageName]?.let { approved -> signerDigests.any(approved::contains) } ?: false
+}
 
 /**
  * Certificate-pinned caller authorization for the external NTsocial application.
@@ -63,26 +86,16 @@ internal class NtsocialGatewayCallerVerifier(private val context: Context) {
 
     /** Returns installed allowed client packages for explicit, metadata-only event delivery. */
     fun installedTrustedClientPackages(): Set<String> = buildSet {
-        if (isTrustedPackage(RELEASE_PACKAGE)) add(RELEASE_PACKAGE)
-        if (isDebugHost && isTrustedPackage(DEBUG_PACKAGE)) add(DEBUG_PACKAGE)
+        if (isTrustedPackage(NtsocialGatewayClientTrust.RELEASE_PACKAGE)) {
+            add(NtsocialGatewayClientTrust.RELEASE_PACKAGE)
+        }
+        if (isTrustedPackage(NtsocialGatewayClientTrust.DEBUG_PACKAGE)) {
+            add(NtsocialGatewayClientTrust.DEBUG_PACKAGE)
+        }
     }
 
-    private val isDebugHost: Boolean
-        get() = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-
-    private fun isTrustedPackage(packageName: String): Boolean = when (packageName) {
-        RELEASE_PACKAGE -> hasCertificate(packageName, RELEASE_CERTIFICATE_SHA256)
-        DEBUG_PACKAGE -> isDebugHost && hasMatchingHostCertificate(packageName)
-        else -> false
-    }
-
-    private fun hasCertificate(packageName: String, expectedDigest: String): Boolean =
-        expectedDigest in signingCertificateDigests(packageName)
-
-    private fun hasMatchingHostCertificate(packageName: String): Boolean = signerDigestsMatch(
-        trustedDigests = signingCertificateDigests(context.packageName),
-        callerDigests = signingCertificateDigests(packageName),
-    )
+    private fun isTrustedPackage(packageName: String): Boolean =
+        NtsocialGatewayClientTrust.isTrusted(packageName, signingCertificateDigests(packageName))
 
     @Suppress("DEPRECATION")
     private fun signingCertificateDigests(packageName: String): Set<String> = try {
@@ -105,7 +118,16 @@ internal class NtsocialGatewayCallerVerifier(private val context: Context) {
     @Suppress("DEPRECATION")
     private fun PackageInfo.signingCertificateBytes(): List<ByteArray> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            signingInfo?.apkContentsSigners?.map { it.toByteArray() }.orEmpty()
+            signingInfo
+                ?.let { info ->
+                    if (info.hasMultipleSigners()) {
+                        info.apkContentsSigners
+                    } else {
+                        info.signingCertificateHistory
+                    }
+                }
+                ?.map { it.toByteArray() }
+                .orEmpty()
         } else {
             signatures?.map { it.toByteArray() }.orEmpty()
         }
@@ -119,11 +141,6 @@ internal class NtsocialGatewayCallerVerifier(private val context: Context) {
     }
 
     private companion object {
-        const val RELEASE_PACKAGE = "com.ntsocial.android"
-        const val RELEASE_CERTIFICATE_SHA256 = "29EF6EF5F0BE97EF1B8F2B405CEE99643FECFF11B71AC3B54D637EE01D0AE646"
-
-        const val DEBUG_PACKAGE = "com.ntsocial.android.debug"
-
         const val BYTE_MASK = 0xFF
         const val NIBBLE_BITS = 4
         const val NIBBLE_MASK = 0x0F
@@ -131,6 +148,3 @@ internal class NtsocialGatewayCallerVerifier(private val context: Context) {
         const val HEX_DIGITS = "0123456789ABCDEF"
     }
 }
-
-internal fun signerDigestsMatch(trustedDigests: Set<String>, callerDigests: Set<String>): Boolean =
-    trustedDigests.isNotEmpty() && callerDigests.any(trustedDigests::contains)
