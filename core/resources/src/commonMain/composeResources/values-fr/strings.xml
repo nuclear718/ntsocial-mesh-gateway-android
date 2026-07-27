@@ -86,7 +86,6 @@
     <string name="any">N'importe laquelle</string>
     <string name="app_notifications">Notifications de l’application</string>
     <string name="app_settings">App</string>
-    <string name="app_too_old">Mise à jour de l’application requise</string>
     <string name="app_version">Version</string>
     <string name="apply">Appliquer</string>
     <string name="are_you_sure">Êtes-vous sûr ?</string>
@@ -722,7 +721,6 @@
     <string name="mqtt_status_reconnecting_with_attempt">Reconnexion (tentative %1$d) — %2$s</string>
     <string name="mqtt_test_connection">Test de la connexion</string>
     <string name="must_set_region">Vous devez définir une région !</string>
-    <string name="must_update">Vous devez mettre à jour cette application sur l'app store (ou Github). Il est trop vieux pour dialoguer avec le micrologiciel de la radio. Veuillez lire nos  <a href="https://meshtastic.org/docs/software/android/installation"> docs</a> sur ce sujet.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 semaine</string>
     <string name="mute_8_hours">8 heures</string>

@@ -34,7 +34,6 @@
     <!-- AIR -->
     <string name="air_util_definition">Céatadán de na hamaitear úsáideach atá in úsáid laistigh de uair an chloig atá caite.</string>
     <!-- ALERT -->
-    <string name="app_too_old">Nuashonrú feidhmchláir riachtanach</string>
     <string name="apply">Cuir i bhfeidhm</string>
     <string name="are_you_sure_change_default">An bhfuil tú cinnte gur mhaith leat an cainéal réamhshocraithe a athrú?</string>
     <string name="bad">Go dona</string>
@@ -147,7 +146,6 @@
     <!-- MQTT -->
     <string name="mqtt_status_disconnected">Na ceangailte</string>
     <string name="must_set_region">Caithfidh tú réigiún a shocrú!</string>
-    <string name="must_update">Caithfidh tú an feidhmchlár seo a nuashonrú ón siopa feidhmchláir (nó Github). Tá sé ró-aois chun cumarsáid a dhéanamh leis an firmware raidió seo. Le do thoil, léigh ár <a href="https://meshtastic.org/docs/software/android/installation">doiciméid</a> ar an ábhar seo.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 seachtain</string>
     <string name="mute_8_hours">8 uair an chloig</string>

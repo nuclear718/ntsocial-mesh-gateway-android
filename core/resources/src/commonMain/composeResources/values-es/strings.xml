@@ -68,7 +68,6 @@
     <string name="analytics_okay">Permitir analíticas y reporte de errores.</string>
     <string name="any">Cualquiera</string>
     <string name="app_notifications">Notificaciones de la app</string>
-    <string name="app_too_old">Es necesario actualizar la aplicación</string>
     <string name="app_version">Versión</string>
     <string name="apply">Aplique</string>
     <string name="are_you_sure">¿Estás seguro?</string>
@@ -503,7 +502,6 @@ Estos datos de ubicación pueden ser utilizados para fines como aparecer en un m
     <string name="mqtt_status_connected">Conectado</string>
     <string name="mqtt_status_disconnected">Desconectado</string>
     <string name="must_set_region">¡Debe establecer una región!</string>
-    <string name="must_update">Debe actualizar esta aplicación en la tienda de aplicaciones (o en Github). Es demasiado vieja para comunicarse con este firmware de radio. Por favor, lea nuestra <a href="https://meshtastic.org/docs/software/android/installation">documentación</a> sobre este tema.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 semana</string>
     <string name="mute_8_hours">8 horas</string>

@@ -69,7 +69,6 @@
     <string name="any">Valfri</string>
     <string name="app_notifications">Appens aviseringar</string>
     <string name="app_settings">App</string>
-    <string name="app_too_old">Applikationen måste uppgraderas</string>
     <string name="app_version">Version</string>
     <string name="apply">Verkställ</string>
     <string name="are_you_sure">Är du säker?</string>
@@ -572,7 +571,6 @@
     <string name="mqtt_status_disconnected">Frånkopplad</string>
     <string name="mqtt_test_connection">Testa anslutningen</string>
     <string name="must_set_region">Du måste ställa in en region!</string>
-    <string name="must_update">Du måste uppdatera detta program i app-butiken (eller Github). Det är för gammalt för att prata med denna radioenhet. Läs vår <a href="https://meshtastic.org/docs/software/android/installation">dokumentation</a> i detta ämne.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 vecka</string>
     <string name="mute_8_hours">8 timmar</string>

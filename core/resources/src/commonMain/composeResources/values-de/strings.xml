@@ -86,7 +86,6 @@
     <string name="any">Beliebig</string>
     <string name="app_notifications">App-Benachrichtigungen</string>
     <string name="app_settings">Anwendung</string>
-    <string name="app_too_old">Anwendungsaktualisierung erforderlich</string>
     <string name="app_version">Version</string>
     <string name="apply">Anwenden</string>
     <string name="are_you_sure">Sind Sie sicher?</string>
@@ -726,7 +725,6 @@
     <string name="mqtt_status_reconnecting_with_attempt">Erneut verbinden (Versuch %1$d) - %2$s</string>
     <string name="mqtt_test_connection">Verbindung testen</string>
     <string name="must_set_region">Sie müssen eine Region festlegen!</string>
-    <string name="must_update">Sie müssen diese App über den App Store (oder Github) aktualisieren. Sie ist zu alt, um mit dieser Funkgeräte Firmware zu kommunizieren. Bitte lesen Sie unsere  <a href="https://meshtastic.org/docs/software/android/installation">Dokumentation</a> zu diesem Thema.</string>
     <!-- MUTE -->
     <string name="mute_1_week">Eine Woche</string>
     <string name="mute_8_hours">8 Stunden</string>

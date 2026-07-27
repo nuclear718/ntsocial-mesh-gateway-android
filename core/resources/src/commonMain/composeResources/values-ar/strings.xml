@@ -32,7 +32,6 @@
     <string name="administration">الإدارة</string>
     <!-- AIR -->
     <!-- ALERT -->
-    <string name="app_too_old">مطلوب تحديث التطبيق</string>
     <string name="apply">تفعيل</string>
     <string name="are_you_sure">هل أنت متيقِّن؟</string>
     <string name="audio">إعدادات الصوت</string>

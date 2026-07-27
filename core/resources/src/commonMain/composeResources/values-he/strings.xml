@@ -32,7 +32,6 @@
     <string name="add_network_device">הוסף</string>
     <!-- AIR -->
     <!-- ALERT -->
-    <string name="app_too_old">נדרש עדכון של האפליקציה</string>
     <string name="apply">החל</string>
     <string name="are_you_sure_change_default">לשנות לערוץ ברירת המחדל?</string>
     <!-- BLUETOOTH -->
@@ -128,7 +127,6 @@
     <!-- MQTT -->
     <string name="mqtt_status_disconnected">מנותק</string>
     <string name="must_set_region">חובה לבחור אזור!</string>
-    <string name="must_update">נדרש להתקין עדכון לאפליקציה זו דרך חנות האפליקציות (או Github). גרסת האפליקציה ישנה מדי בכדי לתקשר עם מכשיר זה. בבקשה קרא <a href="https://meshtastic.org/docs/software/android/installation">מסמכי עזרה</a> בנושא זה.</string>
     <!-- MUTE -->
     <string name="name">שם</string>
     <string name="new_channel_rcvd">התקבל כתובת ערוץ חדשה</string>

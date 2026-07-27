@@ -34,7 +34,6 @@
     <!-- AIR -->
     <string name="air_util_definition">Pousantaj tan lè transmisyon te itilize nan dènye èdtan an.</string>
     <!-- ALERT -->
-    <string name="app_too_old">Aplikasyon twò ansyen</string>
     <string name="apply">Aplike</string>
     <string name="are_you_sure_change_default">Eske ou sèten ou vle chanje pou kanal default la?</string>
     <string name="bad">Move</string>
@@ -143,7 +142,6 @@
     <!-- MQTT -->
     <string name="mqtt_status_disconnected">Dekonekte</string>
     <string name="must_set_region">Ou dwe mete yon rejyon!</string>
-    <string name="must_update">Ou dwe mete aplikasyon sa ajou nan magazen Google Jwèt. Li twò ansyen pou li kominike ak radyo sa a.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 semèn</string>
     <string name="mute_8_hours">8 èdtan</string>

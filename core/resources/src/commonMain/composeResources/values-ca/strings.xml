@@ -32,7 +32,6 @@
     <string name="add_network_device">Afegir</string>
     <!-- AIR -->
     <!-- ALERT -->
-    <string name="app_too_old">Actualització de l'aplicació necessària</string>
     <string name="apply">Aplicar</string>
     <string name="are_you_sure_change_default">Estàs segur que vols canviar al canal per defecte?</string>
     <!-- BLUETOOTH -->
@@ -131,7 +130,6 @@
     <!-- MQTT -->
     <string name="mqtt_status_disconnected">Desconnectat</string>
     <string name="must_set_region">Has de configurar la regió!</string>
-    <string name="must_update">Has d'actualitzar aquesta aplicació a la app store (o Github). És massa antiga per comunicar-se amb aquest firmware de la ràdio. Si us plau llegeix el nostre <a href="https://meshtastic.org/docs/software/android/installation">docs</a> sobre aquesta temàtica.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 setmana</string>
     <string name="mute_8_hours">8 hores</string>

@@ -76,7 +76,6 @@
     <string name="any">Oricare</string>
     <string name="app_notifications">Notificări aplicații</string>
     <string name="app_settings">Aplicaţie</string>
-    <string name="app_too_old">Aplicație prea veche</string>
     <string name="app_version">Versiune</string>
     <string name="apply">Aplică</string>
     <string name="are_you_sure">Sunteți sigur?</string>
@@ -668,7 +667,6 @@
     <string name="mqtt_status_connected">Conectat</string>
     <string name="mqtt_status_disconnected">Deconectat</string>
     <string name="must_set_region">Trebuie să alegeți o regiune!</string>
-    <string name="must_update">Trebuie să updatezi această aplicație de pe Google Play  (sau Github). Aplicația este prea veche pentru a comunica cu dispozitivul.</string>
     <!-- MUTE -->
     <string name="mute_1_week">O săptămână</string>
     <string name="mute_8_hours">8 ore</string>

@@ -71,7 +71,6 @@
     <string name="any">Qualsiasi</string>
     <string name="app_notifications">Notifiche dell'app</string>
     <string name="app_settings">App</string>
-    <string name="app_too_old">Aggiornamento dell'applicazione necessario</string>
     <string name="app_version">Versione</string>
     <string name="apply">Applica</string>
     <string name="are_you_sure">Sei sicuro?</string>
@@ -577,7 +576,6 @@
     <string name="mqtt_status_connected">Connesso</string>
     <string name="mqtt_status_disconnected">Disconnesso</string>
     <string name="must_set_region">Devi impostare una regione!</string>
-    <string name="must_update">È necessario aggiornare questa applicazione nell'app store (o Github). È troppo vecchio per parlare con questo firmware radio. Per favore leggi i nostri <a href="https://meshtastic.org/docs/software/android/installation">documenti</a> su questo argomento.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 settimana</string>
     <string name="mute_8_hours">8 ore</string>

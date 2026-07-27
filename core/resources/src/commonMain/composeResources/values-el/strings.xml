@@ -33,7 +33,6 @@
     <string name="administration">Διαχείριση</string>
     <!-- AIR -->
     <!-- ALERT -->
-    <string name="app_too_old">Εφαρμογή πολύ παλαιά</string>
     <string name="apply">Εφαρμογή</string>
     <string name="are_you_sure_change_default">Είστε σίγουροι ότι θέλετε να αλλάξετε στο προεπιλεγμένο κανάλι;</string>
     <string name="audio">Ήχος</string>
@@ -152,7 +151,6 @@
     <string name="mqtt">MQTT</string>
     <string name="mqtt_status_disconnected">Αποσυνδεδεμένο</string>
     <string name="must_set_region">Πρέπει να ορίσετε μια περιοχή!</string>
-    <string name="must_update">Πρέπει να ενημερώσετε την εφαρμογή μέσω Google Play store (ή Github). Είναι πολύ παλαιά ώστε να συνδεθεί με το radio.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 εβδομάδα</string>
     <string name="mute_8_hours">8 ώρες</string>

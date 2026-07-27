@@ -76,7 +76,6 @@
     <string name="any">Будь-який</string>
     <string name="app_notifications">Сповіщення застосунку</string>
     <string name="app_settings">Застосунок</string>
-    <string name="app_too_old">Потрібне оновлення програми</string>
     <string name="app_version">Версія</string>
     <string name="apply">Застосувати</string>
     <string name="are_you_sure">Ви впевнені?</string>
@@ -653,7 +652,6 @@
     <string name="mqtt_status_reconnecting_with_attempt">Роз'єднання (спроба %1$d) - %2$s</string>
     <string name="mqtt_test_connection">Перевірка зʼєднання</string>
     <string name="must_set_region">Ви повинні встановити регіон!</string>
-    <string name="must_update">Ви повинні оновити цю програму в App Store (або Github). Він занадто старий, щоб спілкуватися з цією прошивкою радіо. Будь ласка, прочитайте нашу <a href="https://meshtastic.org/docs/software/android/installation">документацію</a> у вказаній темі.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 тиждень</string>
     <string name="mute_8_hours">8 годин</string>

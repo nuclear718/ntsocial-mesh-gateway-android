@@ -30,21 +30,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.recalculateWindowInsets
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
-import co.touchlab.kermit.Logger
-import com.ntsocial.meshlink.app.BuildConfig
-import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.TopLevelDestination
 import com.ntsocial.meshlink.core.navigation.rememberMultiBackstack
-import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.app_too_old
-import com.ntsocial.meshlink.core.resources.must_update
 import com.ntsocial.meshlink.core.ui.component.MeshtasticAppShell
 import com.ntsocial.meshlink.core.ui.component.MeshtasticNavDisplay
 import com.ntsocial.meshlink.core.ui.component.MeshtasticNavigationSuite
@@ -72,8 +63,6 @@ fun MainScreen() {
         }
     val multiBackstack = rememberMultiBackstack(initialTab)
     val backStack = multiBackstack.activeBackStack
-
-    AndroidAppVersionCheck(viewModel)
 
     MeshtasticAppShell(multiBackstack = multiBackstack, uiViewModel = viewModel, hostModifier = Modifier) {
         MeshtasticNavigationSuite(
@@ -110,31 +99,3 @@ fun MainScreen() {
 
 /** True when no device address is persisted, or the address is the "none" sentinel (`"n"`). */
 private fun String?.isNullOrSelectedNone(): Boolean = isNullOrBlank() || this == "n"
-
-@Composable
-@Suppress("LongMethod", "CyclomaticComplexMethod")
-private fun AndroidAppVersionCheck(viewModel: UIViewModel) {
-    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
-    val myNodeInfo by viewModel.myNodeInfo.collectAsStateWithLifecycle()
-
-    LaunchedEffect(connectionState, myNodeInfo) {
-        if (connectionState == ConnectionState.Connected) {
-            myNodeInfo?.let { info ->
-                val isOld = info.minAppVersion > BuildConfig.VERSION_CODE && BuildConfig.DEBUG.not()
-                Logger.d {
-                    "[FW_CHECK] App version check - minAppVersion: ${info.minAppVersion}, " +
-                        "currentVersion: ${BuildConfig.VERSION_CODE}, isOld: $isOld"
-                }
-
-                if (isOld) {
-                    Logger.w { "[FW_CHECK] App too old - showing update prompt" }
-                    viewModel.showAlert(
-                        titleRes = Res.string.app_too_old,
-                        messageRes = Res.string.must_update,
-                        onConfirm = { viewModel.setDeviceAddress("n") },
-                    )
-                }
-            }
-        }
-    }
-}

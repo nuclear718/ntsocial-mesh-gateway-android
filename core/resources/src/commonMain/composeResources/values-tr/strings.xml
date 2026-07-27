@@ -56,7 +56,6 @@
     <string name="altitude">Rakım</string>
     <string name="ambient_lighting">Ortam Işıklandırması</string>
     <string name="ambient_lighting_config">Ortam Işıklandırma Ayarı</string>
-    <string name="app_too_old">Uygulama güncellemesi gerekli</string>
     <string name="apply">Uygula</string>
     <string name="are_you_sure">Emin misiniz?</string>
     <string name="are_you_sure_change_default">Varsayılan kanala geçmek istediğinizden emin misiniz?</string>
@@ -331,7 +330,6 @@
     <string name="mqtt_status_connected">Bağlandı</string>
     <string name="mqtt_status_disconnected">Bağlantı kesildi</string>
     <string name="must_set_region">Bölge seçmelisin!</string>
-    <string name="must_update">Uygulamayı Google Play store (ya da GitHub)'dan güncelleyin. Bu cihaz ile haberleşmek için uygulama çok eski. İlgili <a href="https://meshtastic.org/docs/software/android/installation"> Dokümantasyon</a>.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 hafta</string>
     <string name="mute_8_hours">8 saat</string>

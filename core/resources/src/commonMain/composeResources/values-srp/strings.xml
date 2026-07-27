@@ -47,7 +47,6 @@
     <string name="always_point_north">Увек усмеравајте на север</string>
     <string name="ambient_lighting">Амбијентално осветљење</string>
     <string name="ambient_lighting_config">Подешавања амбијенталног осветљења</string>
-    <string name="app_too_old">Неопходно је ажурирање апликације</string>
     <string name="apply">Примени</string>
     <string name="are_you_sure">Да ли сте сигурни?</string>
     <string name="are_you_sure_change_default">Да ли сте сигурни да желите да промените на подразумевани канал?</string>
@@ -277,7 +276,6 @@
     <string name="mqtt_status_connected">Блутут повезан</string>
     <string name="mqtt_status_disconnected">Раскачено</string>
     <string name="must_set_region">Мораш одабрати регион!</string>
-    <string name="must_update">Морате ажурирати ову апликацију у продавници апликација (или на Гитхабу). Превише је стара да би могла комуницирати са овим радио фирмвером. Молимо вас да прочитате наша &lt;a href='https://meshtastic.org/docs/software/android/installation'&gt;документа&lt;/a&gt; на ову тему.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 седмица</string>
     <string name="mute_8_hours">8 сати</string>

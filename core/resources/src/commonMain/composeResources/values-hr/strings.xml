@@ -32,7 +32,6 @@
     <string name="add_network_device">Dodaj</string>
     <!-- AIR -->
     <!-- ALERT -->
-    <string name="app_too_old">Potrebna je nadogradnja aplikacije</string>
     <string name="apply">Potvrdi</string>
     <string name="are_you_sure_change_default">Jeste li sigurni da želite promijeniti na zadani kanal?</string>
     <string name="audio">Zvuk</string>
@@ -134,7 +133,6 @@
     <!-- MQTT -->
     <string name="mqtt_status_disconnected">Odspojeno</string>
     <string name="must_set_region">Potrebno je postaviti regiju!</string>
-    <string name="must_update">Potrebno je ažurirati ovu aplikaciju putem Play Storea (ili Githuba). Aplikacija je prestara za komunikaciju s ovim firmwerom radija. Pročitajte našu <a href="https://meshtastic.org/docs/software/android/installation">dokumentaciju</a> o ovoj temi.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 tjedan</string>
     <string name="mute_8_hours">8 sati</string>

@@ -55,7 +55,6 @@
     <string name="analytics_okay">Zezwalaj na analizę i raportowanie awarii.</string>
     <string name="app_notifications">Powiadomienia aplikacji</string>
     <string name="app_settings">Aplikacja</string>
-    <string name="app_too_old">Konieczna aktualizacja aplikacji</string>
     <string name="app_version">Wersja</string>
     <string name="apply">Zastosuj</string>
     <string name="are_you_sure">Czy jesteś pewien?</string>
@@ -473,7 +472,6 @@
     <string name="mqtt_status_connected">Połączony</string>
     <string name="mqtt_status_disconnected">Rozłączono</string>
     <string name="must_set_region">Musisz ustawić region!</string>
-    <string name="must_update">Należy zaktualizować aplikację za pomocą Sklepu Play lub z GitHub, ponieważ aplikacja jest zbyt stara, by skomunikować się z oprogramowaniem zainstalowanym na tym urządzeniu. <a href="https://meshtastic.org/docs/software/android/installation">Więcej informacji (ang.)</a>.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 tydzień</string>
     <string name="mute_8_hours">8 godzin</string>

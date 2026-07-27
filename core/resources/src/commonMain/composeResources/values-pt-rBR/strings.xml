@@ -54,7 +54,6 @@
     <string name="ambient_lighting">Luz Ambiente</string>
     <string name="ambient_lighting_config">Configuração de Iluminação Ambiente</string>
     <string name="app_notifications">Notificações do Aplicativo</string>
-    <string name="app_too_old">Atualização do aplicativo necessária</string>
     <string name="apply">Aplicar</string>
     <string name="are_you_sure">Você tem certeza?</string>
     <string name="are_you_sure_change_default">Tem certeza que quer mudar para o canal padrão?</string>
@@ -391,7 +390,6 @@
     <string name="mqtt_status_connected">Conectado</string>
     <string name="mqtt_status_disconnected">Desconectado</string>
     <string name="must_set_region">Você deve informar uma região!</string>
-    <string name="must_update">Será necessário atualizar este aplicativo no Google Play (ou Github). Versão muito antiga para comunicar com o firmware do rádio.  Favor consultar <a href="https://meshtastic.org/docs/software/android/installation">docs</a>.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 semana</string>
     <string name="mute_8_hours">8 horas</string>

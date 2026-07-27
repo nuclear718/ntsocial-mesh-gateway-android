@@ -71,7 +71,6 @@
     <string name="any">Bármely</string>
     <string name="app_notifications">Alkalmazás-értesítések</string>
     <string name="app_settings">Alkalmazás</string>
-    <string name="app_too_old">Az alkalmazás frissítése szükséges</string>
     <string name="app_version">Verzió</string>
     <string name="apply">Alkalmaz</string>
     <string name="are_you_sure">Biztos vagy benne?</string>
@@ -505,7 +504,6 @@
     <string name="mqtt_status_connected">Csatlakoztatva</string>
     <string name="mqtt_status_disconnected">Szétkapcsolva</string>
     <string name="must_set_region">Be kell állítania egy régiót</string>
-    <string name="must_update">Frissítenie kell ezt az alkalmazást a Google Play áruházban (vagy a GitHub-ról), mert túl régi, hogy kommunikálni tudjob ezzel a rádió firmware-rel. Kérem olvassa el a tudnivalókat ebből a <a href="https://meshtastic.org/docs/software/android/installation">docs</a>-ből.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 hét</string>
     <string name="mute_8_hours">8 óra</string>

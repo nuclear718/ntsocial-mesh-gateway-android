@@ -41,7 +41,6 @@
     <string name="all_time">Alles</string>
     <string name="alt">Alt</string>
     <string name="ambient_lighting">Sfeerverlichting</string>
-    <string name="app_too_old">Applicatie bijwerken vereist</string>
     <string name="apply">Toepassen</string>
     <string name="are_you_sure">Weet u het zeker?</string>
     <string name="are_you_sure_change_default">Weet je zeker dat je naar het standaard kanaal wilt wijzigen?</string>
@@ -255,7 +254,6 @@
     <string name="mqtt_status_connected">Verbonden</string>
     <string name="mqtt_status_disconnected">Niet verbonden</string>
     <string name="must_set_region">Je moet een regio instellen!</string>
-    <string name="must_update">Applicatie update noodzakelijk in Google Play store (of Github). Deze versie is te oud om te praten met deze radio.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 week</string>
     <string name="mute_8_hours">8 uur</string>

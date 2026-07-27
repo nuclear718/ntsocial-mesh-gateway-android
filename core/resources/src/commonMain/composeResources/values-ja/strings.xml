@@ -58,7 +58,6 @@
     <string name="ambient_lighting_config">環境照明設定</string>
     <string name="analytics_okay">分析とクラッシュレポートを許可する。</string>
     <string name="any">すべて</string>
-    <string name="app_too_old">アプリを更新して下さい。</string>
     <string name="apply">適用</string>
     <string name="are_you_sure">よろしいですか？</string>
     <string name="are_you_sure_change_default">デフォルトチャンネルに変更しますか？</string>
@@ -396,7 +395,6 @@
     <string name="mqtt_status_connected">接続済</string>
     <string name="mqtt_status_disconnected">切断</string>
     <string name="must_set_region">リージョンを指定する必要があります。</string>
-    <string name="must_update">アプリが古く、デバイスと通信ができません。アプリストアまたはGithubでアプリを更新してください。詳細は<a href="https://meshtastic.org/docs/software/android/installation">こちら</a> に記載されています。</string>
     <!-- MUTE -->
     <string name="mute_1_week">1週間</string>
     <string name="mute_8_hours">8時間</string>

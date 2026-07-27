@@ -77,7 +77,6 @@
     <string name="any">任意内容</string>
     <string name="app_notifications">应用通知</string>
     <string name="app_settings">App</string>
-    <string name="app_too_old">需要更新应用程序</string>
     <string name="app_version">版本</string>
     <string name="apply">申请</string>
     <string name="are_you_sure">你确定吗？</string>
@@ -665,7 +664,6 @@
     <string name="mqtt_status_disconnected">已断开连接</string>
     <string name="mqtt_test_connection">连接测试</string>
     <string name="must_set_region">您必须先选择一个地区</string>
-    <string name="must_update">您必须在应用商店或 Github上更新此应用程序。程序太旧了以至于无法与此装置进行通讯。 请阅读有关此主题的 <a href="https://meshtastic.org/docs/software/android/installation">文档</a>。</string>
     <!-- MUTE -->
     <string name="mute_1_week">1周</string>
     <string name="mute_8_hours">8 小时</string>

@@ -35,7 +35,6 @@
     <string name="air_util_definition">Prosent av lufttiden brukt i løpet av den siste timen.</string>
     <!-- ALERT -->
     <string name="alert_bell_text">Varsel, bjellekarakter!</string>
-    <string name="app_too_old">Applikasjon for gammel</string>
     <string name="apply">Bruk</string>
     <string name="are_you_sure_change_default">Er du sikker på at du vil endre til standardkanalen?</string>
     <string name="bad">Dårlig</string>
@@ -150,7 +149,6 @@
     <!-- MQTT -->
     <string name="mqtt_status_disconnected">Frakoblet</string>
     <string name="must_set_region">Du må angi en region!</string>
-    <string name="must_update">Du må oppdatere denne applikasjonen på Google Play store (eller Github). Den er for gammel til å snakke med denne radioen.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 uke</string>
     <string name="mute_8_hours">8 timer</string>

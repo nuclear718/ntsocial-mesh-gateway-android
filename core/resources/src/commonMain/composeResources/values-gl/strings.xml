@@ -32,7 +32,6 @@
     <string name="add_network_device">Engadir</string>
     <!-- AIR -->
     <!-- ALERT -->
-    <string name="app_too_old">Actualización da aplicación requerida</string>
     <string name="apply">Aplicar</string>
     <string name="are_you_sure_change_default">Está seguro de que quere cambiar á canle predeterminada?</string>
     <!-- BLUETOOTH -->
@@ -129,7 +128,6 @@
     <!-- MQTT -->
     <string name="mqtt_status_disconnected">Desconectado</string>
     <string name="must_set_region">Tes que seleccionar rexión!</string>
-    <string name="must_update">Debe actualizar esta aplicación na tenda (ou Github).  É moi vella para falar con este firmware de radio. Por favor lea a nosa <a href="https://meshtastic.org/docs/software/android/installation">documentación</a> neste tema.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 semana</string>
     <string name="mute_8_hours">8 horas</string>

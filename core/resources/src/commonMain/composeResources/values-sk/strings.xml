@@ -41,7 +41,6 @@
     <string name="ambient_lighting">Ambientné osvetlenie</string>
     <string name="ambient_lighting_config">Nastavenie Ambientného Osvetlenia</string>
     <string name="analytics_okay">Povoliť posielanie analytiky a chybových hlásení.</string>
-    <string name="app_too_old">Aplikáciu je potrebné aktualizovať</string>
     <string name="apply">Použiť</string>
     <string name="are_you_sure">Si si istý?</string>
     <string name="are_you_sure_change_default">Ste si istý, že sa chcete prepnúť na predvolený kanál?</string>
@@ -273,7 +272,6 @@
     <string name="mqtt_status_connected">Pripojený</string>
     <string name="mqtt_status_disconnected">Odpojené</string>
     <string name="must_set_region">Musíte nastaviť región!</string>
-    <string name="must_update">Musíte aktualizovať aplikáciu na Google Play store (alebo z Github). Je príliš stará pre komunikáciu s touto verziou firmvéru vysielača. Viac informácií k tejto téme nájdete na <a href="https://meshtastic.org/docs/software/android/installation">Meshtastic docs</a>.</string>
     <!-- MUTE -->
     <string name="mute_1_week">1 týždeň</string>
     <string name="mute_8_hours">8 hodín</string>
