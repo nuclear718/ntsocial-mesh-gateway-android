@@ -57,6 +57,8 @@
         android:protectionLevel="signature|knownSigner"
         tools:targetApi="s" />
 
+    <uses-permission android:name="com.ntsocial.meshlink.permission.ACCESS_NTSOCIAL_GATEWAY" />
+
     <!-- Request legacy Bluetooth permissions on older devices -->
     <uses-permission android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />

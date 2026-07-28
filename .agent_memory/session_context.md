@@ -1,5 +1,27 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-28 - Gateway event permission and four-phone LoRa field validation
+- Added the missing `uses-permission` for
+  `com.ntsocial.meshlink.permission.ACCESS_NTSOCIAL_GATEWAY`. NTsocial registers its dynamic
+  Gateway EVENT receiver with that sender permission, so defining the permission without requesting
+  it caused MeshLink envelope/status broadcasts to be silently rejected.
+- Rebuilt and installed the Google debug ARM64 APK without clearing app data on the two
+  radio-bound phones. Its SHA-256 is
+  `C48DD5B89E1FB6960ECE4A666CA31728612BB94BF008E7D8D95A9C2EAFE28F1A`; both installed
+  packages report the permission requested and granted.
+- Hardware evidence covered both RF directions with the parent app stopped on the receiving side:
+  MeshLink received the LoRa frames, the remote parent decoded the matching social message ID, and
+  ordinary NTsocial history sync then delivered the row to the remote unbound phone. All four phones
+  showed both direction markers in channel `F44571CB-E21E-523F-BA13-126DA61EFB27`.
+- A separate parent-app cold-start race was found and corrected in `NTsocial_release`: the service
+  now installs its incoming packet collector before starting this Gateway, and the UI no longer
+  starts the Gateway first. A cached three-fragment LoRa message committed 5.8 seconds after a cold
+  parent launch with no manual wakeup broadcast.
+- The changed MeshLink manifest passes `git diff --check`; the Google debug build/install and field
+  run passed. The full multi-variant AGENTS validation was not rerun. Permission/event delivery is
+  not by itself RF proof; the RF claim above relies on the separately captured sender `to_radio`,
+  receiver raw-frame, parent decode, and canonical-store evidence.
+
 ## 2026-07-26 - PSK-derived Gateway identity and stable-only history correction
 - Encrypted Meshtastic channels now derive `source_channel_id` from a domain-separated SHA-256 digest
   of the resolved PSK only. Name, slot, role, numeric channel ID, and install state are excluded;
