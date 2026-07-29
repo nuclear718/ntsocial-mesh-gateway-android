@@ -39,13 +39,60 @@ import kotlin.test.assertNull
 class NtsocialGatewayCommandParsingTest {
 
     @Test
-    fun `command classifier keeps v1 null-only and rejects unknown command types`() {
+    fun `command classifier keeps v1 null-only and recognizes both routed v2 commands`() {
         assertEquals(GatewayCommandKind.V1, classifyGatewayCommand(null))
         assertEquals(
             GatewayCommandKind.ROUTED_OVERLAY,
             classifyGatewayCommand(NtsocialGatewayContract.COMMAND_SEND_NTSOCIAL_ENVELOPE_TO_ROUTE),
         )
-        assertEquals(GatewayCommandKind.UNSUPPORTED, classifyGatewayCommand("SEND_CHANNEL_TEXT"))
+        assertEquals(
+            GatewayCommandKind.NATIVE_TEXT,
+            classifyGatewayCommand(NtsocialGatewayContract.COMMAND_SEND_CHANNEL_TEXT),
+        )
+        assertEquals(GatewayCommandKind.UNSUPPORTED, classifyGatewayCommand("unknown"))
+    }
+
+    @Test
+    fun `native text parser requires bounded nonblank UTF-8 and canonicalizes client id`() {
+        val parsed =
+            assertNotNull(
+                parseGatewayNativeTextCommand(
+                    validNativeTextIntent()
+                        .putExtra(NtsocialGatewayContract.EXTRA_CLIENT_MESSAGE_ID, "abcdef0123456789abcdef0123456789")
+                        .putExtra(NtsocialGatewayContract.EXTRA_TEXT, "訊".repeat(60)),
+                ),
+            )
+
+        assertEquals("ABCDEF0123456789ABCDEF0123456789", parsed.clientMessageId)
+        assertEquals("訊".repeat(60), parsed.text)
+        assertNull(
+            parseGatewayNativeTextCommand(
+                validNativeTextIntent().putExtra(NtsocialGatewayContract.EXTRA_TEXT, "訊".repeat(61)),
+            ),
+        )
+        assertNull(
+            parseGatewayNativeTextCommand(validNativeTextIntent().putExtra(NtsocialGatewayContract.EXTRA_TEXT, " \n")),
+        )
+    }
+
+    @Test
+    fun `native text idempotency fingerprint binds source and text but not route token`() {
+        val first = assertNotNull(parseGatewayNativeTextCommand(validNativeTextIntent()))
+        val renewedRoute =
+            assertNotNull(
+                parseGatewayNativeTextCommand(
+                    validNativeTextIntent().putExtra(NtsocialGatewayContract.EXTRA_ROUTE_TOKEN, "renewed"),
+                ),
+            )
+        val differentText =
+            assertNotNull(
+                parseGatewayNativeTextCommand(
+                    validNativeTextIntent().putExtra(NtsocialGatewayContract.EXTRA_TEXT, "different"),
+                ),
+            )
+
+        assertEquals(first.requestFingerprint(), renewedRoute.requestFingerprint())
+        kotlin.test.assertNotEquals(first.requestFingerprint(), differentText.requestFingerprint())
     }
 
     @Test
@@ -82,4 +129,8 @@ class NtsocialGatewayCommandParsingTest {
         .putExtra(NtsocialGatewayContract.EXTRA_ROUTE_TOKEN, "route")
         .putExtra(NtsocialGatewayContract.EXTRA_CLIENT_MESSAGE_ID, "0123456789ABCDEF0123456789ABCDEF")
         .putExtra(NtsocialGatewayContract.EXTRA_PAYLOAD, byteArrayOf(0x4E, 0x4D))
+
+    private fun validNativeTextIntent(): Intent = validIntent()
+        .putExtra(NtsocialGatewayContract.EXTRA_COMMAND_TYPE, NtsocialGatewayContract.COMMAND_SEND_CHANNEL_TEXT)
+        .putExtra(NtsocialGatewayContract.EXTRA_TEXT, "native text")
 }

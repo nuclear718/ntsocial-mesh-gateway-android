@@ -34,16 +34,23 @@ import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannelStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeCodec
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeDirection
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayNativeText
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MessageQueue
+import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
+import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -51,6 +58,8 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
+import org.meshtastic.proto.Channel
+import org.meshtastic.proto.Config
 import org.meshtastic.proto.MeshPacket
 import kotlin.random.Random
 
@@ -59,11 +68,14 @@ class NtsocialGatewayRepositoryImpl(
     private val commandSender: CommandSender,
     private val packetRepository: PacketRepository,
     private val messageQueue: MessageQueue,
+    private val nodeRepository: NodeRepository,
+    private val radioConfigRepository: RadioConfigRepository,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : NtsocialGatewayRepository {
     private val _cachedEnvelopes = MutableStateFlow<List<NtsocialCachedEnvelope>>(emptyList())
     private val _defaultChannelStatus = MutableStateFlow(NtsocialDefaultChannelStatus())
     private val cacheMutex = Mutex()
+    private val nativeTextMutex = Mutex()
     private val seenCacheKeys = mutableSetOf<String>()
 
     override val cachedEnvelopes: StateFlow<List<NtsocialCachedEnvelope>> = _cachedEnvelopes.asStateFlow()
@@ -202,6 +214,83 @@ class NtsocialGatewayRepositoryImpl(
         return record
     }
 
+    override suspend fun persistAndQueueNativeBroadcastText(
+        text: String,
+        sourceChannelId: String,
+        channelIndex: Int,
+        packetId: Int,
+        originClientMessageId: String,
+    ): DataPacket {
+        require(NtsocialGatewayNativeText.isValid(text)) { "Native channel text is empty or exceeds the UTF-8 limit" }
+        require(channelIndex >= 0) { "channelIndex must not be negative" }
+        require(packetId > 0) { "packetId must be positive" }
+        require(CLIENT_MESSAGE_ID_REGEX.matches(originClientMessageId)) { "originClientMessageId must be canonical" }
+
+        return nativeTextMutex.withLock {
+            val channelSet = radioConfigRepository.channelSetFlow.first()
+            val settings =
+                requireNotNull(channelSet.settings.getOrNull(channelIndex)) { "Gateway route no longer exists" }
+            val channelIdentity =
+                NtsocialGatewayIdentity.channel(
+                    Channel(
+                        index = channelIndex,
+                        role = if (channelIndex == 0) Channel.Role.PRIMARY else Channel.Role.SECONDARY,
+                        settings = settings,
+                    ),
+                    channelSet.lora_config ?: Config.LoRaConfig(),
+                )
+            require(channelIdentity.sourceChannelId == sourceChannelId) {
+                "Gateway route no longer matches its channel"
+            }
+
+            val ourNode = nodeRepository.ourNodeInfo.value
+            val localNodeNum =
+                ourNode?.num?.takeIf { it != 0 } ?: nodeRepository.myNodeInfo.value?.myNodeNum?.takeIf { it != 0 }
+            val localNodeId =
+                requireNotNull(
+                    NtsocialGatewayIdentity.stableLocalNodeId(
+                        userId = ourNode?.user?.id,
+                        myId = nodeRepository.myId.value,
+                        nodeNum = localNodeNum,
+                    ),
+                ) {
+                    "Stable local node identity is not ready"
+                }
+            val packet =
+                DataPacket(to = DataPacket.ID_BROADCAST, channel = channelIndex, text = text).apply {
+                    from = localNodeId
+                    id = packetId
+                    status = MessageStatus.QUEUED
+                    time = nowMillis
+                }
+            val gatewayIdentity =
+                requireNotNull(NtsocialGatewayIdentity.nativeBroadcastText(channelIdentity, packet)) {
+                    "Native channel text did not produce a stable Gateway identity"
+                }
+
+            val existing = packetRepository.getGatewayMessageChangeByPacketId(packetId)
+            when {
+                existing == null ->
+                    packetRepository.savePacket(
+                        myNodeNum = localNodeNum ?: 0,
+                        contactKey = "$channelIndex${DataPacket.ID_BROADCAST}",
+                        packet = packet,
+                        receivedTime = packet.time,
+                        gatewayIdentity = gatewayIdentity,
+                        originClientMessageId = originClientMessageId,
+                    )
+
+                !existing.matchesDurableNativeText(packet, gatewayIdentity, originClientMessageId) ->
+                    throw IllegalArgumentException("Gateway packet ID already belongs to different content")
+            }
+
+            if (existing == null || existing.packet.status == MessageStatus.QUEUED) {
+                messageQueue.enqueue(packetId)
+            }
+            existing?.packet ?: packet
+        }
+    }
+
     override fun updateDefaultChannelStatus(status: NtsocialDefaultChannelStatus) {
         _defaultChannelStatus.value = status
     }
@@ -294,6 +383,21 @@ class NtsocialGatewayRepositoryImpl(
         hopLimit == expected.hopLimit &&
         wantAck == expected.wantAck
 
+    private fun NtsocialGatewayMessageChange.matchesDurableNativeText(
+        expectedPacket: DataPacket,
+        expectedIdentity: NtsocialGatewayMessageIdentity,
+        expectedOriginClientMessageId: String,
+    ): Boolean = packet.id == expectedPacket.id &&
+        packet.bytes == expectedPacket.bytes &&
+        packet.dataType == expectedPacket.dataType &&
+        packet.from == expectedPacket.from &&
+        packet.to == DataPacket.ID_BROADCAST &&
+        packet.channel == expectedPacket.channel &&
+        packet.hopLimit == expectedPacket.hopLimit &&
+        packet.wantAck == expectedPacket.wantAck &&
+        identity == expectedIdentity &&
+        originClientMessageId == expectedOriginClientMessageId
+
     private fun cache(record: NtsocialCachedEnvelope) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             cacheMutex.withLock {
@@ -316,5 +420,6 @@ class NtsocialGatewayRepositoryImpl(
 
     private companion object {
         const val RANDOM_BYTE_EXCLUSIVE = 256
+        val CLIENT_MESSAGE_ID_REGEX = Regex("^[0-9A-F]{32}$")
     }
 }

@@ -114,8 +114,9 @@ import com.ntsocial.meshlink.core.database.entity.TracerouteNodePositionEntity
         AutoMigration(from = 39, to = 40),
         AutoMigration(from = 40, to = 41),
         AutoMigration(from = 41, to = 42),
+        AutoMigration(from = 42, to = 43),
     ],
-    version = 42,
+    version = 43,
     exportSchema = true,
 )
 @androidx.room3.ConstructedBy(MeshtasticDatabaseConstructor::class)

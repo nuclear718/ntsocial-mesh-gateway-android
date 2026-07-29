@@ -52,10 +52,18 @@ data class NtsocialGatewayMessageChange(
     val identity: NtsocialGatewayMessageIdentity?,
     val packet: DataPacket,
     val receivedAtMillis: Long,
+    val originClientMessageId: String? = null,
 )
 
 /** Atomic history cursor domain exposed by Gateway v2 status. */
 data class NtsocialGatewayHistoryState(val historyEpoch: String, val messageChangeSeq: Long)
+
+/** Validation shared by the Android Gateway command boundary and its durable repository admission path. */
+object NtsocialGatewayNativeText {
+    const val MAX_UTF8_SIZE_BYTES = 180
+
+    fun isValid(text: String): Boolean = text.isNotBlank() && text.encodeToByteArray().size <= MAX_UTF8_SIZE_BYTES
+}
 
 /**
  * Domain-separated gateway identities.
@@ -151,6 +159,14 @@ object NtsocialGatewayIdentity {
         packet = packet,
     )
 
+    /** Resolves the durable local Meshtastic node ID used when capturing an outgoing native-text identity. */
+    fun stableLocalNodeId(userId: String?, myId: String?, nodeNum: Int?): String? = sequenceOf(userId, myId)
+        .mapNotNull { candidate -> candidate?.takeIf { it.isNotBlank() && it != DataPacket.ID_LOCAL } }
+        .firstOrNull()
+        ?: nodeNum
+            ?.takeIf { it != 0 }
+            ?.let { value -> "!${value.toUInt().toString(16).padStart(NODE_ID_HEX_LENGTH, '0')}" }
+
     private fun digest(vararg parts: ByteString): ByteString = framed(*parts).sha256()
 
     /**
@@ -167,4 +183,6 @@ object NtsocialGatewayIdentity {
         }
         return buffer.readByteString()
     }
+
+    private const val NODE_ID_HEX_LENGTH = 8
 }

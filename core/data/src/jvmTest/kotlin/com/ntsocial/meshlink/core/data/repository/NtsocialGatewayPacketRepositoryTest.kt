@@ -70,13 +70,21 @@ class NtsocialGatewayPacketRepositoryTest {
     @Test
     fun `stable export and high water exclude an uncaptured row after slot reuse`() = runTest(dispatcher) {
         val packet = DataPacket(DataPacket.ID_BROADCAST, 1, "native").apply { id = 9 }
+        val originClientMessageId = "0123456789ABCDEF0123456789ABCDEF"
         val capturedIdentity =
             NtsocialGatewayMessageIdentity(
                 sourceChannelId = "meshtastic:channel-a",
                 sourceMessageId = "0123456789ABCDEF0123456789ABCDEF",
             )
 
-        repository.savePacket(1, "1${DataPacket.ID_BROADCAST}", packet, 100L, gatewayIdentity = capturedIdentity)
+        repository.savePacket(
+            1,
+            "1${DataPacket.ID_BROADCAST}",
+            packet,
+            100L,
+            gatewayIdentity = capturedIdentity,
+            originClientMessageId = originClientMessageId,
+        )
         repository.savePacket(1, "1${DataPacket.ID_BROADCAST}", packet.copy(id = 10), 101L)
 
         val compatibilityPage =
@@ -89,6 +97,7 @@ class NtsocialGatewayPacketRepositoryTest {
 
         assertEquals(2, compatibilityPage.size)
         assertEquals(capturedIdentity, compatibilityPage.first().identity)
+        assertEquals(originClientMessageId, compatibilityPage.first().originClientMessageId)
         assertEquals(100L, compatibilityPage.first().receivedAtMillis)
         assertEquals(null, compatibilityPage.last().identity)
         assertEquals(listOf(capturedIdentity), stablePage.map { it.identity })
@@ -107,6 +116,10 @@ class NtsocialGatewayPacketRepositoryTest {
             repository.getGatewayHistoryState(listOf("1${DataPacket.ID_BROADCAST}")).first().messageChangeSeq,
         )
         assertTrue(repository.getGatewayMessageChanges(compatibilityPage.last().changeSeq, 10).isEmpty())
+        assertEquals(
+            originClientMessageId,
+            repository.getGatewayMessageChangeByPacketId(packet.id)?.originClientMessageId,
+        )
     }
 
     @Test

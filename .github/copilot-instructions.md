@@ -10,8 +10,8 @@ contributor rights; follow `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and
 `docs/copyright-and-attribution.md`.
 
 Android Gateway v1 remains immutable and concrete. Additive Gateway v2 status/catalog/native-history
-changes, wakeup events, caller-bound route tokens, and route-aware raw NTsocial overlay sending are
-also implemented; native Meshtastic text send is not.
+changes, wakeup events, caller-bound route tokens, route-aware raw NTsocial overlay sending, and
+durably admitted broadcast native Meshtastic text sending are also implemented.
 Windows branding, installer identity, theme, and cold-start splash are concrete code, but
 `NTsocial_Windows` IPC, Windows Service, Authenticator, code signing, and parent-App interoperability
 are not implemented. Routed v2 commands now have local Room + WorkManager durable admission; RF scheduler expansion, node policy, MeshCore
@@ -60,6 +60,21 @@ git submodule update --init
 
 ### Current Build and Release Status
 
+- On 2026-07-29, the Gateway v2 native-text/Room-43 source passed 361 focused
+  model/data/database/service tests. Root `test allTests` then passed with the required en-US JVM
+  locale; `spotlessApply spotlessCheck`, `assembleDebug`, `kmpSmokeCompile`, and both Debug flavor
+  lint tasks also passed. The Google arm64 Debug APK is 50,783,283 bytes with SHA-256
+  `94F4477B3D3BB0AD63B0EF229FA78549885363DBC69FE315D67C4677BAD5857B`. Root `detekt` is still
+  blocked only by three pre-existing findings in the unmodified desktop BLE pairing service.
+  `assembleRelease` is independently blocked by the unmodified Widget module's missing
+  `colorControlNormal` and `widget_local_stats_preview` release resources; do not apply that
+  release-only failure to the green Debug artifact.
+- The exact current MeshLink and NTsocial parent Debug APKs were installed in place on four Android
+  16 arm64 phones. Matching installed hashes, preserved first-install timestamps/data, successful
+  activity starts, live processes, zero matching recent FATAL/ANR entries, and active Room
+  42-to-43 migrations were verified. Two dormant databases for previously selected radios remain at
+  schema 42 and will migrate when opened. Meshtastic connection/RF testing was explicitly skipped
+  because the environment has no Meshtastic node; this is not radio-delivery evidence.
 - On 2026-07-23, the cloud-free, Bluetooth-only Connections UI baseline passed: the
   formatting/static/build/test command completed in 21m9s (1,589 actionable tasks), and KMP smoke
   compilation plus both flavor lint tasks completed in 2m32s (920 actionable tasks).
@@ -256,20 +271,23 @@ a coroutine-cleanup timeout flake under the full parallel baseline.
   with `NO_SPACE` and preserve every primary/secondary. Apply QR LoRa/RF config only when the radio is
   unconfigured or `region == UNSET`.
 - Preserve Gateway v1 exactly. Gateway v2 may expose sanitized status/catalog/bounded native text
-  history and route-aware port-256 overlay sends; it must not expose PSKs/configuration, mutate via the
-  Provider, claim native text send, or make MeshLink the canonical NTsocial history owner.
+  history, route-aware port-256 overlay sends, and route-aware broadcast native text sends; it must
+  not expose PSKs/configuration, mutate via the Provider, or make MeshLink the canonical history
+  owner for NTsocial-native encrypted channels.
 - Gateway v2 `history_epoch` is stored per active Room history domain and rotates on whole-history
   reset/database switch. `radio_generation` is opaque random runtime state, never a ChannelSet/PSK
-  digest. Legacy history scanning is bounded and the status high-water includes currently mappable
-  legacy-only native broadcast rows.
+  digest. Provider history and its status high-water are stable-identity-only; nullable legacy rows
+  remain local and are never recomputed from the current slot.
 - A routed command is accepted only after its packet is in Room, WorkManager admission completes,
-  and the durable idempotency ledger commits. SharedPreferences failures roll memory back and must
-  never publish accepted. Acceptance is not RF or remote-delivery proof.
-- Zero-ID CLEAR/WELL_KNOWN channel identity is public and cross-install deterministic: resolve the
-  effective channel name first, locale-independently trim/lowercase it, and combine it with the
-  resolved public PSK. This makes an empty default name converge with explicit `LongFast`. Only
-  zero-ID CUSTOM-PSK identity uses the install-local HMAC key; never export PSK-derived unkeyed
-  digests or `!local` as an external author.
+  and the durable idempotency ledger commits. `SEND_CHANNEL_TEXT` accepts only nonblank broadcast
+  text up to 180 UTF-8 bytes; its repository owner serializes route revalidation, row insertion, and
+  queue admission so concurrent retries cannot create duplicate chat rows. It exports nullable
+  `origin_client_message_id` as local own-echo
+  metadata. SharedPreferences failures roll memory back and must never publish accepted. Acceptance
+  is not RF or remote-delivery proof.
+- Every encrypted channel identity is derived from a domain-separated digest of its resolved PSK
+  only; shorthand and full well-known keys converge. CLEAR fixed-ID and resolved-name compatibility
+  rules remain unchanged. Never export raw PSKs or `!local` as an external author.
 - `rebroadcast_mode = ALL` must be applied with user consent and verification.
 - Do not send image, voice, or PTT media bytes over LoRa.
 - Do not describe planned gateway behavior as shipped until implemented.

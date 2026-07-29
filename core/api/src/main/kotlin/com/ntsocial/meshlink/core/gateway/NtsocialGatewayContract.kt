@@ -25,6 +25,7 @@
 package com.ntsocial.meshlink.core.gateway
 
 import android.net.Uri
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayNativeText
 
 /**
  * Versioned NTsocial MeshLink Gateway IPC contract.
@@ -74,6 +75,7 @@ object NtsocialGatewayContract {
     const val EXTRA_ROUTE_TOKEN = "route_token"
     const val EXTRA_CLIENT_MESSAGE_ID = "client_message_id"
     const val CLIENT_MESSAGE_ID_HEX_LENGTH = 32
+    const val EXTRA_TEXT = "text"
     const val EXTRA_TO = "to"
     const val EXTRA_HOP_LIMIT = "hop_limit"
     const val EXTRA_WANT_ACK = "want_ack"
@@ -92,11 +94,14 @@ object NtsocialGatewayContract {
     const val EVENT_MESSAGE_CHANGES_AVAILABLE = "MESSAGE_CHANGES_AVAILABLE"
 
     const val COMMAND_SEND_NTSOCIAL_ENVELOPE_TO_ROUTE = "SEND_NTSOCIAL_ENVELOPE_TO_ROUTE"
+    const val COMMAND_SEND_CHANNEL_TEXT = "SEND_CHANNEL_TEXT"
 
     const val CAPABILITY_CHANNEL_CATALOG = 1L
     const val CAPABILITY_NATIVE_TEXT_HISTORY = 1L shl 1
     const val CAPABILITY_ROUTE_OVERLAY_SEND = 1L shl 2
     const val CAPABILITY_MESSAGE_CHANGE_EVENTS = 1L shl 3
+    const val CAPABILITY_NATIVE_TEXT_SEND = 1L shl 4
+    const val MAX_NATIVE_TEXT_SIZE_BYTES = NtsocialGatewayNativeText.MAX_UTF8_SIZE_BYTES
 
     /** SHA-256 prefix exported as 16 bytes / 32 uppercase hexadecimal characters. */
     const val SOURCE_MESSAGE_ID_HEX_LENGTH = 32
@@ -168,6 +173,7 @@ object NtsocialGatewayContract {
     const val COLUMN_CAN_SEND_NT_OVERLAY = "can_send_nt_overlay"
 
     const val COLUMN_SOURCE_MESSAGE_ID = "source_message_id"
+    const val COLUMN_ORIGIN_CLIENT_MESSAGE_ID = "origin_client_message_id"
     const val COLUMN_CHANGE_SEQ = "change_seq"
     const val COLUMN_FROM_NODE_ID = "from_node_id"
     const val COLUMN_FROM_DISPLAY_NAME = "from_display_name"

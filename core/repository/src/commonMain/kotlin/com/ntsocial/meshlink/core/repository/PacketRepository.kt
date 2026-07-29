@@ -106,6 +106,9 @@ interface PacketRepository {
     /** Returns a bounded page containing only rows with a captured stable Gateway identity. */
     suspend fun getGatewayStableMessageChanges(after: Long, limit: Int): List<NtsocialGatewayMessageChange>
 
+    /** Returns the durable Gateway metadata captured with a packet ID, when present. */
+    suspend fun getGatewayMessageChangeByPacketId(packetId: Int): NtsocialGatewayMessageChange?
+
     /**
      * Persists a packet in the database.
      *
@@ -124,6 +127,7 @@ interface PacketRepository {
         read: Boolean = true,
         filtered: Boolean = false,
         gatewayIdentity: NtsocialGatewayMessageIdentity? = null,
+        originClientMessageId: String? = null,
     )
 
     /**
@@ -208,6 +212,7 @@ interface PacketRepository {
         read: Boolean = true,
         filtered: Boolean = false,
         gatewayIdentity: NtsocialGatewayMessageIdentity? = null,
+        originClientMessageId: String? = null,
     )
 
     /** Updates an existing packet in the database, optionally setting a routing error code. */

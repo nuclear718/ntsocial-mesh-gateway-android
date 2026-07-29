@@ -1,5 +1,45 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-29 - Gateway native channel-text source implementation
+- Added additive v2 `SEND_CHANNEL_TEXT` with `text`, the `1L shl 4` native-send capability, and a
+  strict nonblank 180-byte UTF-8 limit. The command uses the existing verified caller,
+  single-use capability, source/route/generation binding, and durable `client_message_id` ledger.
+- Added a Gateway repository admission path which revalidates the route against the current
+  channel identity, resolves a stable local node ID, constructs only broadcast
+  `TEXT_MESSAGE_APP`, captures the existing stable source-message identity, writes a normal
+  MeshLink channel-history row, awaits the platform `MessageQueue`, and then permits the Receiver
+  to commit ACCEPTED. Caller-supplied destinations, ports, packet IDs, and serialized packets are
+  not accepted.
+- Serialized native-text route revalidation, existing-row matching, insertion, and queue admission
+  with a dedicated repository mutex; concurrent retries of one packet/client ID therefore persist
+  one normal MeshLink chat row while retaining safe queued-work re-admission.
+- Advanced Room 42 to 43 with nullable `origin_client_message_id` on `Packet`; it is exported as
+  optional `/v2/message-changes` own-echo correlation metadata and never enters `DataPacket` or
+  an upstream protobuf. The generated `43.json` schema is present.
+- Provider status now advertises native send when a configured channel and stable local node ID
+  are ready; v2 capability bits and every catalog row advertise native send support. Added
+  focused UTF-8/node-resolution, durable insert/queue/retry, Room/DAO origin round-trip, Provider
+  projection, parser/fingerprint, and contract tests.
+- Serial validation from a clean output state passed 361 focused
+  model/data/database/service tests. `spotlessApply spotlessCheck`, `assembleDebug`,
+  `kmpSmokeCompile`, and both Debug flavor lint tasks passed. Root `test allTests` initially exposed
+  18 hardcoded-English Compose assertions under the host's zh-TW locale; the required en-US rerun
+  completed successfully. Root `detekt` remains red only for three pre-existing findings in the
+  unmodified desktop BLE pairing service. An additional `assembleRelease` attempt is independently
+  blocked by the unmodified Widget module's missing `colorControlNormal` and
+  `widget_local_stats_preview` release resources.
+- The resulting 50,783,283-byte Google arm64 Debug APK has SHA-256
+  `94F4477B3D3BB0AD63B0EF229FA78549885363DBC69FE315D67C4677BAD5857B`. It and parent NTsocial Debug
+  were installed with `adb install -r` on four Android 16 arm64 phones. All four read back matching
+  installed hashes, retained prior first-install timestamps/data, launched both apps, retained live
+  processes, and produced no matching recent FATAL/ANR. Every database opened after installation
+  migrated from schema 42 to 43 and contains `origin_client_message_id`; two dormant databases for
+  previously selected radios remain at 42 and will migrate when opened.
+- The operator explicitly required Meshtastic connection tests to be skipped because this
+  environment currently has no Meshtastic node. Therefore the current artifact has no connected
+  radio command-admission, RF transmission/reception, or remote receipt evidence; older field
+  evidence below must not be promoted to the current binary.
+
 ## 2026-07-28 - Gateway event permission and four-phone LoRa field validation
 - Added the missing `uses-permission` for
   `com.ntsocial.meshlink.permission.ACCESS_NTSOCIAL_GATEWAY`. NTsocial registers its dynamic

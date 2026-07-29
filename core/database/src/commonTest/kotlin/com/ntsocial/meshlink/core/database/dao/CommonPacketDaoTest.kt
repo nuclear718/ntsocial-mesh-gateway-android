@@ -179,6 +179,39 @@ abstract class CommonPacketDaoTest {
     }
 
     @Test
+    fun `gateway origin client id round trips without entering serialized packet data`() = runTest {
+        val originClientMessageId = "0123456789ABCDEF0123456789ABCDEF"
+        val packet =
+            Packet(
+                uuid = 0L,
+                myNodeNum = myNodeNum,
+                port_num = PortNum.TEXT_MESSAGE_APP.value,
+                contact_key = "1${DataPacket.ID_BROADCAST}",
+                received_time = nowMillis,
+                read = true,
+                data =
+                DataPacket(to = DataPacket.ID_BROADCAST, channel = 1, text = "native").apply {
+                    from = "!12345678"
+                    id = 707
+                },
+                packetId = 707,
+                gatewaySourceChannelId = "meshtastic:source",
+                gatewaySourceMessageId = "ABCDEF0123456789ABCDEF0123456789",
+                originClientMessageId = originClientMessageId,
+            )
+
+        packetDao.insert(packet)
+
+        val persisted = assertNotNull(packetDao.getPacketByPacketId(707)).packet
+        assertEquals(originClientMessageId, persisted.originClientMessageId)
+        assertFalse(persisted.data.toString().contains(originClientMessageId))
+        assertEquals(
+            originClientMessageId,
+            packetDao.getGatewayStableMessageChanges(0, 10).single().originClientMessageId,
+        )
+    }
+
+    @Test
     fun testDeleteMessages() = runTest {
         val contactKey = testContactKeys.first()
         packetDao.deleteContacts(listOf(contactKey))

@@ -177,6 +177,15 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 .map(::toGatewayMessageChange)
         }
 
+    override suspend fun getGatewayMessageChangeByPacketId(packetId: Int): NtsocialGatewayMessageChange? =
+        withContext(dispatchers.io) {
+            dbManager.currentDb.value
+                .packetDao()
+                .getGatewayPacketByPacketId(packetId)
+                ?.packet
+                ?.let(::toGatewayMessageChange)
+        }
+
     private fun toGatewayMessageChange(row: RoomPacket): NtsocialGatewayMessageChange {
         val identity =
             row.gatewaySourceChannelId?.let { sourceChannelId ->
@@ -189,6 +198,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
             identity = identity,
             packet = row.data,
             receivedAtMillis = row.received_time,
+            originClientMessageId = row.originClientMessageId,
         )
     }
 
@@ -203,6 +213,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         read: Boolean,
         filtered: Boolean,
         gatewayIdentity: NtsocialGatewayMessageIdentity?,
+        originClientMessageId: String?,
     ) {
         val packetToSave =
             RoomPacket(
@@ -221,6 +232,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 messageText = packet.text.orEmpty(),
                 gatewaySourceChannelId = gatewayIdentity?.sourceChannelId,
                 gatewaySourceMessageId = gatewayIdentity?.sourceMessageId,
+                originClientMessageId = originClientMessageId,
             )
         insertRoomPacket(packetToSave)
     }
@@ -346,6 +358,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         read: Boolean,
         filtered: Boolean,
         gatewayIdentity: NtsocialGatewayMessageIdentity?,
+        originClientMessageId: String?,
     ) {
         val packetToSave =
             RoomPacket(
@@ -364,6 +377,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 messageText = packet.text.orEmpty(),
                 gatewaySourceChannelId = gatewayIdentity?.sourceChannelId,
                 gatewaySourceMessageId = gatewayIdentity?.sourceMessageId,
+                originClientMessageId = originClientMessageId,
             )
         insertRoomPacket(packetToSave)
     }

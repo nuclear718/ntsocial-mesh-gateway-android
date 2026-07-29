@@ -389,6 +389,17 @@ interface PacketDao {
     @Query(
         """
         SELECT * FROM packet
+        WHERE packet_id = :packetId
+        ORDER BY uuid DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun getGatewayPacketByPacketId(packetId: Int): PacketEntity?
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM packet
         WHERE packet_id IN (:packetIds)
         AND (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
         """,

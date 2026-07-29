@@ -108,7 +108,7 @@ class SendMessageUseCaseTest {
         nodeRepository.setOurNode(Node(num = 0x1234, user = User(id = DataPacket.ID_LOCAL)))
         var savedPacket: DataPacket? = null
         var savedGatewayIdentity: NtsocialGatewayMessageIdentity? = null
-        everySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any()) } calls
+        everySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any(), null) } calls
             { call ->
                 savedPacket = call.arg(2)
                 savedGatewayIdentity = call.arg(6)
@@ -119,7 +119,7 @@ class SendMessageUseCaseTest {
 
         useCase("Hello LongFast", "0${DataPacket.ID_BROADCAST}", null)
 
-        verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any()) }
+        verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any(), null) }
         verifySuspend { messageQueue.enqueue(any()) }
         assertEquals("!00001234", savedPacket?.from)
         assertEquals(

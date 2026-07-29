@@ -31,6 +31,7 @@ import android.os.Build
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.gateway.NtsocialGatewayContract
 import com.ntsocial.meshlink.core.model.DataPacket
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayNativeText
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import kotlinx.coroutines.CancellationException
@@ -44,12 +45,13 @@ import org.koin.core.component.inject
 import org.koin.core.qualifier.named
 
 /**
- * Explicit command endpoint for a pre-authorized raw NTsocial envelope.
+ * Explicit command endpoint for a pre-authorized NTsocial Gateway request.
  *
  * Android 14+ supplies the original broadcast sender UID, which is verified again here. API 26-33 does not expose a
  * broadcast sender identity to receivers, so a caller must first obtain a single-use Provider capability after its
  * UID/package/certificate has been validated. This receiver never accepts a package name or a port number as proof of
- * authority, and it never sends port 497.
+ * authority. Routed overlay requests never send port 497, while native text requests construct only a normal broadcast
+ * TEXT_MESSAGE_APP packet.
  */
 @Suppress("TooManyFunctions")
 class NtsocialGatewayCommandReceiver :
@@ -80,11 +82,60 @@ class NtsocialGatewayCommandReceiver :
                 when (classifyGatewayCommand(intent.getStringExtra(NtsocialGatewayContract.EXTRA_COMMAND_TYPE))) {
                     GatewayCommandKind.V1 -> processCommand(intent, broadcastSender)
                     GatewayCommandKind.ROUTED_OVERLAY -> processRoutedOverlayCommand(intent, broadcastSender)
+                    GatewayCommandKind.NATIVE_TEXT -> processNativeTextCommand(intent, broadcastSender)
                     GatewayCommandKind.UNSUPPORTED -> processUnsupportedCommand(intent, broadcastSender)
                 }
             } finally {
                 pendingResult.finish()
             }
+        }
+    }
+
+    @Suppress("ReturnCount")
+    private suspend fun processNativeTextCommand(intent: Intent, broadcastSender: NtsocialGatewayCaller?) {
+        val request = parseGatewayNativeTextCommand(intent) ?: return
+        val caller =
+            authorizedCallerOrNull(
+                requestId = request.requestId,
+                authorizationToken = request.authorizationToken,
+                broadcastSender = broadcastSender,
+            ) ?: return
+
+        val route =
+            routeTokenStore.resolve(
+                token = request.routeToken,
+                caller = caller,
+                sourceChannelId = request.sourceChannelId,
+                radioGeneration = eventPublisher.radioGeneration.value,
+            )
+        if (route == null) {
+            reject(caller, request.requestId, REASON_INVALID_ROUTE)
+            return
+        }
+
+        val requestFingerprint = request.requestFingerprint()
+        when (
+            val reservation =
+                routeTokenStore.reserveClientMessage(
+                    caller = caller,
+                    clientMessageId = request.clientMessageId,
+                    requestFingerprint = requestFingerprint,
+                )
+        ) {
+            is NtsocialGatewayRouteTokenStore.ClientMessageReservation.Accepted ->
+                eventPublisher.publishCommandAccepted(caller.packageName, request.requestId, reservation.packetId)
+
+            is NtsocialGatewayRouteTokenStore.ClientMessageReservation.Pending ->
+                dispatchNativeTextCommand(
+                    caller = caller,
+                    request = request,
+                    channelIndex = route.channelIndex,
+                    packetId = reservation.packetId,
+                    requestFingerprint = requestFingerprint,
+                )
+
+            NtsocialGatewayRouteTokenStore.ClientMessageReservation.Conflict ->
+                reject(caller, request.requestId, REASON_IDEMPOTENCY_CONFLICT)
         }
     }
 
@@ -339,6 +390,43 @@ class NtsocialGatewayCommandReceiver :
         }
     }
 
+    private suspend fun dispatchNativeTextCommand(
+        caller: NtsocialGatewayCaller,
+        request: GatewayNativeTextCommand,
+        channelIndex: Int,
+        packetId: Int,
+        requestFingerprint: String,
+    ) {
+        try {
+            val packet =
+                gatewayRepository.persistAndQueueNativeBroadcastText(
+                    text = request.text,
+                    sourceChannelId = request.sourceChannelId,
+                    channelIndex = channelIndex,
+                    packetId = packetId,
+                    originClientMessageId = request.clientMessageId,
+                )
+            val ledgerCommitted =
+                routeTokenStore.markClientMessageAccepted(
+                    caller = caller,
+                    clientMessageId = request.clientMessageId,
+                    requestFingerprint = requestFingerprint,
+                    packetId = packet.id,
+                )
+            if (!ledgerCommitted) {
+                Logger.w { "ntsocial_gateway_native_text stage=ledger result=pending_commit_failed" }
+                reject(caller, request.requestId, REASON_QUEUE_FAILED)
+                return
+            }
+            eventPublisher.publishCommandAccepted(caller.packageName, request.requestId, packet.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Native message text is private user content and must never be included in logs.
+            reject(caller, request.requestId, REASON_QUEUE_FAILED)
+        }
+    }
+
     private fun reject(caller: NtsocialGatewayCaller, requestId: String, reason: String) {
         eventPublisher.publishCommandRejected(caller.packageName, requestId, reason)
     }
@@ -393,12 +481,14 @@ class NtsocialGatewayCommandReceiver :
 internal enum class GatewayCommandKind {
     V1,
     ROUTED_OVERLAY,
+    NATIVE_TEXT,
     UNSUPPORTED,
 }
 
 internal fun classifyGatewayCommand(commandType: String?): GatewayCommandKind = when (commandType) {
     null -> GatewayCommandKind.V1
     NtsocialGatewayContract.COMMAND_SEND_NTSOCIAL_ENVELOPE_TO_ROUTE -> GatewayCommandKind.ROUTED_OVERLAY
+    NtsocialGatewayContract.COMMAND_SEND_CHANNEL_TEXT -> GatewayCommandKind.NATIVE_TEXT
     else -> GatewayCommandKind.UNSUPPORTED
 }
 
@@ -412,6 +502,15 @@ internal data class GatewayRoutedCommand(
     val to: String?,
     val hopLimit: Int,
     val wantAck: Boolean,
+)
+
+internal data class GatewayNativeTextCommand(
+    val requestId: String,
+    val authorizationToken: String,
+    val sourceChannelId: String,
+    val routeToken: String,
+    val clientMessageId: String,
+    val text: String,
 )
 
 @Suppress("ReturnCount")
@@ -447,6 +546,39 @@ internal fun parseGatewayRoutedCommand(intent: Intent): GatewayRoutedCommand? {
     )
 }
 
+@Suppress("ReturnCount")
+internal fun parseGatewayNativeTextCommand(intent: Intent): GatewayNativeTextCommand? {
+    val requestId =
+        intent.getStringExtra(NtsocialGatewayContract.EXTRA_REQUEST_ID)?.takeIf {
+            it.isNotBlank() && it.length <= MAX_GATEWAY_REQUEST_ID_LENGTH
+        } ?: return null
+    val authorizationToken = intent.getStringExtra(NtsocialGatewayContract.EXTRA_AUTHORIZATION_TOKEN) ?: return null
+    val sourceChannelId =
+        intent.getStringExtra(NtsocialGatewayContract.EXTRA_SOURCE_CHANNEL_ID)?.takeIf {
+            it.isNotBlank() && it.length <= MAX_SOURCE_CHANNEL_ID_LENGTH
+        } ?: return null
+    val routeToken =
+        intent.getStringExtra(NtsocialGatewayContract.EXTRA_ROUTE_TOKEN)?.takeIf {
+            it.isNotBlank() && it.length <= MAX_ROUTE_TOKEN_LENGTH
+        } ?: return null
+    val clientMessageId =
+        intent
+            .getStringExtra(NtsocialGatewayContract.EXTRA_CLIENT_MESSAGE_ID)
+            ?.takeIf(CLIENT_MESSAGE_ID_REGEX::matches)
+            ?.uppercase() ?: return null
+    val text =
+        intent.getStringExtra(NtsocialGatewayContract.EXTRA_TEXT)?.takeIf(NtsocialGatewayNativeText::isValid)
+            ?: return null
+    return GatewayNativeTextCommand(
+        requestId = requestId,
+        authorizationToken = authorizationToken,
+        sourceChannelId = sourceChannelId,
+        routeToken = routeToken,
+        clientMessageId = clientMessageId,
+        text = text,
+    )
+}
+
 private fun GatewayRoutedCommand.requestFingerprint(): String = Buffer()
     .apply {
         writeUtf8(sourceChannelId)
@@ -456,6 +588,18 @@ private fun GatewayRoutedCommand.requestFingerprint(): String = Buffer()
         writeUtf8(to.orEmpty())
         writeInt(hopLimit)
         writeByte(if (wantAck) 1 else 0)
+    }
+    .readByteString()
+    .sha256()
+    .hex()
+
+internal fun GatewayNativeTextCommand.requestFingerprint(): String = Buffer()
+    .apply {
+        writeUtf8(NtsocialGatewayContract.COMMAND_SEND_CHANNEL_TEXT)
+        writeByte(0)
+        writeUtf8(sourceChannelId)
+        writeByte(0)
+        writeUtf8(text)
     }
     .readByteString()
     .sha256()

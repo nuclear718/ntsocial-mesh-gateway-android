@@ -85,6 +85,21 @@ interface NtsocialGatewayRepository {
         packetId: Int,
     ): NtsocialCachedEnvelope
 
+    /**
+     * Persists a normal Meshtastic broadcast text row and commits platform retry work before returning.
+     *
+     * [sourceChannelId] and [channelIndex] originate from a verified Gateway route. The implementation revalidates
+     * their current mapping before insertion, captures the normal native-text identity, and records
+     * [originClientMessageId] only as local Gateway correlation metadata.
+     */
+    suspend fun persistAndQueueNativeBroadcastText(
+        text: String,
+        sourceChannelId: String,
+        channelIndex: Int,
+        packetId: Int,
+        originClientMessageId: String,
+    ): DataPacket
+
     /** Updates the ephemeral provisioning/readiness snapshot exposed through the Android gateway provider. */
     fun updateDefaultChannelStatus(status: NtsocialDefaultChannelStatus)
 

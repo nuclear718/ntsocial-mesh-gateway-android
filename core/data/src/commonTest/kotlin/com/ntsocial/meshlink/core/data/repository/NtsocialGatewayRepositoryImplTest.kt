@@ -25,28 +25,41 @@
 package com.ntsocial.meshlink.core.data.repository
 
 import com.ntsocial.meshlink.core.model.DataPacket
+import com.ntsocial.meshlink.core.model.MessageStatus
+import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Position
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeCodec
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeDirection
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.PacketRepository
+import com.ntsocial.meshlink.core.testing.FakeNodeRepository
+import com.ntsocial.meshlink.core.testing.FakeRadioConfigRepository
 import dev.mokkery.MockMode
+import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
 import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
+import dev.mokkery.verify.VerifyMode
 import dev.mokkery.verifySuspend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.LocalConfig
 import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.User
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -58,8 +71,28 @@ class NtsocialGatewayRepositoryImplTest {
     private val commandSender = RecordingCommandSender()
     private val packetRepository = mock<PacketRepository>(MockMode.autofill)
     private val messageQueue = RecordingMessageQueue()
+    private val nodeRepository =
+        FakeNodeRepository().apply {
+            setOurNode(Node(num = 0x12345678, user = User(id = "!12345678")))
+            setMyId("!12345678")
+        }
+    private val radioConfigRepository =
+        FakeRadioConfigRepository().apply {
+            setChannelSet(
+                ChannelSet(
+                    settings = listOf(ChannelSettings(name = "primary"), ChannelSettings(name = "native", id = 42)),
+                ),
+            )
+        }
     private val repository =
-        NtsocialGatewayRepositoryImpl(commandSender, packetRepository, messageQueue, CoroutineScope(SupervisorJob()))
+        NtsocialGatewayRepositoryImpl(
+            commandSender,
+            packetRepository,
+            messageQueue,
+            nodeRepository,
+            radioConfigRepository,
+            CoroutineScope(SupervisorJob()),
+        )
 
     @Test
     fun `cacheInbound caches valid PRIVATE_APP NTsocial envelope`() {
@@ -233,10 +266,177 @@ class NtsocialGatewayRepositoryImplTest {
                 packetId = 77,
             )
 
-        verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any()) }
+        verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any(), any()) }
         assertEquals(listOf(77), messageQueue.packetIds)
         assertEquals(77, queued.packetId)
         assertTrue(commandSender.sentData.isEmpty())
+    }
+
+    @Test
+    fun `durable native broadcast text captures identity and origin before queue admission`() = runTest {
+        val clientMessageId = "0123456789ABCDEF0123456789ABCDEF"
+        val channelIdentity =
+            NtsocialGatewayIdentity.channel(
+                org.meshtastic.proto.Channel(
+                    index = 1,
+                    role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                    settings = radioConfigRepository.currentChannelSet.settings[1],
+                ),
+            )
+        everySuspend { packetRepository.getGatewayMessageChangeByPacketId(77) } returns null
+
+        val queued =
+            repository.persistAndQueueNativeBroadcastText(
+                text = "native text",
+                sourceChannelId = channelIdentity.sourceChannelId,
+                channelIndex = 1,
+                packetId = 77,
+                originClientMessageId = clientMessageId,
+            )
+        val expectedIdentity = requireNotNull(NtsocialGatewayIdentity.nativeBroadcastText(channelIdentity, queued))
+
+        assertEquals(DataPacket.ID_BROADCAST, queued.to)
+        assertEquals("!12345678", queued.from)
+        assertEquals(1, queued.dataType)
+        assertEquals("native text", queued.text)
+        assertEquals(MessageStatus.QUEUED, queued.status)
+        verifySuspend {
+            packetRepository.savePacket(
+                myNodeNum = 0x12345678,
+                contactKey = "1${DataPacket.ID_BROADCAST}",
+                packet = queued,
+                receivedTime = queued.time,
+                gatewayIdentity = expectedIdentity,
+                originClientMessageId = clientMessageId,
+            )
+        }
+        assertEquals(listOf(77), messageQueue.packetIds)
+        assertTrue(commandSender.sentData.isEmpty())
+    }
+
+    @Test
+    fun `durable native retry exact-checks existing row and re-admits queued work`() = runTest {
+        val clientMessageId = "FEDCBA9876543210FEDCBA9876543210"
+        val channelIdentity =
+            NtsocialGatewayIdentity.channel(
+                org.meshtastic.proto.Channel(
+                    index = 1,
+                    role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                    settings = radioConfigRepository.currentChannelSet.settings[1],
+                ),
+            )
+        val existingPacket =
+            DataPacket(to = DataPacket.ID_BROADCAST, channel = 1, text = "retry").apply {
+                from = "!12345678"
+                id = 88
+                status = MessageStatus.QUEUED
+            }
+        val existing =
+            NtsocialGatewayMessageChange(
+                changeSeq = 9,
+                identity = requireNotNull(NtsocialGatewayIdentity.nativeBroadcastText(channelIdentity, existingPacket)),
+                packet = existingPacket,
+                receivedAtMillis = existingPacket.time,
+                originClientMessageId = clientMessageId,
+            )
+        everySuspend { packetRepository.getGatewayMessageChangeByPacketId(88) } returns existing
+
+        val queued =
+            repository.persistAndQueueNativeBroadcastText(
+                text = "retry",
+                sourceChannelId = channelIdentity.sourceChannelId,
+                channelIndex = 1,
+                packetId = 88,
+                originClientMessageId = clientMessageId,
+            )
+
+        assertEquals(existingPacket, queued)
+        verifySuspend(mode = VerifyMode.not) {
+            packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any(), any())
+        }
+        assertEquals(listOf(88), messageQueue.packetIds)
+    }
+
+    @Test
+    fun `concurrent native retries persist one chat row and safely re-admit queued work`() = runTest {
+        val clientMessageId = "ABCDEF0123456789ABCDEF0123456789"
+        val channelIdentity =
+            NtsocialGatewayIdentity.channel(
+                org.meshtastic.proto.Channel(
+                    index = 1,
+                    role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                    settings = radioConfigRepository.currentChannelSet.settings[1],
+                ),
+            )
+        var persisted: NtsocialGatewayMessageChange? = null
+        var saveCount = 0
+        everySuspend { packetRepository.getGatewayMessageChangeByPacketId(90) } calls { persisted }
+        everySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any(), any()) } calls
+            { call ->
+                saveCount++
+                yield()
+                val savedPacket: DataPacket = call.arg(2)
+                persisted =
+                    NtsocialGatewayMessageChange(
+                        changeSeq = 1,
+                        identity = call.arg(6),
+                        packet = savedPacket,
+                        receivedAtMillis = call.arg(3),
+                        originClientMessageId = call.arg(7),
+                    )
+            }
+
+        val queued =
+            listOf(
+                async {
+                    repository.persistAndQueueNativeBroadcastText(
+                        text = "one durable row",
+                        sourceChannelId = channelIdentity.sourceChannelId,
+                        channelIndex = 1,
+                        packetId = 90,
+                        originClientMessageId = clientMessageId,
+                    )
+                },
+                async {
+                    repository.persistAndQueueNativeBroadcastText(
+                        text = "one durable row",
+                        sourceChannelId = channelIdentity.sourceChannelId,
+                        channelIndex = 1,
+                        packetId = 90,
+                        originClientMessageId = clientMessageId,
+                    )
+                },
+            )
+                .awaitAll()
+
+        assertEquals(1, saveCount)
+        assertEquals(queued.first(), queued.last())
+        assertEquals(listOf(90, 90), messageQueue.packetIds)
+    }
+
+    @Test
+    fun `native send rejects nonbroadcast substitutions through fixed repository construction`() = runTest {
+        val channelIdentity =
+            NtsocialGatewayIdentity.channel(
+                org.meshtastic.proto.Channel(
+                    index = 1,
+                    role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                    settings = radioConfigRepository.currentChannelSet.settings[1],
+                ),
+            )
+        everySuspend { packetRepository.getGatewayMessageChangeByPacketId(99) } returns null
+
+        val queued =
+            repository.persistAndQueueNativeBroadcastText(
+                text = "broadcast only",
+                sourceChannelId = channelIdentity.sourceChannelId,
+                channelIndex = 1,
+                packetId = 99,
+                originClientMessageId = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            )
+
+        assertEquals(DataPacket.ID_BROADCAST, queued.to)
+        assertEquals(1, queued.dataType)
     }
 
     private fun dataPacket(portNum: Int, raw: ByteString) = DataPacket(

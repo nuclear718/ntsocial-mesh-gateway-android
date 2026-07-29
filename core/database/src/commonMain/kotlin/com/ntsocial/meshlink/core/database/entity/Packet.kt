@@ -108,6 +108,7 @@ data class Packet(
     @ColumnInfo(name = "message_text", defaultValue = "") val messageText: String = "",
     @ColumnInfo(name = "gateway_source_channel_id") val gatewaySourceChannelId: String? = null,
     @ColumnInfo(name = "gateway_source_message_id") val gatewaySourceMessageId: String? = null,
+    @ColumnInfo(name = "origin_client_message_id") val originClientMessageId: String? = null,
 ) {
     companion object {
         const val RELAY_NODE_SUFFIX_MASK = 0xFF

@@ -100,7 +100,7 @@ class NtsocialGatewayServiceContractTest {
     }
 
     @Test
-    fun `gateway v2 contract is additive overlay only`() {
+    fun `gateway v2 contract exposes routed overlay and native channel text`() {
         val authority = NtsocialGatewayContract.authorityFor("com.ntsocial.meshlink")
 
         assertEquals(1, NtsocialGatewayContract.API_VERSION)
@@ -118,9 +118,19 @@ class NtsocialGatewayServiceContractTest {
             NtsocialGatewayContract.v2MessageChangesUri(authority, after = 7, limit = 20).toString(),
         )
         assertEquals("SEND_NTSOCIAL_ENVELOPE_TO_ROUTE", NtsocialGatewayContract.COMMAND_SEND_NTSOCIAL_ENVELOPE_TO_ROUTE)
+        assertEquals("SEND_CHANNEL_TEXT", NtsocialGatewayContract.COMMAND_SEND_CHANNEL_TEXT)
+        assertEquals("text", NtsocialGatewayContract.EXTRA_TEXT)
+        assertEquals(180, NtsocialGatewayContract.MAX_NATIVE_TEXT_SIZE_BYTES)
+        assertEquals(1L shl 4, NtsocialGatewayContract.CAPABILITY_NATIVE_TEXT_SEND)
+        assertEquals(
+            NtsocialGatewayContract.CAPABILITY_NATIVE_TEXT_SEND,
+            GATEWAY_V2_CAPABILITIES and NtsocialGatewayContract.CAPABILITY_NATIVE_TEXT_SEND,
+        )
+        assertEquals(1, GATEWAY_CHANNEL_NATIVE_TEXT_SEND)
         assertEquals(32, NtsocialGatewayContract.SOURCE_MESSAGE_ID_HEX_LENGTH)
         assertEquals("source_channel_id", NtsocialGatewayContract.COLUMN_SOURCE_CHANNEL_ID)
         assertEquals("source_message_id", NtsocialGatewayContract.COLUMN_SOURCE_MESSAGE_ID)
+        assertEquals("origin_client_message_id", NtsocialGatewayContract.COLUMN_ORIGIN_CLIENT_MESSAGE_ID)
         assertEquals("route_token", NtsocialGatewayContract.EXTRA_ROUTE_TOKEN)
     }
 

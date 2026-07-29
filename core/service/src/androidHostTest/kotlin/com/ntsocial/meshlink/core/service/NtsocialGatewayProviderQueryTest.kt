@@ -25,6 +25,11 @@
 package com.ntsocial.meshlink.core.service
 
 import android.net.Uri
+import com.ntsocial.meshlink.core.gateway.NtsocialGatewayContract
+import com.ntsocial.meshlink.core.model.DataPacket
+import com.ntsocial.meshlink.core.model.MessageStatus
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -57,5 +62,42 @@ class NtsocialGatewayProviderQueryTest {
                     )
                 }
             }
+    }
+
+    @Test
+    fun `message change projection exports origin client id only as nullable correlation metadata`() {
+        val identity =
+            NtsocialGatewayMessageIdentity(
+                sourceChannelId = "meshtastic:source",
+                sourceMessageId = "0123456789ABCDEF0123456789ABCDEF",
+            )
+        val packet =
+            DataPacket(to = DataPacket.ID_BROADCAST, channel = 1, text = "native").apply {
+                from = "!12345678"
+                id = -1
+                status = MessageStatus.QUEUED
+                time = 123L
+            }
+        val originClientMessageId = "ABCDEF0123456789ABCDEF0123456789"
+        val values =
+            gatewayMessageChangeValues(
+                change =
+                NtsocialGatewayMessageChange(
+                    changeSeq = 9,
+                    identity = identity,
+                    packet = packet,
+                    receivedAtMillis = 456L,
+                    originClientMessageId = originClientMessageId,
+                ),
+                identity = identity,
+                fromNodeId = "!12345678",
+                fromDisplayName = "Local",
+                localNodeId = "!12345678",
+            )
+
+        assertEquals(originClientMessageId, values[NtsocialGatewayContract.COLUMN_ORIGIN_CLIENT_MESSAGE_ID])
+        assertEquals(0xFFFF_FFFFL, values[NtsocialGatewayContract.COLUMN_PACKET_ID])
+        assertEquals("OUTBOUND", values[NtsocialGatewayContract.COLUMN_DIRECTION])
+        assertEquals("native", values[NtsocialGatewayContract.COLUMN_TEXT])
     }
 }

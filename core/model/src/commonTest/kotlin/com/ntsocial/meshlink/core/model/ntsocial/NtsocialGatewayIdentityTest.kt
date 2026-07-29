@@ -24,6 +24,7 @@
  */
 package com.ntsocial.meshlink.core.model.ntsocial
 
+import com.ntsocial.meshlink.core.model.DataPacket
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSettings
@@ -170,5 +171,24 @@ class NtsocialGatewayIdentityTest {
             "meshtastic:a8b0dcf7f9b36ba34e75187fccb820dc8d2d6ec4939f63023ed83769fb07d4ea",
             blankName.sourceChannelId,
         )
+    }
+
+    @Test
+    fun `native text limit counts UTF-8 bytes and rejects blank content`() {
+        assertTrue(NtsocialGatewayNativeText.isValid("a".repeat(NtsocialGatewayNativeText.MAX_UTF8_SIZE_BYTES)))
+        assertFalse(NtsocialGatewayNativeText.isValid("a".repeat(NtsocialGatewayNativeText.MAX_UTF8_SIZE_BYTES + 1)))
+        assertTrue(NtsocialGatewayNativeText.isValid("訊".repeat(60)))
+        assertFalse(NtsocialGatewayNativeText.isValid("訊".repeat(61)))
+        assertFalse(NtsocialGatewayNativeText.isValid(" \n\t"))
+    }
+
+    @Test
+    fun `stable local node id follows native send fallback order`() {
+        assertEquals("!11111111", NtsocialGatewayIdentity.stableLocalNodeId("!11111111", "!22222222", 0x33333333))
+        assertEquals(
+            "!22222222",
+            NtsocialGatewayIdentity.stableLocalNodeId(DataPacket.ID_LOCAL, "!22222222", 0x33333333),
+        )
+        assertEquals("!33333333", NtsocialGatewayIdentity.stableLocalNodeId(DataPacket.ID_LOCAL, null, 0x33333333))
     }
 }

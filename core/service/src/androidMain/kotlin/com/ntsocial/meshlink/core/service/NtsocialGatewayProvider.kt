@@ -241,19 +241,20 @@ private class NtsocialGatewaySnapshotCursorFactory(
 
     private fun v2StatusCursor(projection: Array<String>?): Cursor {
         val channelReady = eventPublisher.channelSet.value.settings.isNotEmpty()
+        val nativeTextReady = channelReady && gatewayLocalNodeId() != null
         val historyState = eventPublisher.historyState.value
         val values: Map<String, Any?> =
             mapOf(
                 NtsocialGatewayContract.COLUMN_API_VERSION to NtsocialGatewayContract.API_VERSION_V2,
                 NtsocialGatewayContract.COLUMN_CONNECTION_STATE to
                     serviceRepository.connectionState.value.toStatusName(),
-                NtsocialGatewayContract.COLUMN_CAPABILITIES to V2_CAPABILITIES,
+                NtsocialGatewayContract.COLUMN_CAPABILITIES to GATEWAY_V2_CAPABILITIES,
                 NtsocialGatewayContract.COLUMN_BEARER to BEARER_MESHTASTIC,
                 NtsocialGatewayContract.COLUMN_RADIO_GENERATION to eventPublisher.radioGeneration.value,
                 NtsocialGatewayContract.COLUMN_HISTORY_EPOCH to historyState.historyEpoch,
                 NtsocialGatewayContract.COLUMN_MESSAGE_CHANGE_SEQ to historyState.messageChangeSeq,
                 NtsocialGatewayContract.COLUMN_NATIVE_HISTORY_AVAILABLE to 1,
-                NtsocialGatewayContract.COLUMN_NATIVE_TEXT_SEND_AVAILABLE to 0,
+                NtsocialGatewayContract.COLUMN_NATIVE_TEXT_SEND_AVAILABLE to nativeTextReady.asInt(),
                 NtsocialGatewayContract.COLUMN_ARBITRARY_ROUTE_OVERLAY_AVAILABLE to channelReady.asInt(),
                 NtsocialGatewayContract.COLUMN_MAX_COMMAND_ENVELOPE_SIZE_BYTES to
                     NtsocialTransport.MAX_CLIENT_ENVELOPE_SIZE_BYTES,
@@ -352,7 +353,7 @@ private class NtsocialGatewaySnapshotCursorFactory(
                     NtsocialGatewayContract.COLUMN_UPLINK_ENABLED to settings.uplink_enabled.asInt(),
                     NtsocialGatewayContract.COLUMN_DOWNLINK_ENABLED to settings.downlink_enabled.asInt(),
                     NtsocialGatewayContract.COLUMN_CAN_READ_NATIVE_TEXT to 1,
-                    NtsocialGatewayContract.COLUMN_CAN_SEND_NATIVE_TEXT to 0,
+                    NtsocialGatewayContract.COLUMN_CAN_SEND_NATIVE_TEXT to GATEWAY_CHANNEL_NATIVE_TEXT_SEND,
                     NtsocialGatewayContract.COLUMN_CAN_SEND_NT_OVERLAY to 1,
                     NtsocialGatewayContract.COLUMN_RADIO_GENERATION to eventPublisher.radioGeneration.value,
                     NtsocialGatewayContract.COLUMN_HISTORY_EPOCH to eventPublisher.historyState.value.historyEpoch,
@@ -375,46 +376,43 @@ private class NtsocialGatewaySnapshotCursorFactory(
     private fun mapGatewayMessageChange(change: NtsocialGatewayMessageChange): MappedGatewayMessageChange? {
         val identity = change.identity ?: return null
         val packet = change.packet
+        val localNodeId = gatewayLocalNodeId()
         val fromNodeId =
             when (packet.from) {
-                DataPacket.ID_LOCAL ->
-                    nodeRepository.myId.value?.takeIf { it.isNotBlank() && it != DataPacket.ID_LOCAL }
-
+                DataPacket.ID_LOCAL -> localNodeId
                 else -> packet.from?.takeIf { it.isNotBlank() }
             }
         return fromNodeId?.let { normalizedFromNodeId ->
-            MappedGatewayMessageChange(change = change, identity = identity, fromNodeId = normalizedFromNodeId)
+            MappedGatewayMessageChange(
+                change = change,
+                identity = identity,
+                fromNodeId = normalizedFromNodeId,
+                localNodeId = localNodeId,
+            )
         }
     }
 
     private fun MatrixCursor.addGatewayMessageChange(mapped: MappedGatewayMessageChange) {
         val change = mapped.change
-        val packet = change.packet
         val fromNodeId = mapped.fromNodeId
-        val direction =
-            if (fromNodeId == DataPacket.ID_LOCAL || fromNodeId == nodeRepository.myId.value) {
-                "OUTBOUND"
-            } else {
-                "INBOUND"
-            }
         addValues(
-            mapOf(
-                NtsocialGatewayContract.COLUMN_SOURCE_MESSAGE_ID to mapped.identity.sourceMessageId,
-                NtsocialGatewayContract.COLUMN_SOURCE_CHANNEL_ID to mapped.identity.sourceChannelId,
-                NtsocialGatewayContract.COLUMN_CHANGE_SEQ to change.changeSeq,
-                NtsocialGatewayContract.COLUMN_PACKET_ID to (packet.id.toLong() and UNSIGNED_INT_MASK),
-                NtsocialGatewayContract.COLUMN_FROM_NODE_ID to fromNodeId,
-                NtsocialGatewayContract.COLUMN_FROM_DISPLAY_NAME to nodeRepository.getUser(fromNodeId).long_name,
-                NtsocialGatewayContract.COLUMN_TEXT to packet.text,
-                NtsocialGatewayContract.COLUMN_SENDER_TIMESTAMP_MILLIS to packet.time,
-                NtsocialGatewayContract.COLUMN_RECEIVED_AT_MILLIS to change.receivedAtMillis,
-                NtsocialGatewayContract.COLUMN_DIRECTION to direction,
-                NtsocialGatewayContract.COLUMN_STATUS to packet.status?.name,
-                NtsocialGatewayContract.COLUMN_SNR to packet.snr,
-                NtsocialGatewayContract.COLUMN_RSSI to packet.rssi,
-                NtsocialGatewayContract.COLUMN_HOPS_AWAY to packet.hopsAway,
-                NtsocialGatewayContract.COLUMN_VIA_MQTT to packet.viaMqtt.asInt(),
+            gatewayMessageChangeValues(
+                change = change,
+                identity = mapped.identity,
+                fromNodeId = fromNodeId,
+                fromDisplayName = nodeRepository.getUser(fromNodeId).long_name,
+                localNodeId = mapped.localNodeId,
             ),
+        )
+    }
+
+    private fun gatewayLocalNodeId(): String? {
+        val ourNode = nodeRepository.ourNodeInfo.value
+        val nodeNum = ourNode?.num?.takeIf { it != 0 } ?: nodeRepository.myNodeInfo.value?.myNodeNum?.takeIf { it != 0 }
+        return NtsocialGatewayIdentity.stableLocalNodeId(
+            userId = ourNode?.user?.id,
+            myId = nodeRepository.myId.value,
+            nodeNum = nodeNum,
         )
     }
 
@@ -535,6 +533,7 @@ private class NtsocialGatewaySnapshotCursorFactory(
             arrayOf(
                 NtsocialGatewayContract.COLUMN_SOURCE_MESSAGE_ID,
                 NtsocialGatewayContract.COLUMN_SOURCE_CHANNEL_ID,
+                NtsocialGatewayContract.COLUMN_ORIGIN_CLIENT_MESSAGE_ID,
                 NtsocialGatewayContract.COLUMN_CHANGE_SEQ,
                 NtsocialGatewayContract.COLUMN_PACKET_ID,
                 NtsocialGatewayContract.COLUMN_FROM_NODE_ID,
@@ -551,12 +550,6 @@ private class NtsocialGatewaySnapshotCursorFactory(
             )
 
         const val BEARER_MESHTASTIC = "MESHTASTIC"
-        const val UNSIGNED_INT_MASK = 0xFFFF_FFFFL
-        const val V2_CAPABILITIES =
-            NtsocialGatewayContract.CAPABILITY_CHANNEL_CATALOG or
-                NtsocialGatewayContract.CAPABILITY_NATIVE_TEXT_HISTORY or
-                NtsocialGatewayContract.CAPABILITY_ROUTE_OVERLAY_SEND or
-                NtsocialGatewayContract.CAPABILITY_MESSAGE_CHANGE_EVENTS
     }
 }
 
@@ -589,6 +582,7 @@ private data class MappedGatewayMessageChange(
     val change: NtsocialGatewayMessageChange,
     val identity: NtsocialGatewayMessageIdentity,
     val fromNodeId: String,
+    val localNodeId: String?,
 )
 
 private enum class GatewayEndpoint {
@@ -606,6 +600,42 @@ private fun Boolean.asInt(): Int = if (this) 1 else 0
 private const val DEFAULT_MESSAGE_CHANGES_AFTER = 0L
 private const val DEFAULT_MESSAGE_CHANGES_LIMIT = 100
 private const val MAX_MESSAGE_CHANGES_LIMIT = 200
+private const val UNSIGNED_INT_MASK = 0xFFFF_FFFFL
+internal const val GATEWAY_CHANNEL_NATIVE_TEXT_SEND = 1
+internal const val GATEWAY_V2_CAPABILITIES =
+    NtsocialGatewayContract.CAPABILITY_CHANNEL_CATALOG or
+        NtsocialGatewayContract.CAPABILITY_NATIVE_TEXT_HISTORY or
+        NtsocialGatewayContract.CAPABILITY_ROUTE_OVERLAY_SEND or
+        NtsocialGatewayContract.CAPABILITY_MESSAGE_CHANGE_EVENTS or
+        NtsocialGatewayContract.CAPABILITY_NATIVE_TEXT_SEND
+
+internal fun gatewayMessageChangeValues(
+    change: NtsocialGatewayMessageChange,
+    identity: NtsocialGatewayMessageIdentity,
+    fromNodeId: String,
+    fromDisplayName: String,
+    localNodeId: String?,
+): Map<String, Any?> {
+    val packet = change.packet
+    return mapOf(
+        NtsocialGatewayContract.COLUMN_SOURCE_MESSAGE_ID to identity.sourceMessageId,
+        NtsocialGatewayContract.COLUMN_SOURCE_CHANNEL_ID to identity.sourceChannelId,
+        NtsocialGatewayContract.COLUMN_ORIGIN_CLIENT_MESSAGE_ID to change.originClientMessageId,
+        NtsocialGatewayContract.COLUMN_CHANGE_SEQ to change.changeSeq,
+        NtsocialGatewayContract.COLUMN_PACKET_ID to (packet.id.toLong() and UNSIGNED_INT_MASK),
+        NtsocialGatewayContract.COLUMN_FROM_NODE_ID to fromNodeId,
+        NtsocialGatewayContract.COLUMN_FROM_DISPLAY_NAME to fromDisplayName,
+        NtsocialGatewayContract.COLUMN_TEXT to packet.text,
+        NtsocialGatewayContract.COLUMN_SENDER_TIMESTAMP_MILLIS to packet.time,
+        NtsocialGatewayContract.COLUMN_RECEIVED_AT_MILLIS to change.receivedAtMillis,
+        NtsocialGatewayContract.COLUMN_DIRECTION to if (fromNodeId == localNodeId) "OUTBOUND" else "INBOUND",
+        NtsocialGatewayContract.COLUMN_STATUS to packet.status?.name,
+        NtsocialGatewayContract.COLUMN_SNR to packet.snr,
+        NtsocialGatewayContract.COLUMN_RSSI to packet.rssi,
+        NtsocialGatewayContract.COLUMN_HOPS_AWAY to packet.hopsAway,
+        NtsocialGatewayContract.COLUMN_VIA_MQTT to packet.viaMqtt.asInt(),
+    )
+}
 
 private fun ConnectionState.toStatusName(): String = when (this) {
     ConnectionState.Connected -> "CONNECTED"
