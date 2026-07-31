@@ -27,11 +27,15 @@
 package com.ntsocial.meshlink.core.barcode
 
 import android.Manifest
+import android.util.Size
 import androidx.camera.compose.CameraXViewfinder
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceRequest
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -45,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +76,21 @@ import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.util.BarcodeScanner
 import org.jetbrains.compose.resources.stringResource
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+
+private const val QR_ANALYSIS_WIDTH = 1280
+private const val QR_ANALYSIS_HEIGHT = 960
+
+private val QR_ANALYSIS_RESOLUTION_SELECTOR =
+    ResolutionSelector.Builder()
+        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+        .setResolutionStrategy(
+            ResolutionStrategy(
+                Size(QR_ANALYSIS_WIDTH, QR_ANALYSIS_HEIGHT),
+                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+            ),
+        )
+        .build()
 
 @Composable
 fun rememberBarcodeScanner(onResult: (String?) -> Unit): BarcodeScanner {
@@ -91,10 +111,6 @@ fun rememberBarcodeScanner(onResult: (String?) -> Unit): BarcodeScanner {
                 showDialog = false
                 onResult(it)
             },
-            onDismiss = {
-                showDialog = false
-                onResult(null)
-            },
         )
     }
 
@@ -113,16 +129,27 @@ fun rememberBarcodeScanner(onResult: (String?) -> Unit): BarcodeScanner {
 }
 
 @Composable
-private fun BarcodeScannerDialog(onResult: (String?) -> Unit, onDismiss: () -> Unit) {
+private fun BarcodeScannerDialog(onResult: (String?) -> Unit) {
     var isCameraReady by remember { mutableStateOf(false) }
+    val resultGate = remember { SingleScanResultGate() }
+    val currentOnResult by rememberUpdatedState(onResult)
+    val context = LocalContext.current
+    val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    fun deliverResult(result: String?) {
+        resultGate.tryDeliver(result) { value -> mainExecutor.execute { currentOnResult(value) } }
+    }
+
+    Dialog(onDismissRequest = { deliverResult(null) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(modifier = Modifier.fillMaxSize()) {
-            ScannerView(onResult = onResult, onCameraReady = { isCameraReady = it })
+            ScannerView(onResult = { deliverResult(it) }, onCameraReady = { isCameraReady = it })
             if (isCameraReady) {
                 ScannerReticule()
             }
-            IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopStart).padding(16.dp)) {
+            IconButton(
+                onClick = { deliverResult(null) },
+                modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
+            ) {
                 Icon(
                     imageVector = MeshtasticIcons.Close,
                     contentDescription = stringResource(Res.string.close),
@@ -188,36 +215,56 @@ private fun ScannerView(onResult: (String?) -> Unit, onCameraReady: (Boolean) ->
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val disposed = remember { AtomicBoolean(false) }
+    val scannerUseCases = remember { ScannerUseCases() }
     var surfaceRequest by remember { mutableStateOf<SurfaceRequest?>(null) }
 
-    DisposableEffect(Unit) { onDispose { cameraExecutor.shutdown() } }
+    DisposableEffect(Unit) {
+        onDispose {
+            disposed.set(true)
+            surfaceRequest?.willNotProvideSurface()
+            scannerUseCases.release()
+            cameraExecutor.shutdown()
+        }
+    }
 
     LaunchedEffect(Unit) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener(
             {
+                if (disposed.get()) return@addListener
                 val cameraProvider = cameraProviderFuture.get()
 
                 val preview = Preview.Builder().build()
                 preview.setSurfaceProvider { request ->
-                    surfaceRequest = request
-                    onCameraReady(true)
+                    if (disposed.get()) {
+                        request.willNotProvideSurface()
+                    } else {
+                        surfaceRequest = request
+                        onCameraReady(true)
+                    }
                 }
 
                 val imageAnalysis =
                     ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setResolutionSelector(QR_ANALYSIS_RESOLUTION_SELECTOR)
                         .build()
                         .also { analysis -> analysis.setAnalyzer(cameraExecutor, createBarcodeAnalyzer(onResult)) }
 
+                if (disposed.get()) {
+                    imageAnalysis.clearAnalyzer()
+                    return@addListener
+                }
+
                 try {
-                    cameraProvider.unbindAll()
                     cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         CameraSelector.DEFAULT_BACK_CAMERA,
                         preview,
                         imageAnalysis,
                     )
+                    scannerUseCases.bind(cameraProvider, preview, imageAnalysis)
                 } catch (exc: IllegalStateException) {
                     Logger.e(exc) { "Use case binding failed" }
                 } catch (exc: IllegalArgumentException) {
@@ -231,4 +278,35 @@ private fun ScannerView(onResult: (String?) -> Unit, onCameraReady: (Boolean) ->
     }
 
     surfaceRequest?.let { CameraXViewfinder(surfaceRequest = it, modifier = Modifier.fillMaxSize()) }
+}
+
+private class ScannerUseCases {
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var preview: Preview? = null
+    private var imageAnalysis: ImageAnalysis? = null
+
+    fun bind(cameraProvider: ProcessCameraProvider, preview: Preview, imageAnalysis: ImageAnalysis) {
+        this.cameraProvider = cameraProvider
+        this.preview = preview
+        this.imageAnalysis = imageAnalysis
+    }
+
+    fun release() {
+        imageAnalysis?.clearAnalyzer()
+        val provider = cameraProvider
+        val boundPreview = preview
+        val boundAnalysis = imageAnalysis
+        if (provider != null && boundPreview != null && boundAnalysis != null) {
+            try {
+                provider.unbind(boundPreview, boundAnalysis)
+            } catch (exc: IllegalStateException) {
+                Logger.e(exc) { "Camera cleanup failed" }
+            } catch (exc: IllegalArgumentException) {
+                Logger.e(exc) { "Camera cleanup failed" }
+            }
+        }
+        cameraProvider = null
+        preview = null
+        imageAnalysis = null
+    }
 }

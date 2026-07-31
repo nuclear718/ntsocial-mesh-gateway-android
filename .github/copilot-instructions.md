@@ -60,12 +60,26 @@ git submodule update --init
 
 ### Current Build and Release Status
 
+- On 2026-07-31, the Android scanner was corrected for dense official Meshtastic channel QR codes:
+  it requests 1280-by-960 4:3 analysis, uses QR-only ZXing hints, delivers one result, and cleans up
+  only its own CameraX use cases. Shared ADD-mode import now respects the radio's real channel
+  capacity, omits semantic duplicates/placeholders, and leaves overflow visible but unchecked.
+  Dense-QR tests pass in both Android flavors; eight-channel URL and capacity tests pass in KMP.
+  Root formatting, Debug assembly, `test allTests`, KMP smoke compilation, and both Debug lints
+  pass. Changed-module Detekt passes; current root Detekt has seven pre-existing findings in
+  unmodified BLE, model, network, and data sources. The 51,948,716-byte Google arm64 Debug APK
+  (`versionCode=2`, `versionName=1.0.1`, SHA-256
+  `76B8F876CC4C2327B3C3E2274C0ECC09D06EA217C9154F204D385BA9D35368E6`) was installed in place on
+  SM-S9080, two SM-S9280 phones, and OPPO CPH2695; all four retained their first-install timestamps
+  and read back the same installed hash. Physical camera-to-screen scanning and connected-radio
+  application still require device evidence.
 - On 2026-07-29, the Gateway v2 native-text/Room-43 source passed 361 focused
   model/data/database/service tests. Root `test allTests` then passed with the required en-US JVM
   locale; `spotlessApply spotlessCheck`, `assembleDebug`, `kmpSmokeCompile`, and both Debug flavor
   lint tasks also passed. The Google arm64 Debug APK is 50,783,283 bytes with SHA-256
-  `94F4477B3D3BB0AD63B0EF229FA78549885363DBC69FE315D67C4677BAD5857B`. Root `detekt` is still
-  blocked only by three pre-existing findings in the unmodified desktop BLE pairing service.
+  `94F4477B3D3BB0AD63B0EF229FA78549885363DBC69FE315D67C4677BAD5857B`. At that snapshot, root
+  `detekt` was blocked only by three pre-existing findings in the unmodified desktop BLE pairing
+  service; use the newer status above for the current gate.
   `assembleRelease` is independently blocked by the unmodified Widget module's missing
   `colorControlNormal` and `widget_local_stats_preview` release resources; do not apply that
   release-only failure to the green Debug artifact.

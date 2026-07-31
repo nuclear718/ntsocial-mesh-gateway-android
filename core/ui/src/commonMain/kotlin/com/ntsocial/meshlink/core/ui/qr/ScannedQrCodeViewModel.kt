@@ -26,43 +26,48 @@ package com.ntsocial.meshlink.core.ui.qr
 
 import androidx.lifecycle.ViewModel
 import com.ntsocial.meshlink.core.model.RadioController
+import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.ui.util.getChannelList
 import com.ntsocial.meshlink.core.ui.viewmodel.safeLaunch
 import com.ntsocial.meshlink.core.ui.viewmodel.stateInWhileSubscribed
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import org.koin.core.annotation.KoinViewModel
-import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.Config
-import org.meshtastic.proto.LocalConfig
+
+internal const val DEFAULT_MAX_CHANNELS = 8
 
 @KoinViewModel
 class ScannedQrCodeViewModel(
     private val radioConfigRepository: RadioConfigRepository,
     private val radioController: RadioController,
+    nodeRepository: NodeRepository,
 ) : ViewModel() {
 
     val channels = radioConfigRepository.channelSetFlow.stateInWhileSubscribed(initialValue = ChannelSet())
 
-    private val localConfig = radioConfigRepository.localConfigFlow.stateInWhileSubscribed(initialValue = LocalConfig())
+    val maxChannels =
+        nodeRepository.myNodeInfo
+            .map { it?.maxChannels?.takeIf { maximum -> maximum > 0 } ?: DEFAULT_MAX_CHANNELS }
+            .stateInWhileSubscribed(
+                initialValue = nodeRepository.myNodeInfo.value?.maxChannels?.takeIf { it > 0 } ?: DEFAULT_MAX_CHANNELS,
+            )
 
     /** Set the radio config (also updates our saved copy in preferences). */
     fun setChannels(channelSet: ChannelSet) = safeLaunch(tag = "setChannels") {
-        getChannelList(channelSet.settings, channels.value.settings).forEach(::setChannel)
-        radioConfigRepository.replaceAllSettings(channelSet.settings)
+        val currentSettings = radioConfigRepository.channelSetFlow.first().settings
+        getChannelList(channelSet.settings, currentSettings).forEach { channel ->
+            radioController.setLocalChannel(channel)
+        }
 
         val loraConfig = channelSet.lora_config
-        if (loraConfig != null && localConfig.value.lora != loraConfig) {
-            setConfig(Config(lora = loraConfig))
+        val currentLoraConfig = radioConfigRepository.localConfigFlow.first().lora
+        if (loraConfig != null && currentLoraConfig != loraConfig) {
+            radioController.setLocalConfig(Config(lora = loraConfig))
         }
-    }
 
-    private fun setChannel(channel: Channel) {
-        safeLaunch(tag = "setChannel") { radioController.setLocalChannel(channel) }
-    }
-
-    // Set the radio config (also updates our saved copy in preferences)
-    private fun setConfig(config: Config) {
-        safeLaunch(tag = "setConfig") { radioController.setLocalConfig(config) }
+        radioConfigRepository.replaceAllSettings(channelSet.settings)
     }
 }

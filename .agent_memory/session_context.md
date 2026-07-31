@@ -1,5 +1,45 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-07-31 - Official Meshtastic channel-QR interoperability repair
+- The supplied official Meshtastic QR is a valid dense eight-channel `add=true` URL. The current
+  ZXing decoder, URI parser, Base64 decoder, and `ChannelSet` protobuf parser all accept it; no
+  proprietary or alternate QR format was needed.
+- Fixed the Android-only live scanner's two practical blockers: CameraX analysis no longer relies
+  on its VGA default and instead requests a 1280-by-960 4:3 stream, while ZXing is constrained to
+  QR with `TRY_HARDER`. Scanner sessions now deliver only the first result/dismissal on the main
+  thread and dispose their analyzer, Preview, ImageAnalysis, and executor without `unbindAll`.
+- Fixed the post-decode ADD path for full eight-channel official QR codes. The preview reads the
+  radio's positive `maxChannels` value with an eight-channel fallback, resolves semantic
+  name/PSK duplicates, removes blank placeholders, selects only channels that fit, and keeps
+  overflow visible unchecked. Radio channel/config writes are awaited sequentially and the cache
+  is replaced only after successful admission.
+- Added synthetic-secret tests for a 587-character dense Meshtastic-format QR in a padded
+  1280-by-960 camera plane, single-result delivery, eight-channel `add=true` URL round-trip, and
+  one-existing-plus-eight-incoming capacity behavior. No supplied PSK or raw QR payload was added
+  to source, tests, logs, or this handover.
+- With JDK 21, Android SDK, initialized proto submodule, and en-US JVM locale, targeted barcode
+  tests passed in both flavors and `:core:model:allTests :core:ui:allTests` passed. The required
+  `spotlessApply spotlessCheck assembleDebug test allTests` and `kmpSmokeCompile
+  :app:lintFdroidDebug :app:lintGoogleDebug` gates also passed.
+- Changed-module Detekt passes. Current root Detekt remains red for seven pre-existing findings in
+  unmodified modules: desktop BLE pairing (3), Gateway identity model (1), BLE radio transport
+  (1), and Gateway repository data code (2). This QR repair does not broaden into those unrelated
+  refactors.
+- Rebuilt the Google arm64 Debug target and passed its no-cloud-runtime guard. The exact APK is
+  51,948,716 bytes, package `com.ntsocial.meshlink.google.debug`, `versionCode=2`,
+  `versionName=1.0.1`, and SHA-256
+  `76B8F876CC4C2327B3C3E2274C0ECC09D06EA217C9154F204D385BA9D35368E6`.
+- Installed that APK with `adb install -r -t` on SM-S9080, two SM-S9280 phones, and OPPO CPH2695.
+  All four remained in ADB `device` state, retained their 2026-07-28 first-install timestamps, and
+  returned an installed `base.apk` SHA-256 identical to the local artifact. This is preserved-data
+  install and artifact-integrity evidence only; the Apps were not launched and no QR/radio action
+  was performed in this install turn.
+- Track impact: camera acquisition is Android-only. The capacity-aware shared dialog and
+  sequential application path compile for and improve Windows imports without changing Windows
+  branding, packaging, or IPC. Physical camera-to-screen scanning of the supplied QR and
+  connected-radio application remain required release evidence; automated image tests are not
+  claimed as device proof.
+
 ## 2026-07-29 - Gateway native channel-text source implementation
 - Added additive v2 `SEND_CHANNEL_TEXT` with `text`, the `1L shl 4` native-send capability, and a
   strict nonblank 180-byte UTF-8 limit. The command uses the existing verified caller,

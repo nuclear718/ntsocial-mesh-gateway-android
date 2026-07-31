@@ -29,12 +29,15 @@ import com.ntsocial.meshlink.core.common.util.DateFormatter
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.unknown_age
+import okio.ByteString
 import org.jetbrains.compose.resources.stringResource
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.Position
 import kotlin.time.Duration.Companion.days
+import com.ntsocial.meshlink.core.model.Channel as ModelChannel
 
 private const val SECONDS_TO_MILLIS = 1000L
 
@@ -86,4 +89,49 @@ fun getChannelList(new: List<ChannelSettings>, old: List<ChannelSettings>): List
             )
         }
     }
+}
+
+/**
+ * Builds the ADD-mode channel preview while respecting semantic duplicates and the radio's channel capacity.
+ *
+ * Existing channels remain first and selected. Unique incoming channels remain visible in scan order; only those that
+ * fit in [maxChannels] are selected by default. Blank placeholders and channels matching an existing or earlier
+ * incoming channel by effective name and PSK are omitted.
+ */
+fun getChannelPreviewForAdd(
+    existing: List<ChannelSettings>,
+    incoming: List<ChannelSettings>,
+    loraConfig: Config.LoRaConfig,
+    maxChannels: Int,
+): ChannelAddPreview {
+    val seen = existing.map { it.channelIdentity(loraConfig) }.toMutableSet()
+    val previewSettings = existing.toMutableList()
+    val previewSelections = MutableList(existing.size) { true }
+    var remaining = (maxChannels - existing.size).coerceAtLeast(0)
+
+    for (channel in incoming) {
+        val identity = if (channel.isPlaceholder()) null else channel.channelIdentity(loraConfig)
+        if (identity != null && seen.add(identity)) {
+            previewSettings += channel
+            val shouldSelect = remaining > 0
+            previewSelections += shouldSelect
+            if (shouldSelect) remaining--
+        }
+    }
+
+    return ChannelAddPreview(settings = previewSettings, selections = previewSelections)
+}
+
+/** Visible ADD-mode channels paired with their size-matched default selections. */
+data class ChannelAddPreview(val settings: List<ChannelSettings>, val selections: List<Boolean>)
+
+private data class ChannelIdentity(val name: String, val psk: ByteString) {
+    override fun toString(): String = "ChannelIdentity(name=$name, psk=<redacted>)"
+}
+
+private fun ChannelSettings.isPlaceholder(): Boolean = name.isBlank() && psk.size == 0
+
+private fun ChannelSettings.channelIdentity(loraConfig: Config.LoRaConfig): ChannelIdentity {
+    val channel = ModelChannel(settings = this, loraConfig = loraConfig)
+    return ChannelIdentity(name = channel.name, psk = channel.psk)
 }

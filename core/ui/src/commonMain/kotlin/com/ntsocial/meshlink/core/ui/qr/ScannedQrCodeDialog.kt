@@ -68,6 +68,7 @@ import com.ntsocial.meshlink.core.resources.new_channel_rcvd
 import com.ntsocial.meshlink.core.resources.replace
 import com.ntsocial.meshlink.core.resources.replace_channels_and_settings_description
 import com.ntsocial.meshlink.core.ui.component.ChannelSelection
+import com.ntsocial.meshlink.core.ui.util.getChannelPreviewForAdd
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.meshtastic.proto.ChannelSet
@@ -79,11 +80,13 @@ fun ScannedQrCodeDialog(
     viewModel: ScannedQrCodeViewModel = koinViewModel(),
 ) {
     val channels by viewModel.channels.collectAsStateWithLifecycle()
+    val maxChannels by viewModel.maxChannels.collectAsStateWithLifecycle()
 
     ScannedQrCodeDialog(
         channels = channels,
         incoming = incoming,
         onDismiss = onDismiss,
+        maxChannels = maxChannels,
         onConfirm = viewModel::setChannels,
     )
 }
@@ -96,12 +99,24 @@ fun ScannedQrCodeDialog(
     channels: ChannelSet,
     incoming: ChannelSet,
     onDismiss: () -> Unit,
+    maxChannels: Int = DEFAULT_MAX_CHANNELS,
     onConfirm: (ChannelSet) -> Unit,
 ) {
     var shouldReplace by rememberSaveable { mutableStateOf(incoming.lora_config != null) }
+    val effectiveMaxChannels = rememberSaveable { maxChannels }
+
+    val addPreview =
+        remember(channels.settings, incoming.settings, channels.lora_config, effectiveMaxChannels) {
+            getChannelPreviewForAdd(
+                existing = channels.settings,
+                incoming = incoming.settings,
+                loraConfig = channels.lora_config ?: Channel.default.loraConfig,
+                maxChannels = effectiveMaxChannels,
+            )
+        }
 
     val channelSet =
-        remember(shouldReplace, channels, incoming) {
+        remember(shouldReplace, channels, incoming, addPreview.settings) {
             if (shouldReplace) {
                 // When replacing, apply the incoming LoRa configuration but preserve certain
                 // locally safe fields such as MQTT flags and TX power. This prevents QR codes
@@ -114,10 +129,7 @@ fun ScannedQrCodeDialog(
                     ),
                 )
             } else {
-                // To guarantee consistent ordering, using a LinkedHashSet which iterates through
-                // its entries according to the order an item was *first* inserted.
-                val result = (channels.settings + incoming.settings).distinct()
-                channels.copy(settings = result)
+                channels.copy(settings = addPreview.settings)
             }
         }
 
@@ -125,7 +137,15 @@ fun ScannedQrCodeDialog(
 
     /* Holds selections made by the user */
     val channelSelections =
-        remember(channelSet) { mutableStateListOf(elements = Array(size = channelSet.settings.size, init = { true })) }
+        remember(shouldReplace, channelSet.settings, addPreview.selections) {
+            val defaults =
+                if (shouldReplace) {
+                    List(channelSet.settings.size) { true }
+                } else {
+                    addPreview.selections
+                }
+            mutableStateListOf<Boolean>().apply { addAll(defaults) }
+        }
 
     val selectedChannelSet =
         if (shouldReplace) {
@@ -302,7 +322,7 @@ fun ScannedQrCodeDialog(
                                 onDismiss()
                                 onConfirm(selectedChannelSet)
                             },
-                            enabled = selectedChannelSet.settings.size in 1..8,
+                            enabled = selectedChannelSet.settings.size in 1..effectiveMaxChannels,
                         ) {
                             Text(
                                 text = stringResource(Res.string.accept),
