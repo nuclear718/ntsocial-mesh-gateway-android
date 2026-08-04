@@ -1,5 +1,27 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-08-04 - Private-message fork/upstream investigation and repair plan
+- Compared fork main fec591ec8 with upstream main e51fdf8a5 from merge base c0d95d6ac and traced
+  native TEXT_MESSAGE_APP direct messages, Android WorkManager/radio admission, Room contact
+  persistence, paged Contacts identity, and the NTsocial PRIVATE_APP / port-256 Gateway path.
+- Native DM field construction remains upstream-compatible: app channel 8 becomes wire channel 0
+  with PKI/public key, while normal text stays on port 1. Do not replace native DM with port 256.
+- Confirmed the fork lacks upstream 93b24572: paged contacts discard stored contact_key and
+  recompute it from a possibly-null local identity, which can collapse outgoing-latest DMs onto the
+  self key after cold start/reconnect. The plan ports the small Pair contact-key fix without a Room
+  migration and isolates private inserts from broadcast-only Gateway identity capture.
+- Confirmed AndroidRadioControllerImpl silently returns when its Activity-lifecycle AIDL binder is
+  null; SendMessageWorker then marks ENROUTE/success. The plan moves message send to the existing
+  in-process path, preserves a throw/retry stopgap, and adds awaited local packet-queue admission.
+- Confirmed the Gateway has no explicit private-send command. SEND_CHANNEL_TEXT is broadcast-only,
+  and existing directed port-256 envelopes remain on configured channels 0..7 rather than the PKI
+  transport. The plan adds an additive v2, known-node, non-self, PKI-only private-overlay command
+  and rejects any SEND_CHANNEL_TEXT carrying EXTRA_TO to prevent silent broadcast.
+- Also scoped the firmware-2.8 QueueStatus res=35 fix, SendMessageUseCase error propagation,
+  address/renumber hardening, metadata-only diagnostics, automated tests, and a two-radio RF matrix.
+- Added NTSOCIAL_MESHLINK_PRIVATE_MESSAGE_REPAIR_PLAN.md at repository root. This task changes
+  documentation only; it does not implement Kotlin fixes or claim RF/remote-receipt validation.
+
 ## 2026-07-31 - Official Meshtastic channel-QR interoperability repair
 - The supplied official Meshtastic QR is a valid dense eight-channel `add=true` URL. The current
   ZXing decoder, URI parser, Base64 decoder, and `ChannelSet` protobuf parser all accept it; no
