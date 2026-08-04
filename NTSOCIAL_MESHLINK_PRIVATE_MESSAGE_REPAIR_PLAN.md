@@ -308,6 +308,7 @@ override suspend fun sendMessage(packet: DataPacket) {
 
 - **PacketHandler.kt / PacketHandlerImpl.kt**：新增 suspend enqueueToRadio(MeshPacket)，在 queueMutex 內檢查連線、加入 queuedPackets 並啟動 processor 後才返回。
 - **CommandSender.kt / CommandSenderImpl.kt**：新增 suspend sendDataAndAwaitAdmission(DataPacket)，共用既有 validation 與 buildMeshPacket，最後呼叫 enqueueToRadio。
+- **CommandSenderImpl.kt**：channel 8 的目的節點不存在或沒有 public key 時直接拋錯；不得建立 pki_encrypted=true 但 public_key 為空的 MeshPacket。
 - **MeshActionHandler.kt / MeshActionHandlerImpl.kt**：使訊息送出使用 awaited path；完成 admission 後才 broadcast ENROUTE／remember。
 - **DirectRadioControllerImpl.kt** 與 AndroidRadioControllerImpl 使用 awaited action。
 - deprecated AIDL send() 保留 external signature；在 ServiceScope 中呼叫同一 suspend action，不再成為 Android App 內部的必要通路。
@@ -357,7 +358,7 @@ res=35 即使 free==0 仍要完成對應 deferred 為 true；其他非零值保�
 - 新增 **CommandSenderImplTest.kt**：
   - 8!70fdde9b → MeshPacket.to=0x70fdde9b、port 1、pki=true、public_key 非空、wire channel=0、want_ack=true；
   - legacy channel 1 direct → pki=false、wire channel=1；
-  - malformed／unknown destination fail closed。
+  - malformed destination，或 channel 8 target 缺少 NodeDB／public key 時 fail closed。
 
 **完成條件**
 
@@ -473,7 +474,7 @@ SEND_CHANNEL_TEXT 保持 broadcast-only，但只要 Intent 有 EXTRA_TO，無論
 
 **母程式配套**
 
-- 母程式必須把 NTsocial peer 映射成 Provider /v1/nodes 或 /v2 status 所提供的 canonical Meshtastic node_id，也就是 !xxxxxxxx。
+- 母程式必須以 Provider /v1/nodes 的 node_id（或等價、已驗證的 node catalog mapping），把 NTsocial peer 映射成 canonical Meshtastic !xxxxxxxx。
 - 不得把 decimal node_num、NTsocial 使用者 ID、fingerprint 或公鑰字串塞進 EXTRA_TO。
 - 母程式依 EVENT_ENVELOPE_AVAILABLE／cache poll 消費 inbound port 256，並以 headerMsgId 寫入自己的 canonical history。
 
