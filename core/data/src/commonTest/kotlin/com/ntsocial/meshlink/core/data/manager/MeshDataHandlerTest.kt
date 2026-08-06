@@ -454,6 +454,30 @@ class MeshDataHandlerTest {
     }
 
     @Test
+    fun `routing packet with NAK fails pending response`() {
+        val routing = Routing(error_reason = Routing.Error.ADMIN_BAD_SESSION_KEY)
+        val packet =
+            MeshPacket(
+                from = 456,
+                decoded =
+                Data(portnum = PortNum.ROUTING_APP, payload = routing.encode().toByteString(), request_id = 99),
+            )
+        val dataPacket =
+            DataPacket(
+                from = "!remote",
+                to = DataPacket.ID_BROADCAST,
+                bytes = routing.encode().toByteString(),
+                dataType = PortNum.ROUTING_APP.value,
+            )
+        every { dataMapper.toDataPacket(packet) } returns dataPacket
+        every { nodeManager.toNodeID(456) } returns "!remote"
+
+        handler.handleReceivedData(packet, 123)
+
+        verify { packetHandler.removeResponse(99, complete = false) }
+    }
+
+    @Test
     fun `routing packet always broadcasts`() {
         val routing = Routing(error_reason = Routing.Error.NONE)
         val packet =

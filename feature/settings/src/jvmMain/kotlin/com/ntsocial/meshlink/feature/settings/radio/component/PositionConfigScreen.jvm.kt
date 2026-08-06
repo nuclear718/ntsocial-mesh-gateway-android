@@ -36,3 +36,8 @@ actual fun DeviceLocationButton(
 ) {
     // No-op for desktop since it doesn't have a phone GPS
 }
+
+@Composable
+actual fun PhoneLocationSharingPreference(enabled: Boolean, fixedPosition: Boolean) {
+    // Desktop does not have a phone location source.
+}

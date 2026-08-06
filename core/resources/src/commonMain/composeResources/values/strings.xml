@@ -140,10 +140,20 @@
     <string name="channel_6">Channel 6</string>
     <string name="channel_7">Channel 7</string>
     <string name="channel_8">Channel 8</string>
+    <string name="channel_apply_failed">The radio did not confirm the complete channel set. Keep the connection stable and try again.</string>
+    <string name="channel_apply_in_progress">Applying channels and verifying the radio…</string>
+    <string name="channel_apply_verified">Channels were confirmed by the radio.</string>
     <string name="channel_features">Channel Features</string>
     <string name="channel_invalid">This Channel URL is invalid and can not be used</string>
     <string name="channel_label">Channel</string>
     <string name="channel_name">Channel Name</string>
+    <string name="channel_protection_disabled">Automatic channel protection is off for this radio.</string>
+    <string name="channel_protection_save">Save and protect channels</string>
+    <string name="channel_protection_saved">This radio's channel snapshot is now protected.</string>
+    <string name="channel_protection_stop">Stop protecting</string>
+    <string name="channel_protection_summary">Save the radio's current verified channel set. On later reconnects, MeshLink will only restore secondary channels that are clearly missing; conflicting changes are never overwritten.</string>
+    <string name="channel_protection_title">Channel protection</string>
+    <string name="channel_protection_update">Update protected snapshot</string>
     <string name="channel_url">Channel URL</string>
     <string name="channel_utilization">ChUtil</string>
     <string name="channels">Channels</string>
@@ -984,7 +994,9 @@
     <string name="primary_channel_feature">Periodic position and telemetry broadcast</string>
     <string name="privacy_url" translatable="false">https://github.com/nuclear718/ntsocial-mesh-gateway-android/blob/main/docs/google-play/PRIVACY_POLICY.md</string>
     <string name="private_key">Private Key</string>
+    <string name="provide_location_fixed_summary">Paused while Fixed Position is enabled.</string>
     <string name="provide_location_to_mesh">Provide phone location to mesh</string>
+    <string name="provide_location_to_mesh_summary">Use this Android phone as the connected node's live position source. The radio broadcasts it using this page's Position settings.</string>
     <string name="provider_name_exists">Provider name exists.</string>
     <string name="proxy_to_client_enabled">Proxy to client enabled</string>
     <string name="psk">PSK</string>

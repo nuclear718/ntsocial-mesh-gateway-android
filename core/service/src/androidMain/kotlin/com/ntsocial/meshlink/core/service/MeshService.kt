@@ -24,15 +24,24 @@
  */
 package com.ntsocial.meshlink.core.service
 
+import android.app.AppOpsManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.hasLocationPermission
+import com.ntsocial.meshlink.core.common.isLocationEnabled
+import com.ntsocial.meshlink.core.common.util.registerReceiverCompat
 import com.ntsocial.meshlink.core.common.util.toRemoteExceptions
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.model.DataPacket
@@ -56,9 +65,13 @@ import com.ntsocial.meshlink.core.repository.ServiceRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
+import org.koin.core.qualifier.named
 import org.meshtastic.proto.PortNum
+import kotlin.concurrent.Volatile
 
 /**
  * Android foreground service that hosts the Meshtastic mesh radio connection.
@@ -84,6 +97,8 @@ class MeshService : Service() {
 
     private val connectionManager: MeshConnectionManager by inject()
 
+    private val processLifecycle: Lifecycle by inject(qualifier = named("ProcessLifecycle"))
+
     private val notifications: MeshServiceNotifications by inject()
 
     /** Android-typed accessor for the foreground service notification. */
@@ -101,6 +116,46 @@ class MeshService : Service() {
 
     private var isServiceInitialized = false
     private var pendingDeviceSelectionStopJob: Job? = null
+    private val foregroundStateLock = Any()
+
+    @Volatile private var isForegroundStarted = false
+
+    @Volatile private var effectiveForegroundServiceType = 0
+
+    private var processLifecycleObserverRegistered = false
+    private var locationModeReceiverRegistered = false
+    private var locationPermissionObserverRegistered = false
+
+    private val appOpsManager: AppOpsManager by lazy { getSystemService(AppOpsManager::class.java) }
+
+    private val processLifecycleObserver =
+        object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                reconcileLocationForegroundAccess()
+            }
+        }
+
+    private val locationModeReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (
+                    intent?.action == LocationManager.MODE_CHANGED_ACTION ||
+                    intent?.action == LocationManager.PROVIDERS_CHANGED_ACTION
+                ) {
+                    reconcileLocationForegroundAccess()
+                }
+            }
+        }
+
+    private val locationPermissionChangedListener =
+        AppOpsManager.OnOpChangedListener { operation, changedPackage ->
+            if (
+                changedPackage == packageName &&
+                (operation == AppOpsManager.OPSTR_FINE_LOCATION || operation == AppOpsManager.OPSTR_COARSE_LOCATION)
+            ) {
+                reconcileLocationForegroundAccess()
+            }
+        }
 
     private val myNodeNum: Int
         get() = nodeManager.myNodeNum.value ?: throw RadioNotConnectedException()
@@ -130,6 +185,10 @@ class MeshService : Service() {
         try {
             orchestrator.start()
             isServiceInitialized = true
+            connectionManager.locationSharingRequested
+                .onEach { reconcileLocationForegroundAccess() }
+                .launchIn(serviceScope)
+            registerLocationReconcileSignals()
         } catch (e: IllegalStateException) {
             // Koin throws IllegalStateException when the DI graph is not yet initialized.
             // This can happen if the system restarts the service (e.g. after a crash or on boot)
@@ -158,18 +217,14 @@ class MeshService : Service() {
         connectionManager.updateStatusNotification()
         val notification = androidNotifications.getServiceNotification()
 
-        val foregroundServiceType =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-                if (hasLocationPermission()) {
-                    types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-                }
-                types
-            } else {
-                0
-            }
-
-        startForegroundSafely(notification, foregroundServiceType)
+        if (!startForegroundForCurrentState(notification)) {
+            Logger.w { "MeshService could not enter the foreground; stopping instead of leaving a pending start" }
+            locationManager.setLocationAccessAllowed(false)
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        connectionManager.reconcileLocation()
 
         pendingDeviceSelectionStopJob?.cancel()
         pendingDeviceSelectionStopJob = null
@@ -193,37 +248,166 @@ class MeshService : Service() {
         return START_STICKY
     }
 
-    private fun startForegroundSafely(notification: android.app.Notification, foregroundServiceType: Int) {
+    /** Mandatory foreground entry for each service start, with location limited to explicit sharing state. */
+    private fun startForegroundForCurrentState(notification: android.app.Notification): Boolean =
+        synchronized(foregroundStateLock) {
+            val decision = currentLocationForegroundDecision()
+            val effectiveType = startForegroundSafely(notification, decision.serviceType) ?: return@synchronized false
+            isForegroundStarted = true
+            effectiveForegroundServiceType = effectiveType
+            locationManager.setLocationAccessAllowed(decision.allowsAccessWith(effectiveType))
+            true
+        }
+
+    /**
+     * Promotes, preserves, or drops the location type as consent and platform prerequisites change.
+     *
+     * A service that already acquired the type while the UI was visible may retain it in the background. This is what
+     * lets an explicitly enabled feed resume after a screen-off BLE reconnect without requesting background location.
+     */
+    private fun reconcileLocationForegroundAccess() {
+        val shouldReconcileLocation =
+            synchronized(foregroundStateLock) {
+                if (!isForegroundStarted) {
+                    locationManager.setLocationAccessAllowed(false)
+                    return@synchronized false
+                }
+
+                val decision = currentLocationForegroundDecision()
+                val effectiveType =
+                    if (decision.serviceType == effectiveForegroundServiceType) {
+                        effectiveForegroundServiceType
+                    } else {
+                        startForegroundSafely(androidNotifications.getServiceNotification(), decision.serviceType)
+                            ?: run {
+                                locationManager.setLocationAccessAllowed(false)
+                                return@synchronized false
+                            }
+                    }
+                effectiveForegroundServiceType = effectiveType
+                locationManager.setLocationAccessAllowed(decision.allowsAccessWith(effectiveType))
+                true
+            }
+        if (shouldReconcileLocation) connectionManager.reconcileLocation()
+    }
+
+    private fun currentLocationForegroundDecision(): LocationForegroundDecision = locationForegroundDecision(
+        locationRequested = connectionManager.locationSharingRequested.value,
+        hasLocationPermission = hasLocationPermission(),
+        systemLocationEnabled = isLocationEnabled(),
+        appInForeground = processLifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+        currentServiceType = effectiveForegroundServiceType,
+    )
+
+    private fun registerLocationReconcileSignals() {
+        if (!processLifecycleObserverRegistered) {
+            processLifecycle.addObserver(processLifecycleObserver)
+            processLifecycleObserverRegistered = true
+        }
+        if (!locationModeReceiverRegistered) {
+            try {
+                registerReceiverCompat(
+                    locationModeReceiver,
+                    IntentFilter().apply {
+                        addAction(LocationManager.MODE_CHANGED_ACTION)
+                        addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
+                    },
+                )
+                locationModeReceiverRegistered = true
+            } catch (error: SecurityException) {
+                Logger.w(error) { "System location changes cannot be observed; foreground lifecycle remains active" }
+            }
+        }
+        if (!locationPermissionObserverRegistered) {
+            try {
+                appOpsManager.startWatchingMode(
+                    AppOpsManager.OPSTR_FINE_LOCATION,
+                    packageName,
+                    locationPermissionChangedListener,
+                )
+                appOpsManager.startWatchingMode(
+                    AppOpsManager.OPSTR_COARSE_LOCATION,
+                    packageName,
+                    locationPermissionChangedListener,
+                )
+                locationPermissionObserverRegistered = true
+            } catch (error: SecurityException) {
+                appOpsManager.stopWatchingMode(locationPermissionChangedListener)
+                Logger.w(error) {
+                    "Location permission changes cannot be observed; foreground lifecycle remains active"
+                }
+            }
+        }
+    }
+
+    private fun unregisterLocationReconcileSignals() {
+        if (processLifecycleObserverRegistered) {
+            processLifecycle.removeObserver(processLifecycleObserver)
+            processLifecycleObserverRegistered = false
+        }
+        if (locationModeReceiverRegistered) {
+            unregisterReceiver(locationModeReceiver)
+            locationModeReceiverRegistered = false
+        }
+        if (locationPermissionObserverRegistered) {
+            appOpsManager.stopWatchingMode(locationPermissionChangedListener)
+            locationPermissionObserverRegistered = false
+        }
+    }
+
+    private fun LocationForegroundDecision.allowsAccessWith(effectiveType: Int): Boolean = locationAccessAllowed &&
+        (
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                effectiveType and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION != 0
+            )
+
+    /**
+     * @return the effective service type, including a connected-device fallback, or null when foreground entry fails.
+     */
+    private fun startForegroundSafely(notification: android.app.Notification, foregroundServiceType: Int): Int? {
         @Suppress("TooGenericExceptionCaught")
-        try {
+        return try {
             ServiceCompat.startForeground(this, SERVICE_NOTIFY_ID, notification, foregroundServiceType)
-        } catch (ex: android.app.ForegroundServiceStartNotAllowedException) {
-            Logger.e(ex) { "ForegroundServiceStartNotAllowedException: OS restricted background start." }
+            foregroundServiceType
+        } catch (ex: IllegalStateException) {
+            Logger.e(ex) { "Foreground service start was not allowed by the OS" }
+            null
         } catch (ex: SecurityException) {
             // On Android 14+ starting a location FGS from the background can fail with SecurityException
             // if the app is not in an allowed state. Retry without the location type if that was requested.
-            val connectedDeviceOnly =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-                } else {
-                    0
-                }
-            if (foregroundServiceType != connectedDeviceOnly) {
-                Logger.w(ex) {
-                    "Failed to start foreground service with location type, retrying with connectedDevice only"
-                }
-                try {
-                    ServiceCompat.startForeground(this, SERVICE_NOTIFY_ID, notification, connectedDeviceOnly)
-                } catch (retryEx: android.app.ForegroundServiceStartNotAllowedException) {
-                    Logger.e(retryEx) { "ForegroundServiceStartNotAllowedException on retry." }
-                } catch (retryEx: Exception) {
-                    Logger.e(retryEx) { "Failed to start foreground service even after retry" }
-                }
-            } else {
-                Logger.e(ex) { "SecurityException starting foreground service" }
-            }
+            retryForegroundWithoutLocation(ex, notification, foregroundServiceType)
+        } catch (ex: IllegalArgumentException) {
+            retryForegroundWithoutLocation(ex, notification, foregroundServiceType)
         } catch (ex: Exception) {
             Logger.e(ex) { "Error starting foreground service" }
+            null
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun retryForegroundWithoutLocation(
+        cause: RuntimeException,
+        notification: android.app.Notification,
+        requestedType: Int,
+    ): Int? {
+        val connectedDeviceOnly =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            } else {
+                0
+            }
+        if (requestedType == connectedDeviceOnly) {
+            Logger.e(cause) { "Foreground service start failed with no additive location type to remove" }
+            return null
+        }
+
+        Logger.w(cause) { "Location foreground type was refused; retrying as connectedDevice" }
+        return try {
+            ServiceCompat.startForeground(this, SERVICE_NOTIFY_ID, notification, connectedDeviceOnly)
+            connectedDeviceOnly
+        } catch (retryError: Exception) {
+            Logger.e(retryError) { "Failed to start foreground service after dropping location type" }
+            null
         }
     }
 
@@ -238,6 +422,12 @@ class MeshService : Service() {
         Logger.i { "Destroying mesh service" }
         pendingDeviceSelectionStopJob?.cancel()
         pendingDeviceSelectionStopJob = null
+        unregisterLocationReconcileSignals()
+        synchronized(foregroundStateLock) {
+            isForegroundStarted = false
+            effectiveForegroundServiceType = 0
+            locationManager.setLocationAccessAllowed(false)
+        }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         if (isServiceInitialized) {
             orchestrator.stop()
@@ -354,11 +544,14 @@ class MeshService : Service() {
             override fun connectionState(): String = serviceRepository.connectionState.value.toString()
 
             override fun startProvideLocation() {
-                locationManager.start(serviceScope) { commandSender.sendPosition(it) }
+                // Deprecated Binder calls are only reconciliation hints. The private per-node preference remains the
+                // authority, so an external AIDL caller cannot turn location sharing on.
+                reconcileLocationForegroundAccess()
             }
 
             override fun stopProvideLocation() {
-                locationManager.stop()
+                // Likewise, stopping is driven by the preference collector; a caller cannot disable an enabled feed.
+                reconcileLocationForegroundAccess()
             }
 
             override fun removeByNodenum(requestId: Int, nodeNum: Int) = toRemoteExceptions {

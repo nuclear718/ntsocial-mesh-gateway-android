@@ -26,6 +26,9 @@ package com.ntsocial.meshlink.core.testing
 
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
@@ -50,6 +53,9 @@ class FakeRadioConfigRepository :
 
     private val channelSetBacking = mutableStateFlow(ChannelSet())
     override val channelSetFlow: Flow<ChannelSet> = channelSetBacking
+
+    private val channelReadbackGenerationBacking = mutableStateFlow(0L)
+    override val channelReadbackGeneration: StateFlow<Long> = channelReadbackGenerationBacking.asStateFlow()
 
     private val localConfigBacking = mutableStateFlow(LocalConfig())
     override val localConfigFlow: Flow<LocalConfig> = localConfigBacking
@@ -101,12 +107,10 @@ class FakeRadioConfigRepository :
         }
     }
 
-    override suspend fun clearChannelSet() {
-        channelSetBacking.value = ChannelSet()
-    }
-
-    override suspend fun replaceAllSettings(settingsList: List<ChannelSettings>) {
-        channelSetBacking.value = channelSetBacking.value.copy(settings = settingsList)
+    override suspend fun replaceChannelSet(channelSet: ChannelSet, completeReadback: Boolean) {
+        channelSetBacking.value =
+            if (completeReadback) channelSet else channelSetBacking.value.copy(settings = channelSet.settings)
+        if (completeReadback) channelReadbackGenerationBacking.update { it + 1 }
     }
 
     override suspend fun updateChannelSettings(channel: Channel) {
@@ -121,6 +125,10 @@ class FakeRadioConfigRepository :
     }
 
     override suspend fun setLocalConfig(config: Config) {
+        lastSetLocalConfig = config
+    }
+
+    override suspend fun setLocalConfigFromHandshake(config: Config) {
         lastSetLocalConfig = config
     }
 
@@ -163,7 +171,7 @@ class FakeRadioConfigRepository :
         deviceProfileBacking.value = profile
     }
 
-    /** Directly sets the [ChannelSet] (bypasses [updateChannelSettings]/[replaceAllSettings]). */
+    /** Directly sets the [ChannelSet] (bypasses [updateChannelSettings]/[replaceChannelSet]). */
     fun setChannelSet(channelSet: ChannelSet) {
         channelSetBacking.value = channelSet
     }

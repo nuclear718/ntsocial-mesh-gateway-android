@@ -29,16 +29,17 @@ import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.util.CommonUri
 import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.model.util.toChannelSet
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.DataPair
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
-import com.ntsocial.meshlink.core.ui.util.getChannelList
 import com.ntsocial.meshlink.core.ui.viewmodel.safeLaunch
 import com.ntsocial.meshlink.core.ui.viewmodel.stateInWhileSubscribed
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.koin.core.annotation.KoinViewModel
-import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.LocalConfig
@@ -48,6 +49,7 @@ class ChannelViewModel(
     private val radioController: RadioController,
     private val radioConfigRepository: RadioConfigRepository,
     private val analytics: PlatformAnalytics,
+    private val channelReliabilityManager: ChannelReliabilityManager,
 ) : ViewModel() {
 
     val connectionState = radioController.connectionState
@@ -55,6 +57,11 @@ class ChannelViewModel(
     val localConfig = radioConfigRepository.localConfigFlow.stateInWhileSubscribed(initialValue = LocalConfig())
 
     val channels = radioConfigRepository.channelSetFlow.stateInWhileSubscribed(initialValue = ChannelSet())
+
+    val isChannelProtectionEnabled = channelReliabilityManager.isProtected
+
+    private val _channelOperationResult = MutableStateFlow<ChannelReliabilityResult?>(null)
+    val channelOperationResult: StateFlow<ChannelReliabilityResult?> = _channelOperationResult.asStateFlow()
 
     // managed mode disables all access to configuration
     val isManaged: Boolean
@@ -92,19 +99,21 @@ class ChannelViewModel(
         _requestChannelSet.value = null
     }
 
-    /** Set the radio config (also updates our saved copy in preferences). */
+    /** Applies a complete local channel set and succeeds only after a matching radio readback. */
     fun setChannels(channelSet: ChannelSet) = safeLaunch(tag = "setChannels") {
-        getChannelList(channelSet.settings, channels.value.settings).forEach(::setChannel)
-        radioConfigRepository.replaceAllSettings(channelSet.settings)
-
-        val newLoraConfig = channelSet.lora_config
-        if (localConfig.value.lora != newLoraConfig) {
-            setConfig(Config(lora = newLoraConfig))
-        }
+        _channelOperationResult.value = channelReliabilityManager.applyAndVerify(channelSet)
     }
 
-    fun setChannel(channel: Channel) {
-        safeLaunch(tag = "setChannel") { radioController.setLocalChannel(channel) }
+    fun protectCurrentChannels() = safeLaunch(tag = "protectCurrentChannels") {
+        _channelOperationResult.value = channelReliabilityManager.protectCurrentChannelSet()
+    }
+
+    fun disableChannelProtection() = safeLaunch(tag = "disableChannelProtection") {
+        _channelOperationResult.value = channelReliabilityManager.disableProtection()
+    }
+
+    fun clearChannelOperationResult() {
+        _channelOperationResult.value = null
     }
 
     // Set the radio config (also updates our saved copy in preferences)

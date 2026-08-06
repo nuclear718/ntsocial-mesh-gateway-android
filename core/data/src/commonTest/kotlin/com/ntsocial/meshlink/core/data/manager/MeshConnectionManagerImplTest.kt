@@ -30,6 +30,8 @@ import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.HistoryManager
 import com.ntsocial.meshlink.core.repository.MeshLocationManager
@@ -48,6 +50,7 @@ import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.repository.SessionManager
 import com.ntsocial.meshlink.core.repository.UiPrefs
 import com.ntsocial.meshlink.core.testing.FakeNodeRepository
+import com.ntsocial.meshlink.core.testing.TestDataFactory
 import dev.mokkery.MockMode
 import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
@@ -103,6 +106,7 @@ class MeshConnectionManagerImplTest {
     private val connectionStateFlow = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     private val localConfigFlow = MutableStateFlow(LocalConfig())
     private val moduleConfigFlow = MutableStateFlow(LocalModuleConfig())
+    private val nodeLocationPrefs = mutableMapOf<Int, MutableStateFlow<Boolean>>()
 
     private val testDispatcher = UnconfinedTestDispatcher()
 
@@ -113,6 +117,10 @@ class MeshConnectionManagerImplTest {
         every { radioInterfaceService.connectionState } returns radioConnectionState
         every { radioConfigRepository.localConfigFlow } returns localConfigFlow
         every { radioConfigRepository.moduleConfigFlow } returns moduleConfigFlow
+        every { uiPrefs.shouldProvideNodeLocation(any()) } calls
+            { call ->
+                nodeLocationPrefs.getOrPut(call.arg(0)) { MutableStateFlow(false) }
+            }
         every { serviceRepository.connectionState } returns connectionStateFlow
         every { serviceRepository.setConnectionState(any()) } calls
             { call ->
@@ -122,6 +130,8 @@ class MeshConnectionManagerImplTest {
         every { commandSender.sendAdmin(any(), any(), any(), any()) } returns Unit
         every { packetHandler.stopPacketQueue() } returns Unit
         every { locationManager.stop() } returns Unit
+        every { locationManager.restart() } returns Unit
+        every { locationManager.setLocationAccessAllowed(any()) } returns Unit
         every { mqttManager.stop() } returns Unit
         every { nodeManager.nodeDBbyNodeNum } returns emptyMap<Int, Node>()
         every { packetHandler.sendToRadio(any<org.meshtastic.proto.ToRadio>()) } returns Unit
@@ -130,7 +140,10 @@ class MeshConnectionManagerImplTest {
         everySuspend { ntsocialChannelProvisioner.currentDefaultChannelIndex() } returns 0
     }
 
-    private fun createManager(scope: CoroutineScope): MeshConnectionManagerImpl = MeshConnectionManagerImpl(
+    private fun createManager(
+        scope: CoroutineScope,
+        meshLocationManager: MeshLocationManager = locationManager,
+    ): MeshConnectionManagerImpl = MeshConnectionManagerImpl(
         radioInterfaceService,
         serviceRepository,
         serviceBroadcasts,
@@ -138,7 +151,7 @@ class MeshConnectionManagerImplTest {
         uiPrefs,
         packetHandler,
         nodeRepository,
-        locationManager,
+        meshLocationManager,
         mqttManager,
         historyManager,
         radioConfigRepository,
@@ -152,6 +165,10 @@ class MeshConnectionManagerImplTest {
         DataLayerHeartbeatSender(packetHandler),
         ntsocialChannelProvisioner,
         ntsocialGatewayRepository,
+        mock<ChannelReliabilityManager>(MockMode.autofill).also { reliabilityManager ->
+            everySuspend { reliabilityManager.reconcileProtectedChannelSet() } returns
+                ChannelReliabilityResult.NO_SNAPSHOT
+        },
         scope,
     )
 
@@ -243,6 +260,69 @@ class MeshConnectionManagerImplTest {
         verify { packetHandler.stopPacketQueue() }
         verify { locationManager.stop() }
         verify { mqttManager.stop() }
+    }
+
+    @Test
+    fun `location feed follows preference connection fixed position reconnect and node switch`() =
+        runTest(testDispatcher) {
+            val recordingLocationManager = RecordingLocationManager()
+            nodeLocationPrefs.getOrPut(1) { MutableStateFlow(false) }.value = true
+            nodeLocationPrefs.getOrPut(2) { MutableStateFlow(false) }.value = true
+            manager = createManager(backgroundScope, recordingLocationManager)
+            advanceUntilIdle()
+            recordingLocationManager.events.clear()
+
+            nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = 1))
+            connectionStateFlow.value = ConnectionState.Connected
+            advanceUntilIdle()
+
+            assertEquals(true, manager.locationSharingRequested.value)
+            assertEquals(true, manager.shouldProvideLocation.value)
+            assertEquals(1, recordingLocationManager.events.count { it == "start" })
+
+            connectionStateFlow.value = ConnectionState.Disconnected
+            advanceUntilIdle()
+            assertEquals(false, manager.shouldProvideLocation.value)
+
+            connectionStateFlow.value = ConnectionState.Connected
+            advanceUntilIdle()
+            assertEquals(2, recordingLocationManager.events.count { it == "start" })
+
+            localConfigFlow.value = LocalConfig(position = Config.PositionConfig(fixed_position = true))
+            advanceUntilIdle()
+            assertEquals(false, manager.locationSharingRequested.value)
+            assertEquals(false, manager.shouldProvideLocation.value)
+
+            localConfigFlow.value = LocalConfig(position = Config.PositionConfig(fixed_position = false))
+            advanceUntilIdle()
+            assertEquals(3, recordingLocationManager.events.count { it == "start" })
+
+            nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = 2))
+            advanceUntilIdle()
+            assertEquals(4, recordingLocationManager.events.count { it == "start" })
+            assertEquals("stop", recordingLocationManager.events[recordingLocationManager.events.lastIndex - 1])
+
+            manager.reconcileLocation()
+            advanceUntilIdle()
+            assertEquals(1, recordingLocationManager.events.count { it == "restart" })
+        }
+
+    @Test
+    fun `manual location reconcile cannot bypass a disabled per-node preference`() = runTest(testDispatcher) {
+        val recordingLocationManager = RecordingLocationManager()
+        nodeLocationPrefs.getOrPut(1) { MutableStateFlow(false) }.value = false
+        manager = createManager(backgroundScope, recordingLocationManager)
+        nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = 1))
+        connectionStateFlow.value = ConnectionState.Connected
+        advanceUntilIdle()
+        recordingLocationManager.events.clear()
+
+        manager.reconcileLocation()
+        advanceUntilIdle()
+
+        assertEquals(false, manager.locationSharingRequested.value)
+        assertEquals(false, manager.shouldProvideLocation.value)
+        assertEquals(0, recordingLocationManager.events.count { it == "start" || it == "restart" })
     }
 
     @Test
@@ -446,6 +526,24 @@ class MeshConnectionManagerImplTest {
                 serviceRepository.connectionState.value,
                 "Connected should cancel the sleep timeout; final state should be Connecting",
             )
+        }
+    }
+
+    private class RecordingLocationManager : MeshLocationManager {
+        val events = mutableListOf<String>()
+
+        override fun start(scope: CoroutineScope, sendPositionFn: (org.meshtastic.proto.Position) -> Unit) {
+            events += "start"
+        }
+
+        override fun restart() {
+            events += "restart"
+        }
+
+        override fun setLocationAccessAllowed(allowed: Boolean) = Unit
+
+        override fun stop() {
+            events += "stop"
         }
     }
 }

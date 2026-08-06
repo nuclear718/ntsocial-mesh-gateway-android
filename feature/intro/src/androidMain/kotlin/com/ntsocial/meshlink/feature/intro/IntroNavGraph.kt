@@ -80,7 +80,9 @@ internal fun introNavGraph(
     }
 
     entry<Location> {
-        val isGranted = locationPermissionState.allPermissionsGranted
+        // Android 12+ can grant approximate location while denying precise location. The phone-location pipeline
+        // intentionally supports that degraded mode, so onboarding must use the same any-granted policy.
+        val isGranted = locationPermissionState.permissions.any { it.status.isGranted }
         LocationScreen(
             showNextButton = isGranted,
             onSkip = { navigateToNext(Location) },

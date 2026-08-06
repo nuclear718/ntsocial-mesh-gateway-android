@@ -195,7 +195,13 @@ class NtsocialChannelProvisionerTest {
         return Fixture(
             repository = repository,
             commandSender = commandSender,
-            provisioner = NtsocialChannelProvisioner(commandSender, repository, sessionManager),
+            provisioner =
+            NtsocialChannelProvisioner(
+                commandSender,
+                repository,
+                sessionManager,
+                com.ntsocial.meshlink.core.repository.ChannelOperationLock(),
+            ),
         )
     }
 

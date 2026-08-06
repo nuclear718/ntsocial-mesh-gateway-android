@@ -25,9 +25,9 @@
 package com.ntsocial.meshlink.core.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
-import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceProfile
 import org.meshtastic.proto.DeviceUIConfig
@@ -41,11 +41,20 @@ interface RadioConfigRepository {
     /** Flow representing the [ChannelSet] data store. */
     val channelSetFlow: Flow<ChannelSet>
 
-    /** Clears the [ChannelSet] data in the data store. */
-    suspend fun clearChannelSet()
+    /**
+     * Monotonic signal for complete channel readbacks committed by the configuration handshake.
+     *
+     * Optimistic UI writes and individual channel responses must not advance this value.
+     */
+    val channelReadbackGeneration: StateFlow<Long>
 
-    /** Replaces the [ChannelSettings] list with a new [settingsList]. */
-    suspend fun replaceAllSettings(settingsList: List<ChannelSettings>)
+    /**
+     * Replaces the saved channel set.
+     *
+     * Ordinary callers replace only [ChannelSet.settings] and preserve the cached LoRa configuration. A completed
+     * handshake sets [completeReadback] so the full radio truth is committed and [channelReadbackGeneration] advances.
+     */
+    suspend fun replaceChannelSet(channelSet: ChannelSet, completeReadback: Boolean = false)
 
     /** Updates the [ChannelSettings] list with the provided channel. */
     suspend fun updateChannelSettings(channel: Channel)
@@ -58,6 +67,9 @@ interface RadioConfigRepository {
 
     /** Updates [LocalConfig] from each [Config] oneOf. */
     suspend fun setLocalConfig(config: Config)
+
+    /** Persists handshake config without independently mutating the channel readback being accumulated. */
+    suspend fun setLocalConfigFromHandshake(config: Config)
 
     /** Flow representing the [LocalModuleConfig] data store. */
     val moduleConfigFlow: Flow<LocalModuleConfig>

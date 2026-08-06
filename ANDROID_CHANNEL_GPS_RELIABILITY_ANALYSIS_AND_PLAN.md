@@ -1,9 +1,37 @@
 # NTsocial MeshLink Android 頻道持久性與手機定位可靠性調查暨改善計畫
 
-> 調查日期：2026-08-05  
-> NTsocial fork 基準：`4393f611a2b2ecae6f44f0907b59ad762a7ae61c`  
+> 調查日期：2026-08-05；實作完成日期：2026-08-06
+> 調查基準：`4393f611a2b2ecae6f44f0907b59ad762a7ae61c`；實作基準：`4151d6227a00dbfac6bec4e5afbab784c98fd4b1`
 > Meshtastic upstream 對照基準：`771022067500012143e48736462e353f92afcf6e`  
-> 範圍：Android App；本報告不變更韌體、Windows/Desktop 或 `core/proto`
+> 範圍：Android App；共用 KMP 頻道契約已評估並通過編譯，未變更韌體、Windows UI／IPC／品牌／封裝或 `core/proto`
+
+## 0. 2026-08-06 實作結果
+
+本節是目前 source 的最新狀態；後續第 1～8 節保留修正前的根因調查、證據與設計依據，其中「目前缺陷」等敘述應以本節為準。
+
+### 0.1 頻道可靠性
+
+- QR 與本機手動頻道變更已共用單一、序列化的可靠套用流程：先確認本機 admin session，送出完整 slot edit，逐筆同時等待 radio queue admission 與相同 request ID／sender 的 `Routing.NONE`，commit 後要求全新完整 config handshake，只有 radio readback 與預期完全相同才回報成功。
+- QR 對話框不再在命令剛入列時關閉或顯示假成功；套用期間不可關閉，失敗會留在畫面並顯示錯誤。例外路徑也會從 Applying 收斂到 Failed，不會永久卡住。
+- handshake 的 channel、LoRa 與 `config_complete` 改由同一個 generation collector 建立完成屏障；中斷的 handshake 不會先清掉上一份已完成快取。
+- 頻道頁新增「儲存並保護」快照。功能預設關閉、按 radio 穩定身分隔離，快照保存在 App 私有 DataStore；只有經 radio readback 驗證的使用者變更才能建立或更新快照。
+- 背景修復只處理可證明為 placeholder／缺失的 secondary slot。Primary、LoRa、容量、radio 身分、generation 或任何現存內容衝突時一律 fail closed，不會覆寫；每個 radio generation 最多嘗試一次。
+- protected snapshot reconciliation 會先於內建 NTsocial channel provisioner 執行，避免暫時缺失的 protected slot 被 provisioner 佔用。既有內建頻道 provisioner 仍是原本的 queue/cache 路徑，本次沒有把它宣稱為同等的 verified transaction。
+
+### 0.2 手機 GPS 分享
+
+- 【裝置 → 位置】現在直接提供「使用手機位置」開關，沿用既有的 per-node `provide-location-$nodeNum` 偏好，沒有建立第二份互相矛盾的設定。
+- desired state 會依「目前連線 radio、既有 opt-in、非 fixed position、Fine 或 Coarse 權限、系統定位開關、App lifecycle」統一 reconcile；重連、切換節點、node database ready、權限撤銷／重授、系統定位關閉／開啟及 process 重新建立都會重新評估。
+- Android location manager 以同一把鎖保護 start／stop／restart，避免斷線與重新啟動競速；暫時失去權限或平台條件時停止 listener，但保留使用者 desired state，條件恢復後可重新啟動。
+- `MeshService` 只有在使用者明確啟用、具備位置權限且系統定位開啟時才使用 location foreground-service type；停用時會降級並停止 listener。本次不要求背景位置權限，也沒有加入雲端位置服務。
+- fixed position 會暫停手機位置供應；現有已啟用偏好即使權限或 GPS 關閉仍可由 UI 明確停用。
+
+### 0.3 自動化驗證與仍需完成的實機證據
+
+- JDK 21、Android SDK 與 en-US JVM locale 下，`spotlessApply spotlessCheck assembleDebug test allTests` 成功；`kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug` 亦成功。
+- 新增／修改範圍沒有新增 Detekt finding。root `detekt` 仍只重現既有 7 項：BLE 3、model 1、network 1、data 2；這些位於本任務未修改的既有檔案。
+- 共用 KMP 變更已由 Desktop/JVM 與 KMP smoke compile 覆蓋；沒有新增 Windows IPC、UI、品牌或封裝行為。
+- 目前環境沒有連接 Meshtastic radio，因此尚未取得真實 8-slot QR 寫入／回讀、斷線後 secondary 自動修復、Android 11～17 各權限／背景情境，以及第二個 radio 實際收到手機位置封包的證據。這些仍是發布前必要的硬體驗收，不能由單元測試推論。
 
 ## 1. 結論摘要
 

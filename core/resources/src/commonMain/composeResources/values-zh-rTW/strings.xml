@@ -117,6 +117,16 @@
     <string name="buzzer_gpio">蜂鳴器腳位</string>
     <string name="calculating">正在計算……</string>
     <string name="cancel">取消</string>
+    <string name="channel_apply_failed">節點尚未確認完整的頻道設定。請保持連線穩定後再試一次。</string>
+    <string name="channel_apply_in_progress">正在套用頻道並向節點重新讀回驗證…</string>
+    <string name="channel_apply_verified">節點已確認完整的頻道設定。</string>
+    <string name="channel_protection_disabled">已停止保護這個節點的頻道設定。</string>
+    <string name="channel_protection_save">儲存並保護頻道</string>
+    <string name="channel_protection_saved">已儲存並開始保護這個節點的頻道快照。</string>
+    <string name="channel_protection_stop">停止保護</string>
+    <string name="channel_protection_summary">儲存節點目前已驗證的頻道設定。日後重新連線時，MeshLink 只會補回可明確判定為遺失的 Secondary 頻道，絕不覆寫互相衝突的變更。</string>
+    <string name="channel_protection_title">頻道保護</string>
+    <string name="channel_protection_update">更新保護快照</string>
     <string name="cancel_reply">取消回覆</string>
     <string name="canned_message">罐頭訊息</string>
     <string name="canned_message_config">罐頭訊息設定</string>
@@ -883,6 +893,8 @@
     <string name="primary_channel_feature">定期廣播位置與遙測資料</string>
     <string name="private_key">私鑰</string>
     <string name="provide_location_to_mesh">將手機位置提供給Mesh網路</string>
+    <string name="provide_location_fixed_summary">已啟用固定位置，因此暫停手機即時位置。</string>
+    <string name="provide_location_to_mesh_summary">使用這支 Android 手機作為已連線節點的即時位置來源；節點會依照本頁的位置設定進行廣播。</string>
     <string name="provider_name_exists">服務供應商名稱已存在。</string>
     <string name="proxy_to_client_enabled">啟用對客戶端的代理</string>
     <string name="psk">PSK</string>

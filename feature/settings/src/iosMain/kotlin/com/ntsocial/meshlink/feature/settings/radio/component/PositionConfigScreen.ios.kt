@@ -36,3 +36,8 @@ actual fun DeviceLocationButton(
 ) {
     // No-op for iOS for now
 }
+
+@Composable
+actual fun PhoneLocationSharingPreference(enabled: Boolean, fixedPosition: Boolean) {
+    // iOS phone-location forwarding is outside this Android-focused change.
+}

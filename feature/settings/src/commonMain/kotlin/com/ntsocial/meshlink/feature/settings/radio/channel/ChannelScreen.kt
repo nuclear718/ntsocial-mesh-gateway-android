@@ -48,12 +48,13 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -70,12 +71,21 @@ import com.ntsocial.meshlink.core.model.Channel
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.util.getChannelUrl
 import com.ntsocial.meshlink.core.navigation.Route
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.add
 import com.ntsocial.meshlink.core.resources.apply
 import com.ntsocial.meshlink.core.resources.are_you_sure_change_default
 import com.ntsocial.meshlink.core.resources.cancel
-import com.ntsocial.meshlink.core.resources.cant_change_no_radio
+import com.ntsocial.meshlink.core.resources.channel_apply_failed
+import com.ntsocial.meshlink.core.resources.channel_apply_verified
+import com.ntsocial.meshlink.core.resources.channel_protection_disabled
+import com.ntsocial.meshlink.core.resources.channel_protection_save
+import com.ntsocial.meshlink.core.resources.channel_protection_saved
+import com.ntsocial.meshlink.core.resources.channel_protection_stop
+import com.ntsocial.meshlink.core.resources.channel_protection_summary
+import com.ntsocial.meshlink.core.resources.channel_protection_title
+import com.ntsocial.meshlink.core.resources.channel_protection_update
 import com.ntsocial.meshlink.core.resources.edit
 import com.ntsocial.meshlink.core.resources.generate_qr_code
 import com.ntsocial.meshlink.core.resources.modem_preset
@@ -101,7 +111,6 @@ import com.ntsocial.meshlink.feature.settings.navigation.ConfigRoute
 import com.ntsocial.meshlink.feature.settings.navigation.getNavRouteFrom
 import com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel
 import com.ntsocial.meshlink.feature.settings.radio.component.PacketResponseStateDialog
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.meshtastic.proto.ChannelSet
@@ -128,6 +137,8 @@ fun ChannelScreen(
     val enabled = connectionState == ConnectionState.Connected && !viewModel.isManaged
 
     val channels by viewModel.channels.collectAsStateWithLifecycle()
+    val protectionEnabled by viewModel.isChannelProtectionEnabled.collectAsStateWithLifecycle()
+    val channelOperationResult by viewModel.channelOperationResult.collectAsStateWithLifecycle()
     var channelSet by remember(channels) { mutableStateOf(channels) }
     val modemPresetName by
         remember(channels) { mutableStateOf(Channel(loraConfig = channels.lora_config ?: Config.LoRaConfig()).name) }
@@ -172,24 +183,25 @@ fun ChannelScreen(
     val selectedChannelSet =
         channelSet.copy(settings = channelSet.settings.filterIndexed { i, _ -> channelSelections.getOrNull(i) == true })
 
-    val scope = rememberCoroutineScope()
     val showToast = rememberShowToastResource()
+
+    LaunchedEffect(channelOperationResult) {
+        val result = channelOperationResult ?: return@LaunchedEffect
+        showToast(
+            when (result) {
+                ChannelReliabilityResult.VERIFIED -> Res.string.channel_apply_verified
+                ChannelReliabilityResult.PROTECTED -> Res.string.channel_protection_saved
+                ChannelReliabilityResult.PROTECTION_DISABLED -> Res.string.channel_protection_disabled
+                else -> Res.string.channel_apply_failed
+            },
+        )
+        viewModel.clearChannelOperationResult()
+    }
 
     // Send new channel settings to the device
     @Suppress("TooGenericExceptionCaught")
     fun installSettings(newChannelSet: ChannelSet) {
-        // Try to change the radio, if it fails, tell the user why and throw away their edits
-        try {
-            viewModel.setChannels(newChannelSet)
-            // Since we are writing to DeviceConfig, that will trigger the rest of the GUI update (QR code etc)
-        } catch (ex: Exception) {
-            Logger.e(ex) { "ignoring channel problem" }
-
-            channelSet = channels // Throw away user edits
-
-            // Tell the user to try again
-            scope.launch { showToast(Res.string.cant_change_no_radio) }
-        }
+        viewModel.setChannels(newChannelSet)
     }
 
     fun installSettings(newChannel: ChannelSettings, newLoRaConfig: Config.LoRaConfig) {
@@ -287,6 +299,14 @@ fun ChannelScreen(
                 )
             }
             item {
+                ChannelProtectionControls(
+                    enabled = enabled,
+                    protected = protectionEnabled,
+                    onSave = viewModel::protectCurrentChannels,
+                    onDisable = viewModel::disableChannelProtection,
+                )
+            }
+            item {
                 PreferenceFooter(
                     modifier = Modifier,
                     enabled = enabled,
@@ -298,6 +318,30 @@ fun ChannelScreen(
                     positiveText = null,
                     onPositiveClicked = {},
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelProtectionControls(enabled: Boolean, protected: Boolean, onSave: () -> Unit, onDisable: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Text(text = stringResource(Res.string.channel_protection_title), style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = stringResource(Res.string.channel_protection_summary),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
+        OutlinedButton(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                stringResource(
+                    if (protected) Res.string.channel_protection_update else Res.string.channel_protection_save,
+                ),
+            )
+        }
+        if (protected) {
+            TextButton(onClick = onDisable, enabled = enabled, modifier = Modifier.align(Alignment.End)) {
+                Text(stringResource(Res.string.channel_protection_stop))
             }
         }
     }

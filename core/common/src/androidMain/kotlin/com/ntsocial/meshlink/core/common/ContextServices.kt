@@ -31,6 +31,7 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Build
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 
 /** Global accessor for Android Application. Must be initialized at app startup. */
 object ContextServices {
@@ -46,11 +47,13 @@ fun Context.hasGps(): Boolean {
 /** Checks if the device has a GPS receiver and it is currently disabled. */
 fun Context.gpsDisabled(): Boolean {
     val lm = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
-    return if (lm.allProviders.contains(LocationManager.GPS_PROVIDER)) {
-        !lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-    } else {
-        false
-    }
+    return !LocationManagerCompat.isLocationEnabled(lm)
+}
+
+/** @return whether Android's system-wide location service is enabled. */
+fun Context.isLocationEnabled(): Boolean {
+    val lm = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
+    return LocationManagerCompat.isLocationEnabled(lm)
 }
 
 /**
@@ -81,8 +84,8 @@ private fun Context.getBluetoothPermissions(): Array<String> {
 /** Checks if all necessary Bluetooth permissions have been granted. */
 fun Context.hasBluetoothPermission(): Boolean = getBluetoothPermissions().isEmpty()
 
-/** @return true if the user already has location permission (ACCESS_FINE_LOCATION). */
-fun Context.hasLocationPermission(): Boolean {
-    val perms = listOf(Manifest.permission.ACCESS_FINE_LOCATION)
-    return perms.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
-}
+/** @return true when either precise or approximate foreground location permission is granted. */
+fun Context.hasLocationPermission(): Boolean =
+    listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION).any {
+        ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    }

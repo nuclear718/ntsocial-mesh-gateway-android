@@ -34,6 +34,7 @@ import com.ntsocial.meshlink.core.repository.LocationRepository
 import com.ntsocial.meshlink.core.repository.MeshLocationManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import org.koin.core.annotation.Single
@@ -43,20 +44,38 @@ import org.meshtastic.proto.Position as ProtoPosition
 @Single
 class AndroidMeshLocationManager(private val context: Application, private val locationRepository: LocationRepository) :
     MeshLocationManager {
-    private lateinit var scope: CoroutineScope
+    private val stateLock = Any()
+    private var scope: CoroutineScope? = null
+    private var sendPositionFn: ((ProtoPosition) -> Unit)? = null
     private var locationFlow: Job? = null
+    private var locationAccessAllowed = false
 
     @SuppressLint("MissingPermission")
     override fun start(scope: CoroutineScope, sendPositionFn: (ProtoPosition) -> Unit) {
-        this.scope = scope
-        if (locationFlow?.isActive == true) return
+        synchronized(stateLock) {
+            this.scope = scope
+            this.sendPositionFn = sendPositionFn
+            startLocked()
+        }
+    }
 
-        if (context.hasLocationPermission()) {
+    @SuppressLint("MissingPermission")
+    private fun startLocked() {
+        if (locationFlow?.isActive == true) return
+        val currentScope = scope
+        val currentSendPositionFn = sendPositionFn
+
+        if (
+            currentScope != null &&
+            currentSendPositionFn != null &&
+            locationAccessAllowed &&
+            context.hasLocationPermission()
+        ) {
             locationFlow =
                 locationRepository
                     .getLocations()
                     .onEach { location ->
-                        sendPositionFn(
+                        currentSendPositionFn(
                             ProtoPosition(
                                 latitude_i = Position.degI(location.latitude),
                                 longitude_i = Position.degI(location.longitude),
@@ -74,15 +93,41 @@ class AndroidMeshLocationManager(private val context: Application, private val l
                             ),
                         )
                     }
-                    .launchIn(scope)
+                    .catch { error -> Logger.w(error) { "Phone location updates stopped; waiting for reconciliation" } }
+                    .launchIn(currentScope)
+        }
+    }
+
+    override fun restart() {
+        synchronized(stateLock) { startLocked() }
+    }
+
+    override fun setLocationAccessAllowed(allowed: Boolean) {
+        synchronized(stateLock) {
+            if (locationAccessAllowed == allowed) {
+                if (allowed) startLocked()
+                return
+            }
+
+            locationAccessAllowed = allowed
+            if (allowed) {
+                startLocked()
+            } else {
+                stopLocationUpdatesLocked()
+            }
         }
     }
 
     override fun stop() {
-        if (locationFlow?.isActive == true) {
-            Logger.i { "Stopping location requests" }
-            locationFlow?.cancel()
-            locationFlow = null
+        synchronized(stateLock) {
+            stopLocationUpdatesLocked()
+            sendPositionFn = null
         }
+    }
+
+    private fun stopLocationUpdatesLocked() {
+        if (locationFlow != null) Logger.i { "Stopping location requests" }
+        locationFlow?.cancel()
+        locationFlow = null
     }
 }

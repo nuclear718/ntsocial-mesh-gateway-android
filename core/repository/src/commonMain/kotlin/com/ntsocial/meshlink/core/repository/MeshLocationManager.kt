@@ -29,8 +29,24 @@ import org.meshtastic.proto.Position
 
 /** Interface for managing the local node's location updates and reporting. */
 interface MeshLocationManager {
-    /** Starts location updates and reports them via the given function. */
+    /**
+     * Records the desired location callback and starts updates when platform location access is currently allowed.
+     *
+     * Android's foreground-service gate can become legal after this call (for example, after a permission grant), so
+     * implementations must retain the callback for [restart].
+     */
     fun start(scope: CoroutineScope, sendPositionFn: (Position) -> Unit)
+
+    /** Retries a previously requested start after permission or foreground-service conditions change. */
+    fun restart()
+
+    /**
+     * Enables or suspends platform location access without changing the user's desired sharing state.
+     *
+     * Android uses this to ensure location updates run only while the service legally holds location access. Other
+     * platforms may implement it as a no-op.
+     */
+    fun setLocationAccessAllowed(allowed: Boolean)
 
     /** Stops location updates. */
     fun stop()

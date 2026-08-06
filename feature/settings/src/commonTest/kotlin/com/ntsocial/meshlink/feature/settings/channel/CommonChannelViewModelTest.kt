@@ -25,6 +25,7 @@
 package com.ntsocial.meshlink.feature.settings.channel
 
 import app.cash.turbine.test
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.testing.FakeRadioController
@@ -56,6 +57,7 @@ abstract class CommonChannelViewModelTest {
     protected val radioController = FakeRadioController()
     protected val radioConfigRepository: RadioConfigRepository = mock(MockMode.autofill)
     protected val analytics: PlatformAnalytics = mock(MockMode.autofill)
+    protected val channelReliabilityManager: ChannelReliabilityManager = mock(MockMode.autofill)
     protected val testDispatcher = UnconfinedTestDispatcher()
 
     protected lateinit var viewModel: ChannelViewModel
@@ -64,8 +66,9 @@ abstract class CommonChannelViewModelTest {
         Dispatchers.setMain(testDispatcher)
         every { radioConfigRepository.localConfigFlow } returns MutableStateFlow(LocalConfig())
         every { radioConfigRepository.channelSetFlow } returns MutableStateFlow(ChannelSet())
+        every { channelReliabilityManager.isProtected } returns MutableStateFlow(false)
 
-        viewModel = ChannelViewModel(radioController, radioConfigRepository, analytics)
+        viewModel = ChannelViewModel(radioController, radioConfigRepository, analytics, channelReliabilityManager)
     }
 
     @AfterTest
@@ -77,7 +80,7 @@ abstract class CommonChannelViewModelTest {
     fun `isManaged returns true when security is managed`() = runTest {
         val config = LocalConfig(security = Config.SecurityConfig(is_managed = true))
         every { radioConfigRepository.localConfigFlow } returns MutableStateFlow(config)
-        viewModel = ChannelViewModel(radioController, radioConfigRepository, analytics)
+        viewModel = ChannelViewModel(radioController, radioConfigRepository, analytics, channelReliabilityManager)
 
         viewModel.localConfig.test {
             awaitItem().security?.is_managed shouldBe true

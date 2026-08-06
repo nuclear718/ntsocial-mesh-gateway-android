@@ -142,7 +142,7 @@ class NodeListViewModel(
     }
 
     fun setChannels(channelSet: ChannelSet) = viewModelScope.launch {
-        radioConfigRepository.replaceAllSettings(channelSet.settings)
+        radioConfigRepository.replaceChannelSet(channelSet)
         val newLoraConfig = channelSet.lora_config
         if (newLoraConfig != null) {
             radioController.setLocalConfig(Config(lora = newLoraConfig))

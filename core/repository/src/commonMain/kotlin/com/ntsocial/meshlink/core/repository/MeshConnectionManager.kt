@@ -24,10 +24,23 @@
  */
 package com.ntsocial.meshlink.core.repository
 
+import kotlinx.coroutines.flow.StateFlow
 import org.meshtastic.proto.Telemetry
 
 /** Interface for managing the connection lifecycle and status with the mesh radio. */
 interface MeshConnectionManager {
+    /** Whether the selected node explicitly opts into live phone location and is not configured as fixed-position. */
+    val locationSharingRequested: StateFlow<Boolean>
+
+    /**
+     * Whether all shared preconditions for feeding phone location are satisfied: explicit per-node opt-in, a connected
+     * selected node, and no fixed-position configuration.
+     */
+    val shouldProvideLocation: StateFlow<Boolean>
+
+    /** Re-evaluates the latest phone-location state without changing the user's preference. */
+    fun reconcileLocation()
+
     /** Called when the radio configuration has been fully loaded. */
     fun onRadioConfigLoaded()
 

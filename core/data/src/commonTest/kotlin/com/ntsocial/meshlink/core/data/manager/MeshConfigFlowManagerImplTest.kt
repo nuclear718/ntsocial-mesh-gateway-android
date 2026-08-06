@@ -51,6 +51,10 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.encodeUtf8
+import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FileInfo
 import org.meshtastic.proto.FirmwareEdition
@@ -79,6 +83,7 @@ class MeshConfigFlowManagerImplTest {
     private val testScope = TestScope(testDispatcher)
 
     private lateinit var manager: MeshConfigFlowManagerImpl
+    private lateinit var channelSetCollector: HandshakeChannelSetCollector
 
     private val myNodeNum = 12345
 
@@ -102,6 +107,7 @@ class MeshConfigFlowManagerImplTest {
         every { notificationPrefs.nodeEventsAutoDisabledForEvent } returns MutableStateFlow(false)
         every { notificationPrefs.nodeEventsEnabled } returns MutableStateFlow(true)
 
+        channelSetCollector = HandshakeChannelSetCollector(radioConfigRepository)
         manager =
             MeshConfigFlowManagerImpl(
                 nodeManager = nodeManager,
@@ -114,6 +120,7 @@ class MeshConfigFlowManagerImplTest {
                 commandSender = commandSender,
                 heartbeatSender = DataLayerHeartbeatSender(packetHandler),
                 notificationPrefs = notificationPrefs,
+                channelSetCollector = channelSetCollector,
                 scope = testScope,
             )
     }
@@ -129,11 +136,10 @@ class MeshConfigFlowManagerImplTest {
     }
 
     @Test
-    fun `handleMyInfo clears persisted radio config`() = testScope.runTest {
+    fun `handleMyInfo preserves last complete channels while clearing other session caches`() = testScope.runTest {
         manager.handleMyInfo(protoMyNodeInfo)
         advanceUntilIdle()
 
-        verifySuspend { radioConfigRepository.clearChannelSet() }
         verifySuspend { radioConfigRepository.clearLocalConfig() }
         verifySuspend { radioConfigRepository.clearLocalModuleConfig() }
         verifySuspend { radioConfigRepository.clearDeviceUIConfig() }
@@ -188,6 +194,50 @@ class MeshConfigFlowManagerImplTest {
 
         verify { connectionManager.onRadioConfigLoaded() }
         verify { connectionManager.startNodeInfoOnly() }
+    }
+
+    @Test
+    fun `Stage 1 commits complete channel readback before notifying config loaded`() = testScope.runTest {
+        val primary = ChannelSettings(name = "primary")
+        val secondary = ChannelSettings(name = "secondary")
+        val lora = Config.LoRaConfig(use_preset = true)
+        manager.handleMyInfo(protoMyNodeInfo)
+        channelSetCollector.captureChannel(Channel(index = 0, role = Channel.Role.PRIMARY, settings = primary))
+        channelSetCollector.captureChannel(Channel(index = 1, role = Channel.Role.DISABLED))
+        channelSetCollector.captureChannel(Channel(index = 2, role = Channel.Role.SECONDARY, settings = secondary))
+        channelSetCollector.captureConfig(Config(lora = lora))
+
+        manager.handleConfigComplete(HandshakeConstants.CONFIG_NONCE)
+
+        verify(mode = VerifyMode.not) { connectionManager.onRadioConfigLoaded() }
+        advanceUntilIdle()
+        verifySuspend {
+            radioConfigRepository.replaceChannelSet(
+                ChannelSet(settings = listOf(primary, ChannelSettings(), secondary), lora_config = lora),
+                completeReadback = true,
+            )
+        }
+        verify { connectionManager.onRadioConfigLoaded() }
+    }
+
+    @Test
+    fun `superseded generation cannot commit or advance the old handshake`() = testScope.runTest {
+        val stale = ChannelSettings(name = "stale")
+        val current = ChannelSettings(name = "current")
+        manager.handleMyInfo(protoMyNodeInfo)
+        channelSetCollector.captureChannel(Channel(index = 0, role = Channel.Role.PRIMARY, settings = stale))
+        manager.handleConfigComplete(HandshakeConstants.CONFIG_NONCE)
+
+        manager.handleMyInfo(protoMyNodeInfo.copy(my_node_num = 99999))
+        channelSetCollector.captureChannel(Channel(index = 0, role = Channel.Role.PRIMARY, settings = current))
+        manager.handleConfigComplete(HandshakeConstants.CONFIG_NONCE)
+        advanceUntilIdle()
+
+        verifySuspend(mode = VerifyMode.exactly(1)) {
+            radioConfigRepository.replaceChannelSet(ChannelSet(settings = listOf(current)), completeReadback = true)
+        }
+        verify { nodeManager.setMyNodeNum(99999) }
+        verify(mode = VerifyMode.exactly(1)) { connectionManager.onRadioConfigLoaded() }
     }
 
     @Test

@@ -49,6 +49,7 @@ class MeshConfigHandlerImpl(
     private val radioConfigRepository: RadioConfigRepository,
     private val serviceRepository: ServiceRepository,
     private val nodeManager: NodeManager,
+    private val channelSetCollector: HandshakeChannelSetCollector,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshConfigHandler {
 
@@ -65,7 +66,15 @@ class MeshConfigHandlerImpl(
 
     override fun handleDeviceConfig(config: Config) {
         Logger.d { "Device config received: ${config.summarize()}" }
-        scope.handledLaunch { radioConfigRepository.setLocalConfig(config) }
+        when (channelSetCollector.captureConfig(config)) {
+            HandshakeCaptureResult.COLLECTED ->
+                scope.handledLaunch { radioConfigRepository.setLocalConfigFromHandshake(config) }
+
+            HandshakeCaptureResult.FINALIZING ->
+                Logger.w { "Ignoring device config received after Stage 1 finalization started" }
+
+            HandshakeCaptureResult.INACTIVE -> scope.handledLaunch { radioConfigRepository.setLocalConfig(config) }
+        }
         serviceRepository.setConnectionProgress("Device config received")
     }
 
@@ -80,8 +89,15 @@ class MeshConfigHandlerImpl(
     }
 
     override fun handleChannel(channel: Channel) {
-        // We always want to save channel settings we receive from the radio
-        scope.handledLaunch { radioConfigRepository.updateChannelSettings(channel) }
+        when (channelSetCollector.captureChannel(channel)) {
+            HandshakeCaptureResult.COLLECTED -> Unit
+
+            HandshakeCaptureResult.FINALIZING ->
+                Logger.w { "Ignoring channel index=${channel.index} received after Stage 1 finalization started" }
+
+            HandshakeCaptureResult.INACTIVE ->
+                scope.handledLaunch { radioConfigRepository.updateChannelSettings(channel) }
+        }
 
         // Update status message if we have node info, otherwise use a generic one
         val mi = nodeManager.getMyNodeInfo()

@@ -32,8 +32,10 @@ import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
@@ -61,14 +63,16 @@ open class RadioConfigRepositoryImpl(
     /** Flow representing the [ChannelSet] data store. */
     override val channelSetFlow: Flow<ChannelSet> = channelSetDataSource.channelSetFlow
 
-    /** Clears the [ChannelSet] data in the data store. */
-    override suspend fun clearChannelSet() {
-        channelSetDataSource.clearChannelSet()
-    }
+    private val _channelReadbackGeneration = MutableStateFlow(0L)
+    override val channelReadbackGeneration: StateFlow<Long> = _channelReadbackGeneration.asStateFlow()
 
-    /** Replaces the [ChannelSettings] list with a new [settingsList]. */
-    override suspend fun replaceAllSettings(settingsList: List<ChannelSettings>) {
-        channelSetDataSource.replaceAllSettings(settingsList)
+    override suspend fun replaceChannelSet(channelSet: ChannelSet, completeReadback: Boolean) {
+        if (completeReadback) {
+            channelSetDataSource.replaceChannelSet(channelSet)
+            _channelReadbackGeneration.update { it + 1 }
+        } else {
+            channelSetDataSource.replaceAllSettings(channelSet.settings)
+        }
     }
 
     /**
@@ -96,6 +100,10 @@ open class RadioConfigRepositoryImpl(
     override suspend fun setLocalConfig(config: Config) {
         localConfigDataSource.setLocalConfig(config)
         config.lora?.let { channelSetDataSource.setLoraConfig(it) }
+    }
+
+    override suspend fun setLocalConfigFromHandshake(config: Config) {
+        localConfigDataSource.setLocalConfig(config)
     }
 
     /** Flow representing the [LocalModuleConfig] data store. */

@@ -45,6 +45,7 @@ import co.touchlab.kermit.Logger
 import com.eygraber.uri.toAndroidUri
 import com.eygraber.uri.toKmpUri
 import com.ntsocial.meshlink.core.common.gpsDisabled
+import com.ntsocial.meshlink.core.common.hasLocationPermission
 import com.ntsocial.meshlink.core.common.util.CommonUri
 import com.ntsocial.meshlink.core.common.util.ioDispatcher
 import kotlinx.coroutines.withContext
@@ -169,14 +170,16 @@ actual fun KeepScreenOn(enabled: Boolean) {
 
 @Composable
 actual fun rememberRequestLocationPermission(onGranted: () -> Unit, onDenied: () -> Unit): () -> Unit {
+    val currentOnGranted = rememberUpdatedState(onGranted)
+    val currentOnDenied = rememberUpdatedState(onDenied)
     val launcher =
         androidx.activity.compose.rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
         ) { permissions ->
             if (permissions.values.any { it }) {
-                onGranted()
+                currentOnGranted.value()
             } else {
-                onDenied()
+                currentOnDenied.value()
             }
         }
     return remember(launcher) {
@@ -270,12 +273,7 @@ actual fun isLocalNetworkPermissionGranted(): Boolean {
 @Composable
 actual fun isLocationPermissionGranted(): Boolean {
     val context = LocalContext.current
-    return rememberOnResumeState {
-        androidx.core.content.ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.ACCESS_FINE_LOCATION,
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-    }
+    return rememberOnResumeState { context.hasLocationPermission() }
 }
 
 @Composable

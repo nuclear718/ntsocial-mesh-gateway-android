@@ -36,6 +36,7 @@ import com.ntsocial.meshlink.core.domain.usecase.settings.RadioConfigUseCase
 import com.ntsocial.meshlink.core.domain.usecase.settings.RadioResponseResult
 import com.ntsocial.meshlink.core.domain.usecase.settings.ToggleHomoglyphEncodingUseCase
 import com.ntsocial.meshlink.core.model.Node
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.LocationRepository
@@ -105,6 +106,7 @@ class RadioConfigViewModelTest {
     private val locationService: LocationService = mock(MockMode.autofill)
     private val fileService: FileService = mock(MockMode.autofill)
     private val mqttManager: MqttManager = mock(MockMode.autofill)
+    private val channelReliabilityManager: ChannelReliabilityManager = mock(MockMode.autofill)
     private val uiPrefs: UiPrefs = mock(MockMode.autofill)
 
     private lateinit var viewModel: RadioConfigViewModel
@@ -159,6 +161,7 @@ class RadioConfigViewModelTest {
         locationService = locationService,
         fileService = fileService,
         mqttManager = mqttManager,
+        channelReliabilityManager = channelReliabilityManager,
     )
 
     @Test

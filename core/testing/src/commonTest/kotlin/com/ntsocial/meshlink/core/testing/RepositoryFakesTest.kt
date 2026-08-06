@@ -30,6 +30,7 @@ import com.ntsocial.meshlink.core.model.DeviceHardware
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -112,13 +113,13 @@ class RepositoryFakesTest {
         val a = ChannelSettings(name = "A")
         val b = ChannelSettings(name = "B")
 
-        repo.replaceAllSettings(listOf(a, b))
+        repo.replaceChannelSet(ChannelSet(settings = listOf(a, b)))
         assertEquals(listOf(a, b), repo.currentChannelSet.settings)
 
         repo.updateChannelSettings(Channel(index = 1, settings = ChannelSettings(name = "B2")))
         assertEquals("B2", repo.currentChannelSet.settings[1].name)
 
-        repo.clearChannelSet()
+        repo.replaceChannelSet(ChannelSet(settings = emptyList()))
         assertTrue(repo.currentChannelSet.settings.isEmpty())
     }
 }

@@ -59,17 +59,26 @@ class ChannelSetDataSource(@Named("CoreChannelSetDataStore") private val channel
         channelSetStore.updateData { it.copy(settings = settingsList) }
     }
 
+    /** Replaces the complete radio-observed [ChannelSet] in one DataStore transaction. */
+    suspend fun replaceChannelSet(channelSet: ChannelSet) {
+        channelSetStore.updateData { channelSet }
+    }
+
     /** Updates the [ChannelSettings] list with the provided channel. */
     suspend fun updateChannelSettings(channel: Channel) {
-        if (channel.role == Channel.Role.DISABLED) return
         channelSetStore.updateData { preference ->
             val settings = preference.settings.toMutableList()
-            // Resize to fit channel
-            while (settings.size <= channel.index) {
-                settings.add(ChannelSettings())
+            if (channel.role == Channel.Role.DISABLED) {
+                if (channel.index in settings.indices) {
+                    settings[channel.index] = ChannelSettings()
+                    while (settings.size > 1 && settings.last() == ChannelSettings()) settings.removeLast()
+                }
+            } else {
+                // Resize to fit channel.
+                while (settings.size <= channel.index) settings.add(ChannelSettings())
+                // Use indexed settings so the persisted list and firmware slots stay aligned.
+                settings[channel.index] = channel.settings ?: ChannelSettings()
             }
-            // use setSettings() to ensure settingsList and channel indexes match
-            settings[channel.index] = channel.settings ?: ChannelSettings()
             preference.copy(settings = settings)
         }
     }

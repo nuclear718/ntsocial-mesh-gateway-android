@@ -45,6 +45,8 @@ import com.ntsocial.meshlink.core.model.MqttProbeStatus
 import com.ntsocial.meshlink.core.model.MyNodeInfo
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Position
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.LocationRepository
@@ -58,6 +60,7 @@ import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.UiText
 import com.ntsocial.meshlink.core.resources.cant_shutdown
+import com.ntsocial.meshlink.core.resources.channel_apply_failed
 import com.ntsocial.meshlink.core.resources.timeout
 import com.ntsocial.meshlink.core.ui.util.getChannelList
 import com.ntsocial.meshlink.core.ui.viewmodel.safeLaunch
@@ -79,6 +82,7 @@ import org.koin.core.annotation.InjectedParam
 import org.koin.core.annotation.KoinViewModel
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceConnectionStatus
@@ -135,6 +139,7 @@ open class RadioConfigViewModel(
     private val locationService: LocationService,
     private val fileService: FileService,
     private val mqttManager: MqttManager,
+    private val channelReliabilityManager: ChannelReliabilityManager,
 ) : ViewModel() {
     val homoglyphEncodingEnabledFlow = homoglyphEncodingPrefs.homoglyphEncodingEnabled
 
@@ -290,17 +295,27 @@ open class RadioConfigViewModel(
 
     fun updateChannels(new: List<ChannelSettings>, old: List<ChannelSettings>) {
         val destNum = destNode.value?.num ?: return
+        if (destNum == myNodeNum) {
+            safeLaunch(tag = "setVerifiedLocalChannels") {
+                _radioConfigState.update { it.copy(responseState = ResponseState.Loading(total = 1)) }
+                val result =
+                    channelReliabilityManager.applyAndVerify(
+                        ChannelSet(settings = new, lora_config = radioConfigState.value.radioConfig.lora),
+                    )
+                if (result == ChannelReliabilityResult.VERIFIED) {
+                    packetRepository.migrateChannelsByPSK(old, new)
+                    _radioConfigState.update { it.copy(channelList = new, responseState = ResponseState.Success(true)) }
+                } else {
+                    sendError(Res.string.channel_apply_failed)
+                }
+            }
+            return
+        }
+
         getChannelList(new, old).forEach { channel ->
             safeLaunch(tag = "setRemoteChannel") {
                 val packetId = radioConfigUseCase.setRemoteChannel(destNum, channel)
                 registerRequestId(packetId)
-            }
-        }
-
-        if (destNum == myNodeNum) {
-            safeLaunch(tag = "migrateChannels") {
-                packetRepository.migrateChannelsByPSK(old, new)
-                radioConfigRepository.replaceAllSettings(new)
             }
         }
         _radioConfigState.update { it.copy(channelList = new) }

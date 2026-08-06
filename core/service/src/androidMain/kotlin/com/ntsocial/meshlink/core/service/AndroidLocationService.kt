@@ -24,10 +24,8 @@
  */
 package com.ntsocial.meshlink.core.service
 
-import android.Manifest
 import android.app.Application
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
+import com.ntsocial.meshlink.core.common.hasLocationPermission
 import com.ntsocial.meshlink.core.repository.Location
 import com.ntsocial.meshlink.core.repository.LocationRepository
 import com.ntsocial.meshlink.core.repository.LocationService
@@ -39,13 +37,7 @@ class AndroidLocationService(private val context: Application, private val locat
     LocationService {
 
     override suspend fun getCurrentLocation(): Location? {
-        val hasPermission =
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
-                PackageManager.PERMISSION_GRANTED
-
-        if (!hasPermission) {
-            return null
-        }
+        if (!context.hasLocationPermission()) return null
 
         return locationRepository.getLocations().firstOrNull()
     }

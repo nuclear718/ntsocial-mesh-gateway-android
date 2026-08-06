@@ -79,6 +79,9 @@ expect fun DeviceLocationButton(
     onLocationReceived: (Position) -> Unit,
 )
 
+/** Android-only app preference for forwarding the phone location to the connected local node. */
+@Composable expect fun PhoneLocationSharingPreference(enabled: Boolean, fixedPosition: Boolean)
+
 @Composable
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 fun PositionConfigScreenCommon(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
@@ -137,6 +140,14 @@ fun PositionConfigScreenCommon(viewModel: RadioConfigViewModel, onBack: () -> Un
             viewModel.setConfig(config)
         },
     ) {
+        if (state.isLocal) {
+            item {
+                PhoneLocationSharingPreference(
+                    enabled = state.connected,
+                    fixedPosition = formState.value.fixed_position,
+                )
+            }
+        }
         item {
             TitledCard(title = stringResource(Res.string.position_packet)) {
                 val items = remember { IntervalConfiguration.POSITION_BROADCAST.allowedIntervals }

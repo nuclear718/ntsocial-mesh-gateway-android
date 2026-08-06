@@ -25,26 +25,40 @@
 package com.ntsocial.meshlink.core.ui.qr
 
 import androidx.lifecycle.ViewModel
-import com.ntsocial.meshlink.core.model.RadioController
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
-import com.ntsocial.meshlink.core.ui.util.getChannelList
 import com.ntsocial.meshlink.core.ui.viewmodel.safeLaunch
 import com.ntsocial.meshlink.core.ui.viewmodel.stateInWhileSubscribed
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import org.koin.core.annotation.KoinViewModel
 import org.meshtastic.proto.ChannelSet
-import org.meshtastic.proto.Config
+
+sealed interface ChannelQrApplyState {
+    data object Idle : ChannelQrApplyState
+
+    data object Applying : ChannelQrApplyState
+
+    data object Verified : ChannelQrApplyState
+
+    data class Failed(val result: ChannelReliabilityResult) : ChannelQrApplyState
+}
 
 internal const val DEFAULT_MAX_CHANNELS = 8
 
 @KoinViewModel
 class ScannedQrCodeViewModel(
     private val radioConfigRepository: RadioConfigRepository,
-    private val radioController: RadioController,
+    private val channelReliabilityManager: ChannelReliabilityManager,
     nodeRepository: NodeRepository,
 ) : ViewModel() {
+
+    private val _applyState = MutableStateFlow<ChannelQrApplyState>(ChannelQrApplyState.Idle)
+    val applyState: StateFlow<ChannelQrApplyState> = _applyState.asStateFlow()
 
     val channels = radioConfigRepository.channelSetFlow.stateInWhileSubscribed(initialValue = ChannelSet())
 
@@ -55,19 +69,29 @@ class ScannedQrCodeViewModel(
                 initialValue = nodeRepository.myNodeInfo.value?.maxChannels?.takeIf { it > 0 } ?: DEFAULT_MAX_CHANNELS,
             )
 
-    /** Set the radio config (also updates our saved copy in preferences). */
+    /** Applies the complete set and reports success only after a fresh matching radio readback. */
     fun setChannels(channelSet: ChannelSet) = safeLaunch(tag = "setChannels") {
-        val currentSettings = radioConfigRepository.channelSetFlow.first().settings
-        getChannelList(channelSet.settings, currentSettings).forEach { channel ->
-            radioController.setLocalChannel(channel)
+        if (_applyState.value == ChannelQrApplyState.Applying) return@safeLaunch
+        _applyState.value = ChannelQrApplyState.Applying
+        try {
+            val result = channelReliabilityManager.applyAndVerify(channelSet)
+            _applyState.value =
+                if (result == ChannelReliabilityResult.VERIFIED) {
+                    ChannelQrApplyState.Verified
+                } else {
+                    ChannelQrApplyState.Failed(result)
+                }
+        } finally {
+            // safeLaunch reports unexpected failures, while this guard keeps the non-dismissible applying state
+            // from
+            // becoming permanent if persistence or another dependency throws before returning a typed result.
+            if (_applyState.value == ChannelQrApplyState.Applying) {
+                _applyState.value = ChannelQrApplyState.Failed(ChannelReliabilityResult.READBACK_FAILED)
+            }
         }
+    }
 
-        val loraConfig = channelSet.lora_config
-        val currentLoraConfig = radioConfigRepository.localConfigFlow.first().lora
-        if (loraConfig != null && currentLoraConfig != loraConfig) {
-            radioController.setLocalConfig(Config(lora = loraConfig))
-        }
-
-        radioConfigRepository.replaceAllSettings(channelSet.settings)
+    fun clearApplyState() {
+        _applyState.value = ChannelQrApplyState.Idle
     }
 }

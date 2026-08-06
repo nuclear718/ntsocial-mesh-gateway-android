@@ -40,6 +40,7 @@ import dev.mokkery.verifySuspend
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -51,6 +52,7 @@ import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.ToRadio
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 class PacketHandlerImplTest {
@@ -136,6 +138,19 @@ class PacketHandlerImplTest {
             handler.handleQueueStatus(status)
             testScheduler.runCurrent()
         }
+    }
+
+    @Test
+    fun `routing NAK completes awaiting sender as failure`() = runTest(testDispatcher) {
+        val packet = MeshPacket(id = 790)
+        connectionStateFlow.value = ConnectionState.Connected
+        val result = async { handler.sendToRadioAndAwait(packet) }
+        testScheduler.runCurrent()
+
+        handler.removeResponse(packet.id, complete = false)
+        testScheduler.runCurrent()
+
+        assertFalse(result.await())
     }
 
     @Test

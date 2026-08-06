@@ -45,6 +45,7 @@ kotlin {
             implementation(libs.kotlinx.atomicfu)
             implementation(libs.kotlinx.collections.immutable)
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.okio)
         }
 
         commonTest.dependencies { implementation(libs.kotlinx.coroutines.test) }

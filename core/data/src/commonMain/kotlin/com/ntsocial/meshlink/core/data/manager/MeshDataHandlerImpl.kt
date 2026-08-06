@@ -291,6 +291,7 @@ class MeshDataHandlerImpl(
     private fun handleRouting(packet: MeshPacket, dataPacket: DataPacket) {
         val payload = packet.decoded?.payload ?: return
         val r = Routing.ADAPTER.decodeOrNull(payload, Logger) ?: return
+        val routingError = r.error_reason?.value ?: Routing.Error.NONE.value
         if (r.error_reason == Routing.Error.DUTY_CYCLE_LIMIT) {
             scope.launch {
                 serviceRepository.setErrorMessage(getStringSuspend(Res.string.error_duty_cycle), Severity.Warn)
@@ -299,10 +300,12 @@ class MeshDataHandlerImpl(
         handleAckNak(
             packet.decoded?.request_id ?: 0,
             nodeManager.toNodeID(packet.from),
-            r.error_reason?.value ?: 0,
+            routingError,
             dataPacket.relayNode,
         )
-        packet.decoded?.request_id?.let { packetHandler.removeResponse(it, complete = true) }
+        packet.decoded?.request_id?.let { requestId ->
+            packetHandler.removeResponse(requestId, complete = routingError == Routing.Error.NONE.value)
+        }
     }
 
     @Suppress("CyclomaticComplexMethod", "LongMethod")

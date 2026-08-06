@@ -28,6 +28,7 @@ import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.model.SessionStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannel
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannelStatus
+import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.SessionManager
@@ -50,45 +51,47 @@ open class NtsocialChannelProvisioner(
     private val commandSender: CommandSender,
     private val radioConfigRepository: RadioConfigRepository,
     private val sessionManager: SessionManager,
+    private val channelOperationLock: ChannelOperationLock,
 ) {
-    open suspend fun ensureDefaultChannel(myNodeNum: Int, maxChannels: Int): NtsocialChannelProvisionResult {
-        val defaultChannelSet = NtsocialDefaultChannel.channelSet
-        val defaultSettings = defaultChannelSet.settings.firstOrNull()
+    open suspend fun ensureDefaultChannel(myNodeNum: Int, maxChannels: Int): NtsocialChannelProvisionResult =
+        channelOperationLock.withLock {
+            val defaultChannelSet = NtsocialDefaultChannel.channelSet
+            val defaultSettings = defaultChannelSet.settings.firstOrNull()
 
-        return if (defaultSettings == null) {
-            NtsocialChannelProvisionResult.InvalidDefaultChannel
-        } else {
-            val currentChannelSet = radioConfigRepository.channelSetFlow.first()
-            val currentLocalConfig = radioConfigRepository.localConfigFlow.first()
-            val channelPlan =
-                buildChannelPlan(
-                    currentSettings = currentChannelSet.settings,
-                    defaultSettings = defaultSettings,
-                    maxChannels = maxChannels.coerceAtLeast(1),
-                )
-            val defaultLoraConfig =
-                defaultChannelSet.lora_config?.takeIf { shouldApplyDefaultLora(currentLocalConfig.lora) }
+            if (defaultSettings == null) {
+                NtsocialChannelProvisionResult.InvalidDefaultChannel
+            } else {
+                val currentChannelSet = radioConfigRepository.channelSetFlow.first()
+                val currentLocalConfig = radioConfigRepository.localConfigFlow.first()
+                val channelPlan =
+                    buildChannelPlan(
+                        currentSettings = currentChannelSet.settings,
+                        defaultSettings = defaultSettings,
+                        maxChannels = maxChannels.coerceAtLeast(1),
+                    )
+                val defaultLoraConfig =
+                    defaultChannelSet.lora_config?.takeIf { shouldApplyDefaultLora(currentLocalConfig.lora) }
 
-            when {
-                channelPlan.noSpace -> {
-                    Logger.w { "NTsocial channel provisioning skipped: no free channel slot" }
-                    NtsocialChannelProvisionResult.NoSpace
+                when {
+                    channelPlan.noSpace -> {
+                        Logger.w { "NTsocial channel provisioning skipped: no free channel slot" }
+                        NtsocialChannelProvisionResult.NoSpace
+                    }
+
+                    channelPlan.channel == null && defaultLoraConfig == null -> {
+                        Logger.d { "NTsocial channel already provisioned" }
+                        NtsocialChannelProvisionResult.AlreadyPresent
+                    }
+
+                    !ensureLocalAdminSession(myNodeNum) -> {
+                        Logger.w { "NTsocial channel provisioning skipped: local admin session timed out" }
+                        NtsocialChannelProvisionResult.SessionTimeout
+                    }
+
+                    else -> applyProvisioning(myNodeNum, defaultLoraConfig, channelPlan.channel)
                 }
-
-                channelPlan.channel == null && defaultLoraConfig == null -> {
-                    Logger.d { "NTsocial channel already provisioned" }
-                    NtsocialChannelProvisionResult.AlreadyPresent
-                }
-
-                !ensureLocalAdminSession(myNodeNum) -> {
-                    Logger.w { "NTsocial channel provisioning skipped: local admin session timed out" }
-                    NtsocialChannelProvisionResult.SessionTimeout
-                }
-
-                else -> applyProvisioning(myNodeNum, defaultLoraConfig, channelPlan.channel)
             }
         }
-    }
 
     /** Finds the currently configured canonical NTsocial channel without exposing its PSK or other RF settings. */
     open suspend fun currentDefaultChannelIndex(): Int? {

@@ -53,7 +53,13 @@ fun PrivacySection(
     val isLocationGranted = isLocationPermissionGranted()
     val isGpsOff = isGpsDisabled()
     val requestLocationPermission =
-        rememberRequestLocationPermission(onGranted = { startProvideLocation() }, onDenied = {})
+        rememberRequestLocationPermission(
+            onGranted = { startProvideLocation() },
+            onDenied = {
+                onToggleLocation(false)
+                stopProvideLocation()
+            },
+        )
 
     LaunchedEffect(provideLocation, isLocationGranted, isGpsOff) {
         if (provideLocation) {
@@ -75,7 +81,7 @@ fun PrivacySection(
         SwitchListItem(
             text = stringResource(Res.string.provide_location_to_mesh),
             leadingIcon = MeshtasticIcons.LocationOn,
-            enabled = !isGpsOff,
+            enabled = !isGpsOff || provideLocation,
             checked = provideLocation,
             onClick = { onToggleLocation(!provideLocation) },
         )

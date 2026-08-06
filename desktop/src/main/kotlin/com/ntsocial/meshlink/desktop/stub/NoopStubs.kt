@@ -157,6 +157,10 @@ class NoopMeshWorkerManager : MeshWorkerManager {
 class NoopMeshLocationManager : MeshLocationManager {
     override fun start(scope: CoroutineScope, sendPositionFn: (ProtoPosition) -> Unit) {}
 
+    override fun restart() {}
+
+    override fun setLocationAccessAllowed(allowed: Boolean) {}
+
     override fun stop() {}
 }
 

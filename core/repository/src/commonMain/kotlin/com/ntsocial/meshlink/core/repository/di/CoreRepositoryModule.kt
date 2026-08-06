@@ -25,6 +25,7 @@
 package com.ntsocial.meshlink.core.repository.di
 
 import com.ntsocial.meshlink.core.model.RadioController
+import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.NodeRepository
@@ -38,6 +39,8 @@ import org.koin.core.annotation.Single
 
 @Module
 class CoreRepositoryModule {
+    @Single fun provideChannelOperationLock(): ChannelOperationLock = ChannelOperationLock()
+
     @Single
     fun provideSendMessageUseCase(
         @Provided nodeRepository: NodeRepository,

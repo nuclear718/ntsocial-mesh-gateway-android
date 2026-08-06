@@ -34,6 +34,8 @@ import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DeviceType
 import com.ntsocial.meshlink.core.model.TelemetryType
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.DataPair
 import com.ntsocial.meshlink.core.repository.HandshakeConstants
@@ -59,8 +61,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -71,6 +81,7 @@ import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.ToRadio
+import kotlin.concurrent.Volatile
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -100,6 +111,7 @@ class MeshConnectionManagerImpl(
     private val heartbeatSender: DataLayerHeartbeatSender,
     private val ntsocialChannelProvisioner: NtsocialChannelProvisioner,
     private val ntsocialGatewayRepository: NtsocialGatewayRepository,
+    private val channelReliabilityManager: ChannelReliabilityManager,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshConnectionManager {
     /**
@@ -110,10 +122,19 @@ class MeshConnectionManagerImpl(
 
     private var preHandshakeJob: Job? = null
     private var sleepTimeout: Job? = null
-    private var locationRequestsJob: Job? = null
     private var handshakeTimeout: Job? = null
     private var connectTimeMsec = 0L
     private var connectionRestored = false
+
+    private val locationReconcileMutex = Mutex()
+    private val latestLocationRequest = MutableStateFlow(LocationRequest())
+    private val _locationSharingRequested = MutableStateFlow(false)
+    override val locationSharingRequested: StateFlow<Boolean> = _locationSharingRequested.asStateFlow()
+    private val _shouldProvideLocation = MutableStateFlow(false)
+    override val shouldProvideLocation: StateFlow<Boolean> = _shouldProvideLocation.asStateFlow()
+
+    /** The node whose desired location callback is currently installed in [locationManager]. */
+    @Volatile private var activeLocationNodeNum: Int? = null
 
     init {
         // Bridge transport-level state into the canonical app-level state.
@@ -132,24 +153,63 @@ class MeshConnectionManagerImpl(
             }
         }
 
-        nodeRepository.myNodeInfo
-            .onEach { myNodeEntity ->
-                locationRequestsJob?.cancel()
-                if (myNodeEntity != null) {
-                    locationRequestsJob =
-                        uiPrefs
-                            .shouldProvideNodeLocation(myNodeEntity.myNodeNum)
-                            .onEach { shouldProvide ->
-                                if (shouldProvide) {
-                                    locationManager.start(scope) { pos -> commandSender.sendPosition(pos) }
-                                } else {
-                                    locationManager.stop()
-                                }
-                            }
-                            .launchIn(scope)
+        val nodeLocationPreference =
+            nodeRepository.myNodeInfo.flatMapLatest { myNodeEntity ->
+                if (myNodeEntity == null) {
+                    flowOf(NodeLocationPreference())
+                } else {
+                    uiPrefs.shouldProvideNodeLocation(myNodeEntity.myNodeNum).map { enabled ->
+                        NodeLocationPreference(myNodeEntity.myNodeNum, enabled)
+                    }
                 }
             }
+
+        combine(nodeLocationPreference, serviceRepository.connectionState, radioConfigRepository.localConfigFlow) {
+                preference,
+                connectionState,
+                localConfig,
+            ->
+            LocationRequest(
+                nodeNum = preference.nodeNum,
+                preferenceEnabled = preference.enabled,
+                connected = connectionState == ConnectionState.Connected,
+                fixedPosition = localConfig.position?.fixed_position == true,
+            )
+        }
+            .distinctUntilChanged()
+            .onEach { request ->
+                latestLocationRequest.value = request
+                _locationSharingRequested.value = request.requested
+                _shouldProvideLocation.value = request.shouldRun
+                applyLocationRequest(request)
+            }
             .launchIn(scope)
+    }
+
+    override fun reconcileLocation() {
+        scope.handledLaunch { applyLocationRequest(latestLocationRequest.value) }
+    }
+
+    /** Serializes all start/restart/stop decisions so reconnects and node switches cannot race one another. */
+    private suspend fun applyLocationRequest(request: LocationRequest) {
+        locationReconcileMutex.withLock {
+            val nodeNum = request.nodeNum
+            if (!request.shouldRun || nodeNum == null) {
+                activeLocationNodeNum = null
+                locationManager.stop()
+                return
+            }
+
+            if (activeLocationNodeNum != nodeNum) {
+                if (activeLocationNodeNum != null) locationManager.stop()
+                locationManager.start(scope) { position -> commandSender.sendPosition(position) }
+                activeLocationNodeNum = nodeNum
+            } else {
+                // Permission grants and Android foreground-service promotion do not change the shared request tuple.
+                // An explicit reconcile must still retry the saved callback without installing a second listener.
+                locationManager.restart()
+            }
+        }
     }
 
     /**
@@ -252,14 +312,17 @@ class MeshConnectionManagerImpl(
             }
     }
 
-    private fun tearDownConnection() {
+    private suspend fun tearDownConnection() {
         packetHandler.stopPacketQueue()
         sessionManager.clearAll() // Prevent stale per-node passkeys on reconnect.
-        locationManager.stop()
+        locationReconcileMutex.withLock {
+            activeLocationNodeNum = null
+            locationManager.stop()
+        }
         mqttManager.stop()
     }
 
-    private fun handleDeviceSleep() {
+    private suspend fun handleDeviceSleep() {
         serviceRepository.setConnectionState(ConnectionState.DeviceSleep)
         tearDownConnection()
 
@@ -293,7 +356,7 @@ class MeshConnectionManagerImpl(
         serviceBroadcasts.broadcastConnection()
     }
 
-    private fun handleDisconnected() {
+    private suspend fun handleDisconnected() {
         serviceRepository.setConnectionState(ConnectionState.Disconnected)
         tearDownConnection()
 
@@ -338,6 +401,9 @@ class MeshConnectionManagerImpl(
 
         val myNodeNum = nodeManager.myNodeNum.value ?: 0
 
+        // Do not depend on MyNodeInfo emitting a distinct object after a reconnect to restore the location feed.
+        reconcileLocation()
+
         // Set device time now that the full node picture is ready. Sending this during Stage 1
         // (onRadioConfigLoaded) introduced GATT write contention with the Stage 2 node-info burst.
         commandSender.sendAdmin(myNodeNum) { AdminMessage(set_time_only = nowSeconds.toInt()) }
@@ -349,6 +415,17 @@ class MeshConnectionManagerImpl(
         commandSender.sendAdmin(myNodeNum, wantResponse = true) { AdminMessage(get_owner_request = true) }
 
         scope.handledLaunch {
+            // Reconcile the user-approved snapshot before the built-in channel provisioner can occupy a secondary
+            // slot that is only temporarily missing. This keeps missing-only drift provable and conflict-safe.
+            when (val repairResult = channelReliabilityManager.reconcileProtectedChannelSet()) {
+                ChannelReliabilityResult.REPAIRED -> Logger.i { "Restored missing protected secondary channels" }
+
+                ChannelReliabilityResult.CONFLICT ->
+                    Logger.w { "Protected channel snapshot conflicts with the radio; automatic repair skipped" }
+
+                else -> Logger.d { "Protected channel reconciliation result=$repairResult" }
+            }
+
             val result =
                 ntsocialChannelProvisioner.ensureDefaultChannel(
                     myNodeNum = myNodeNum,
@@ -402,6 +479,21 @@ class MeshConnectionManagerImpl(
             nodes = nodeManager.nodeDBbyNodeNum.size,
             connectionRestored = connectionRestored,
         )
+    }
+
+    private data class NodeLocationPreference(val nodeNum: Int? = null, val enabled: Boolean = false)
+
+    private data class LocationRequest(
+        val nodeNum: Int? = null,
+        val preferenceEnabled: Boolean = false,
+        val connected: Boolean = false,
+        val fixedPosition: Boolean = false,
+    ) {
+        val requested: Boolean
+            get() = nodeNum != null && preferenceEnabled && !fixedPosition
+
+        val shouldRun: Boolean
+            get() = requested && connected
     }
 
     override fun updateTelemetry(t: Telemetry) {

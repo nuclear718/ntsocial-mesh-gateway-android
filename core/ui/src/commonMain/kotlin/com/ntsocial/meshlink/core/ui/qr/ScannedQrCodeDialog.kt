@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -44,10 +45,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,6 +67,8 @@ import com.ntsocial.meshlink.core.resources.accept
 import com.ntsocial.meshlink.core.resources.add
 import com.ntsocial.meshlink.core.resources.add_channels_description
 import com.ntsocial.meshlink.core.resources.cancel
+import com.ntsocial.meshlink.core.resources.channel_apply_failed
+import com.ntsocial.meshlink.core.resources.channel_apply_in_progress
 import com.ntsocial.meshlink.core.resources.new_channel_rcvd
 import com.ntsocial.meshlink.core.resources.replace
 import com.ntsocial.meshlink.core.resources.replace_channels_and_settings_description
@@ -81,12 +86,22 @@ fun ScannedQrCodeDialog(
 ) {
     val channels by viewModel.channels.collectAsStateWithLifecycle()
     val maxChannels by viewModel.maxChannels.collectAsStateWithLifecycle()
+    val applyState by viewModel.applyState.collectAsStateWithLifecycle()
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
+
+    LaunchedEffect(applyState) {
+        if (applyState == ChannelQrApplyState.Verified) {
+            viewModel.clearApplyState()
+            currentOnDismiss()
+        }
+    }
 
     ScannedQrCodeDialog(
         channels = channels,
         incoming = incoming,
         onDismiss = onDismiss,
         maxChannels = maxChannels,
+        applyState = applyState,
         onConfirm = viewModel::setChannels,
     )
 }
@@ -100,6 +115,7 @@ fun ScannedQrCodeDialog(
     incoming: ChannelSet,
     onDismiss: () -> Unit,
     maxChannels: Int = DEFAULT_MAX_CHANNELS,
+    applyState: ChannelQrApplyState = ChannelQrApplyState.Idle,
     onConfirm: (ChannelSet) -> Unit,
 ) {
     var shouldReplace by rememberSaveable { mutableStateOf(incoming.lora_config != null) }
@@ -193,9 +209,10 @@ fun ScannedQrCodeDialog(
             }
         }
 
+    val isApplying = applyState == ChannelQrApplyState.Applying
     Dialog(
-        onDismissRequest = { onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true),
+        onDismissRequest = { if (!isApplying) onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = !isApplying),
     ) {
         Surface(
             modifier = Modifier.widthIn(max = 600.dp),
@@ -303,11 +320,34 @@ fun ScannedQrCodeDialog(
 
                 /* User Actions via buttons */
                 item {
+                    when (applyState) {
+                        ChannelQrApplyState.Applying ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator()
+                                Text(stringResource(Res.string.channel_apply_in_progress))
+                            }
+
+                        is ChannelQrApplyState.Failed ->
+                            Text(
+                                text = stringResource(Res.string.channel_apply_failed),
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(vertical = 12.dp),
+                            )
+
+                        else -> Unit
+                    }
+                }
+
+                item {
                     FlowRow(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                     ) {
-                        TextButton(onClick = { onDismiss() }) {
+                        TextButton(onClick = { onDismiss() }, enabled = !isApplying) {
                             Text(
                                 text = stringResource(Res.string.cancel),
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -318,11 +358,8 @@ fun ScannedQrCodeDialog(
                         }
 
                         TextButton(
-                            onClick = {
-                                onDismiss()
-                                onConfirm(selectedChannelSet)
-                            },
-                            enabled = selectedChannelSet.settings.size in 1..effectiveMaxChannels,
+                            onClick = { onConfirm(selectedChannelSet) },
+                            enabled = !isApplying && selectedChannelSet.settings.size in 1..effectiveMaxChannels,
                         ) {
                             Text(
                                 text = stringResource(Res.string.accept),

@@ -24,17 +24,25 @@
  */
 package com.ntsocial.meshlink.core.service
 
+import android.Manifest
+import android.app.Application
 import com.ntsocial.meshlink.core.repository.Location
 import com.ntsocial.meshlink.core.repository.LocationRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import android.location.Location as AndroidLocation
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -46,9 +54,31 @@ class AndroidLocationServiceTest {
         assertNotNull(service)
     }
 
-    private class FakeLocationRepository : LocationRepository {
+    @Test
+    fun `approximate location permission is sufficient for one-shot location`() = runTest {
+        val context = RuntimeEnvironment.getApplication() as Application
+        shadowOf(context)
+            .denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        shadowOf(context).grantPermissions(Manifest.permission.ACCESS_COARSE_LOCATION)
+        val expected = AndroidLocation("test").apply { latitude = 25.0 }
+        val service = AndroidLocationService(context, FakeLocationRepository(flowOf(expected)))
+
+        assertEquals(expected, service.getCurrentLocation())
+    }
+
+    @Test
+    fun `one-shot location remains unavailable when both permissions are denied`() = runTest {
+        val context = RuntimeEnvironment.getApplication() as Application
+        shadowOf(context)
+            .denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        val service = AndroidLocationService(context, FakeLocationRepository())
+
+        assertNull(service.getCurrentLocation())
+    }
+
+    private class FakeLocationRepository(private val locations: Flow<Location> = emptyFlow()) : LocationRepository {
         override val receivingLocationUpdates = MutableStateFlow(false)
 
-        override fun getLocations() = emptyFlow<Location>()
+        override fun getLocations(): Flow<Location> = locations
     }
 }

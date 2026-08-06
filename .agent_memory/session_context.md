@@ -1,5 +1,38 @@
 # Agent Session Context - Meshtastic Android
 
+## 2026-08-06 - Android channel persistence and phone-GPS reliability implementation
+- Implemented one serialized verified local-channel apply path from base `4151d6227`: ensure the
+  local admin session, materialize full slots, require queue admission plus a matching
+  request/sender `Routing.NONE` for each edit and commit, then require a fresh complete config
+  readback before reporting success or updating local observed state.
+- QR and local manual edits now use that coordinator. The QR dialog stays open while applying,
+  reports explicit failure, and cannot remain stuck in Applying after an exception. Message
+  migration after a manual channel edit occurs only after verified radio convergence.
+- Added explicit opt-in, per-stable-radio channel snapshots in App-private DataStore. Automatic
+  recovery is limited to provably missing secondary placeholders, revalidates identity, generation,
+  capacity, primary, and LoRa context, attempts once per radio generation, and fails closed on every
+  conflict. Protected reconciliation runs before built-in NTsocial provisioning; the existing
+  provisioner remains a legacy queue/cache path and is not claimed as equally verified.
+- Reworked complete-config collection into a generation-scoped handshake barrier so channel/LoRa
+  values commit atomically at `config_complete`; interrupted handshakes preserve the last complete
+  cache. Routing NAK now completes awaited responses as failure rather than success.
+- Exposed the existing per-node phone-location preference in Device -> Position and centralized
+  desired-state reconciliation across connected node, fixed position, Fine or Coarse permission,
+  system location, process lifecycle, reconnect, node switch, and restart. Start/stop/restart use
+  one lock, so teardown cannot race a late start.
+- `MeshService` now uses the location foreground-service type only while explicit phone-location
+  opt-in, permission, and system location are active; opt-out stops the listener. No background
+  location permission or cloud service was added.
+- Focused model/prefs/datastore/data/domain/service/UI/settings tests pass. With JDK 21 and en-US
+  locale, root `spotlessApply spotlessCheck assembleDebug test allTests` and
+  `kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug` pass. Root Detekt still reports only
+  the seven pre-existing findings in unmodified BLE (3), model (1), network (1), and data (2)
+  sources; this task adds none.
+- Shared channel changes pass Desktop/JVM and KMP compilation without changing Windows IPC, UI,
+  branding, or packaging. No Meshtastic radio was attached, so real QR/readback, reconnect repair,
+  Android 11-17 lifecycle/permission behavior, RF delivery, and second-radio phone-position
+  reception remain mandatory release evidence.
+
 ## 2026-08-04 - Private-message fork/upstream investigation and repair plan
 - Compared fork main fec591ec8 with upstream main e51fdf8a5 from merge base c0d95d6ac and traced
   native TEXT_MESSAGE_APP direct messages, Android WorkManager/radio admission, Room contact

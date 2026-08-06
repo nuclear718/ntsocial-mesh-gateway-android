@@ -34,6 +34,7 @@ import dev.mokkery.every
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.verify
+import dev.mokkery.verify.VerifyMode
 import dev.mokkery.verifySuspend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -42,6 +43,8 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.LocalConfig
@@ -50,6 +53,7 @@ import org.meshtastic.proto.ModuleConfig
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MeshConfigHandlerImplTest {
@@ -64,6 +68,7 @@ class MeshConfigHandlerImplTest {
     private val testDispatcher = UnconfinedTestDispatcher()
 
     private lateinit var handler: MeshConfigHandlerImpl
+    private lateinit var channelSetCollector: HandshakeChannelSetCollector
 
     @BeforeTest
     fun setUp() {
@@ -71,12 +76,16 @@ class MeshConfigHandlerImplTest {
         every { radioConfigRepository.moduleConfigFlow } returns moduleConfigFlow
     }
 
-    private fun createHandler(scope: CoroutineScope): MeshConfigHandlerImpl = MeshConfigHandlerImpl(
-        radioConfigRepository = radioConfigRepository,
-        serviceRepository = serviceRepository,
-        nodeManager = nodeManager,
-        scope = scope,
-    )
+    private fun createHandler(scope: CoroutineScope): MeshConfigHandlerImpl {
+        channelSetCollector = HandshakeChannelSetCollector(radioConfigRepository)
+        return MeshConfigHandlerImpl(
+            radioConfigRepository = radioConfigRepository,
+            serviceRepository = serviceRepository,
+            nodeManager = nodeManager,
+            channelSetCollector = channelSetCollector,
+            scope = scope,
+        )
+    }
 
     // ---------- start and flow wiring ----------
 
@@ -183,6 +192,35 @@ class MeshConfigHandlerImplTest {
         advanceUntilIdle()
 
         verifySuspend { radioConfigRepository.updateChannelSettings(channel) }
+    }
+
+    @Test
+    fun `active handshake collects disabled slots and commits one complete ChannelSet`() = runTest(testDispatcher) {
+        handler = createHandler(backgroundScope)
+        val primary = ChannelSettings(name = "primary")
+        val removed = ChannelSettings(name = "removed")
+        val last = ChannelSettings(name = "last")
+        val lora = Config.LoRaConfig(use_preset = true)
+        channelSetCollector.begin(generation = 1L)
+
+        handler.handleChannel(Channel(index = 0, role = Channel.Role.PRIMARY, settings = primary))
+        handler.handleChannel(Channel(index = 1, role = Channel.Role.SECONDARY, settings = removed))
+        handler.handleChannel(Channel(index = 2, role = Channel.Role.SECONDARY, settings = last))
+        handler.handleChannel(Channel(index = 1, role = Channel.Role.DISABLED))
+        handler.handleDeviceConfig(Config(lora = lora))
+
+        assertTrue(channelSetCollector.finish(generation = 1L))
+        assertTrue(channelSetCollector.commit(generation = 1L))
+        advanceUntilIdle()
+
+        verifySuspend {
+            radioConfigRepository.replaceChannelSet(
+                ChannelSet(settings = listOf(primary, ChannelSettings(), last), lora_config = lora),
+                completeReadback = true,
+            )
+        }
+        verifySuspend(mode = VerifyMode.not) { radioConfigRepository.updateChannelSettings(any()) }
+        verifySuspend { radioConfigRepository.setLocalConfigFromHandshake(Config(lora = lora)) }
     }
 
     @Test

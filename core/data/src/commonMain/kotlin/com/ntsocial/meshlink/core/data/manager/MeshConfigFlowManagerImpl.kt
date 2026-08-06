@@ -42,8 +42,14 @@ import com.ntsocial.meshlink.core.repository.ServiceRepository
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
+import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FileInfo
 import org.meshtastic.proto.FirmwareEdition
@@ -51,6 +57,128 @@ import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.NodeInfo
 import com.ntsocial.meshlink.core.model.MyNodeInfo as SharedMyNodeInfo
 import org.meshtastic.proto.MyNodeInfo as ProtoMyNodeInfo
+
+internal enum class HandshakeCaptureResult {
+    COLLECTED,
+    FINALIZING,
+    INACTIVE,
+}
+
+/** Collects one radio handshake's channels before publishing a single authoritative readback. */
+@Single
+class HandshakeChannelSetCollector(private val radioConfigRepository: RadioConfigRepository) {
+    private data class PendingHandshake(
+        val generation: Long,
+        val channels: Map<Int, Channel> = emptyMap(),
+        val loraConfig: Config.LoRaConfig? = null,
+        val acceptingPackets: Boolean = true,
+    )
+
+    private val pending = atomic<PendingHandshake?>(null)
+    private val persistenceMutex = Mutex()
+
+    internal fun begin(generation: Long) {
+        // Keep the last complete readback visible until this generation reaches config_complete. Clearing here would
+        // turn an interrupted handshake into an empty/partial channel cache, which is precisely the state this
+        // collector is intended to prevent.
+        pending.value = PendingHandshake(generation = generation)
+    }
+
+    internal fun captureChannel(channel: Channel): HandshakeCaptureResult {
+        var result: HandshakeCaptureResult? = null
+        while (result == null) {
+            val current = pending.value
+            result =
+                when {
+                    current == null -> HandshakeCaptureResult.INACTIVE
+
+                    !current.acceptingPackets -> HandshakeCaptureResult.FINALIZING
+
+                    channel.index !in 0 until MAX_CHANNELS -> {
+                        Logger.w { "Ignoring invalid handshake channel index=${channel.index}" }
+                        HandshakeCaptureResult.COLLECTED
+                    }
+
+                    pending.compareAndSet(
+                        current,
+                        current.copy(channels = current.channels + (channel.index to channel)),
+                    ) -> HandshakeCaptureResult.COLLECTED
+
+                    else -> null
+                }
+        }
+        return result
+    }
+
+    internal fun captureConfig(config: Config): HandshakeCaptureResult {
+        var result: HandshakeCaptureResult? = null
+        while (result == null) {
+            val current = pending.value
+            result =
+                when {
+                    current == null -> HandshakeCaptureResult.INACTIVE
+
+                    !current.acceptingPackets -> HandshakeCaptureResult.FINALIZING
+
+                    config.lora == null -> HandshakeCaptureResult.COLLECTED
+
+                    pending.compareAndSet(current, current.copy(loraConfig = config.lora)) ->
+                        HandshakeCaptureResult.COLLECTED
+
+                    else -> null
+                }
+        }
+        return result
+    }
+
+    internal fun finish(generation: Long): Boolean {
+        var result: Boolean? = null
+        while (result == null) {
+            val current = pending.value
+            result =
+                when {
+                    current == null -> false
+                    current.generation != generation || !current.acceptingPackets -> false
+                    pending.compareAndSet(current, current.copy(acceptingPackets = false)) -> true
+                    else -> null
+                }
+        }
+        return result
+    }
+
+    internal suspend fun commit(generation: Long): Boolean {
+        return persistenceMutex.withLock {
+            val current =
+                pending.value?.takeIf { it.generation == generation && !it.acceptingPackets } ?: return@withLock false
+            radioConfigRepository.replaceChannelSet(current.toChannelSet(), completeReadback = true)
+            pending.compareAndSet(current, null)
+        }
+    }
+
+    private fun PendingHandshake.toChannelSet(): ChannelSet {
+        val lastEnabledIndex =
+            channels.entries
+                .filter { (_, channel) ->
+                    channel.role == Channel.Role.PRIMARY || channel.role == Channel.Role.SECONDARY
+                }
+                .maxOfOrNull { it.key }
+        val settings =
+            if (lastEnabledIndex == null) {
+                emptyList()
+            } else {
+                List(lastEnabledIndex + 1) { index ->
+                    channels[index]
+                        ?.takeIf { it.role == Channel.Role.PRIMARY || it.role == Channel.Role.SECONDARY }
+                        ?.settings ?: ChannelSettings()
+                }
+            }
+        return ChannelSet(settings = settings, lora_config = loraConfig)
+    }
+
+    private companion object {
+        const val MAX_CHANNELS = 8
+    }
+}
 
 @Suppress("LongParameterList", "TooManyFunctions")
 @Single
@@ -65,6 +193,7 @@ class MeshConfigFlowManagerImpl(
     private val commandSender: CommandSender,
     private val heartbeatSender: DataLayerHeartbeatSender,
     private val notificationPrefs: NotificationPrefs,
+    private val channelSetCollector: HandshakeChannelSetCollector,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshConfigFlowManager {
     private val wantConfigDelay = 100L
@@ -89,8 +218,14 @@ class MeshConfigFlowManagerImpl(
          * [rawMyNodeInfo] arrives first (my_info packet); [metadata] may arrive shortly after. Both are consumed
          * together by [buildMyNodeInfo] at Stage 1 completion.
          */
-        data class ReceivingConfig(val rawMyNodeInfo: ProtoMyNodeInfo, val metadata: DeviceMetadata? = null) :
-            HandshakeState()
+        data class ReceivingConfig(
+            val generation: Long,
+            val rawMyNodeInfo: ProtoMyNodeInfo,
+            val metadata: DeviceMetadata? = null,
+        ) : HandshakeState()
+
+        /** Stage 1 packets are frozen while the complete channel readback is persisted. */
+        data class FinalizingConfig(val generation: Long) : HandshakeState()
 
         /**
          * Stage 2: receiving node-info packets from the firmware.
@@ -159,18 +294,43 @@ class MeshConfigFlowManagerImpl(
             }
         }
 
+        if (!channelSetCollector.finish(state.generation)) {
+            Logger.w { "Stage 1 channel readback was not current; waiting for the active handshake" }
+            return
+        }
+        handshakeState = HandshakeState.FinalizingConfig(state.generation)
+        scope.handledLaunch {
+            if (!channelSetCollector.commit(state.generation)) return@handledLaunch
+            val current = handshakeState
+            if (
+                handshakeGeneration.value != state.generation ||
+                current !is HandshakeState.FinalizingConfig ||
+                current.generation != state.generation
+            ) {
+                return@handledLaunch
+            }
+            completeConfigStage(state.generation, finalizedInfo)
+        }
+    }
+
+    private fun completeConfigStage(generation: Long, finalizedInfo: SharedMyNodeInfo) {
         handshakeState = HandshakeState.ReceivingNodeInfo(myNodeInfo = finalizedInfo)
         Logger.i { "myNodeInfo committed (nodeNum=${finalizedInfo.myNodeNum})" }
         connectionManager.value.onRadioConfigLoaded()
 
         scope.handledLaunch {
             delay(wantConfigDelay)
+            if (!isReceivingNodeInfo(generation)) return@handledLaunch
             heartbeatSender.sendHeartbeat("inter-stage")
             delay(wantConfigDelay)
+            if (!isReceivingNodeInfo(generation)) return@handledLaunch
             Logger.i { "Requesting NodeInfo (Stage 2)" }
             connectionManager.value.startNodeInfoOnly()
         }
     }
+
+    private fun isReceivingNodeInfo(generation: Long): Boolean =
+        handshakeGeneration.value == generation && handshakeState is HandshakeState.ReceivingNodeInfo
 
     private fun handleNodeInfoComplete(state: HandshakeState.ReceivingNodeInfo) {
         Logger.i { "NodeInfo complete (Stage 2)" }
@@ -207,28 +367,24 @@ class MeshConfigFlowManagerImpl(
     override fun handleMyInfo(myInfo: ProtoMyNodeInfo) {
         Logger.i { "MyNodeInfo received: ${myInfo.my_node_num}" }
 
+        val gen = handshakeGeneration.incrementAndGet()
+
         // Transition to Stage 1, discarding any stale data from a prior interrupted handshake.
-        handshakeState = HandshakeState.ReceivingConfig(rawMyNodeInfo = myInfo)
+        handshakeState = HandshakeState.ReceivingConfig(generation = gen, rawMyNodeInfo = myInfo)
+        channelSetCollector.begin(gen)
         nodeManager.setMyNodeNum(myInfo.my_node_num)
         nodeManager.setFirmwareEdition(myInfo.firmware_edition)
         applyEventFirmwareNotificationDefaults(myInfo.firmware_edition)
 
-        // Bump the generation so that a pending clear from a prior (interrupted) handshake
-        // will see a stale snapshot and skip its writes, preventing it from wiping config
-        // that was saved by this (newer) handshake's incoming packets.
-        val gen = handshakeGeneration.incrementAndGet()
-
-        // Clear persisted radio config so the new handshake starts from a clean slate.
-        // DataStore serializes its own writes, so the clear will precede subsequent
-        // setLocalConfig / updateChannelSettings calls dispatched by later packets in this
-        // session (handleFromRadio processes packets sequentially, so later dispatches always
-        // occur after this one returns).
+        // ChannelSet has its own generation-bound clear/commit barrier. Other session caches still clear here.
         scope.handledLaunch {
             if (handshakeGeneration.value != gen) return@handledLaunch // Stale handshake; skip.
-            radioConfigRepository.clearChannelSet()
             radioConfigRepository.clearLocalConfig()
+            if (handshakeGeneration.value != gen) return@handledLaunch
             radioConfigRepository.clearLocalModuleConfig()
+            if (handshakeGeneration.value != gen) return@handledLaunch
             radioConfigRepository.clearDeviceUIConfig()
+            if (handshakeGeneration.value != gen) return@handledLaunch
             radioConfigRepository.clearFileManifest()
         }
     }
@@ -293,7 +449,9 @@ class MeshConfigFlowManagerImpl(
                 hasWifi = metadata?.hasWifi == true,
                 channelUtilization = 0f,
                 airUtilTx = 0f,
-                deviceId = device_id.utf8(),
+                // device_id is opaque bytes, not UTF-8. Hex preserves every byte and avoids replacement-character
+                // collisions when it is used to partition an opt-in channel snapshot.
+                deviceId = device_id.hex().ifEmpty { null },
                 pioEnv = pio_env.ifEmpty { null },
             )
         }
