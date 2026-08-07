@@ -22,19 +22,24 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ble
+package com.ntsocial.meshlink.core.model.util
 
-import com.juul.kable.Peripheral
-import com.juul.kable.PeripheralBuilder
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
+import platform.Security.SecRandomCopyBytes
+import platform.Security.errSecSuccess
+import platform.Security.kSecRandomDefault
 
-/** No-op stubs for iOS target in core:ble. */
-internal actual fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean) {
-    // No-op for stubs
+/** Returns cryptographically secure random bytes supplied by Apple's Security framework. */
+@OptIn(ExperimentalForeignApi::class)
+actual fun platformRandomBytes(size: Int): ByteArray {
+    require(size >= 0) { "Random byte count must not be negative" }
+    if (size == 0) return ByteArray(0)
+
+    val bytes = ByteArray(size)
+    val status =
+        bytes.usePinned { pinned -> SecRandomCopyBytes(kSecRandomDefault, size.toULong(), pinned.addressOf(0)) }
+    check(status == errSecSuccess) { "SecRandomCopyBytes failed with OSStatus $status" }
+    return bytes
 }
-
-internal actual fun createPeripheral(address: String, builderAction: PeripheralBuilder.() -> Unit): Peripheral =
-    throw UnsupportedOperationException("iOS Peripheral not yet implemented")
-
-internal actual fun Peripheral.negotiatedMaxWriteLength(): Int? = null
-
-internal actual fun Peripheral.requestHighConnectionPriority(): Boolean = false

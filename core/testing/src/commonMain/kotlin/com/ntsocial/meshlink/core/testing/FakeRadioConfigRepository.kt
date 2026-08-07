@@ -56,6 +56,8 @@ class FakeRadioConfigRepository :
 
     private val channelReadbackGenerationBacking = mutableStateFlow(0L)
     override val channelReadbackGeneration: StateFlow<Long> = channelReadbackGenerationBacking.asStateFlow()
+    private val channelSnapshotGenerationBacking = mutableStateFlow(0L)
+    override val channelSnapshotGeneration: StateFlow<Long> = channelSnapshotGenerationBacking.asStateFlow()
 
     private val localConfigBacking = mutableStateFlow(LocalConfig())
     override val localConfigFlow: Flow<LocalConfig> = localConfigBacking
@@ -108,16 +110,29 @@ class FakeRadioConfigRepository :
     }
 
     override suspend fun replaceChannelSet(channelSet: ChannelSet, completeReadback: Boolean) {
-        channelSetBacking.value =
-            if (completeReadback) channelSet else channelSetBacking.value.copy(settings = channelSet.settings)
-        if (completeReadback) channelReadbackGenerationBacking.update { it + 1 }
+        mutateChannelSnapshot {
+            channelSetBacking.value =
+                if (completeReadback) channelSet else channelSetBacking.value.copy(settings = channelSet.settings)
+            if (completeReadback) channelReadbackGenerationBacking.update { it + 1 }
+        }
     }
 
     override suspend fun updateChannelSettings(channel: Channel) {
-        val current = channelSetBacking.value.settings.toMutableList()
-        while (current.size <= channel.index) current.add(ChannelSettings())
-        current[channel.index] = channel.settings ?: ChannelSettings()
-        channelSetBacking.value = channelSetBacking.value.copy(settings = current)
+        mutateChannelSnapshot {
+            val current = channelSetBacking.value.settings.toMutableList()
+            while (current.size <= channel.index) current.add(ChannelSettings())
+            current[channel.index] = channel.settings ?: ChannelSettings()
+            channelSetBacking.value = channelSetBacking.value.copy(settings = current)
+        }
+    }
+
+    private suspend fun <T> mutateChannelSnapshot(block: suspend () -> T): T {
+        channelSnapshotGenerationBacking.update { it + 1 }
+        return try {
+            block()
+        } finally {
+            channelSnapshotGenerationBacking.update { it + 1 }
+        }
     }
 
     override suspend fun clearLocalConfig() {
@@ -126,6 +141,9 @@ class FakeRadioConfigRepository :
 
     override suspend fun setLocalConfig(config: Config) {
         lastSetLocalConfig = config
+        config.lora?.let { lora ->
+            mutateChannelSnapshot { channelSetBacking.value = channelSetBacking.value.copy(lora_config = lora) }
+        }
     }
 
     override suspend fun setLocalConfigFromHandshake(config: Config) {
@@ -174,5 +192,13 @@ class FakeRadioConfigRepository :
     /** Directly sets the [ChannelSet] (bypasses [updateChannelSettings]/[replaceChannelSet]). */
     fun setChannelSet(channelSet: ChannelSet) {
         channelSetBacking.value = channelSet
+        channelSnapshotGenerationBacking.update { it + 2 }
+    }
+
+    /** Publishes a channel set as an authoritative completed radio readback. */
+    fun setCompleteChannelReadback(channelSet: ChannelSet) {
+        channelSetBacking.value = channelSet
+        channelReadbackGenerationBacking.update { it + 1 }
+        channelSnapshotGenerationBacking.update { it + 2 }
     }
 }

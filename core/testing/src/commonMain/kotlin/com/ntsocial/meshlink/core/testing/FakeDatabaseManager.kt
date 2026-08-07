@@ -33,6 +33,8 @@ class FakeDatabaseManager :
     DatabaseManager {
     private val _cacheLimit = mutableStateFlow(DEFAULT_CACHE_LIMIT)
     override val cacheLimit: StateFlow<Int> = _cacheLimit
+    private val _currentAddress = mutableStateFlow<String?>(null)
+    override val currentAddress: StateFlow<String?> = _currentAddress
 
     var lastSwitchedAddress: String? = null
     val existingDatabases = mutableSetOf<String>()
@@ -40,6 +42,7 @@ class FakeDatabaseManager :
     init {
         registerResetAction {
             _cacheLimit.value = DEFAULT_CACHE_LIMIT
+            _currentAddress.value = null
             lastSwitchedAddress = null
             existingDatabases.clear()
         }
@@ -53,9 +56,16 @@ class FakeDatabaseManager :
 
     override suspend fun switchActiveDatabase(address: String?) {
         lastSwitchedAddress = address
+        _currentAddress.value = address
     }
 
     override fun hasDatabaseFor(address: String?): Boolean = address != null && existingDatabases.contains(address)
+
+    /** Direct setup seam for tests that need an already-selected active database without launching a coroutine. */
+    fun setCurrentAddressForTest(address: String?) {
+        lastSwitchedAddress = address
+        _currentAddress.value = address
+    }
 
     companion object {
         private const val DEFAULT_CACHE_LIMIT = 100

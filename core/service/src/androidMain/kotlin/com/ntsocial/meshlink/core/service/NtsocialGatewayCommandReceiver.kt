@@ -362,6 +362,7 @@ class NtsocialGatewayCommandReceiver :
             val queued =
                 gatewayRepository.persistAndQueueRawEnvelope(
                     rawEnvelope = command.rawEnvelope,
+                    sourceChannelId = request.sourceChannelId,
                     to = command.to,
                     channelIndex = channelIndex,
                     hopLimit = command.hopLimit,

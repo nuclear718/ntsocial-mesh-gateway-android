@@ -26,12 +26,25 @@ package com.ntsocial.meshlink.core.data.manager
 
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
+import com.ntsocial.meshlink.core.repository.CurrentNodeSnapshot
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.NotificationManager
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import dev.mokkery.MockMode
+import dev.mokkery.answering.calls
+import dev.mokkery.answering.returns
+import dev.mokkery.every
+import dev.mokkery.everySuspend
+import dev.mokkery.matcher.any
 import dev.mokkery.mock
+import dev.mokkery.verify.VerifyMode
+import dev.mokkery.verifySuspend
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AirQualityMetrics
@@ -43,6 +56,7 @@ import org.meshtastic.proto.User
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -55,12 +69,15 @@ class NodeManagerImplTest {
     private val serviceBroadcasts: ServiceBroadcasts = mock(MockMode.autofill)
     private val notificationManager: NotificationManager = mock(MockMode.autofill)
     private val testScope = TestScope()
+    private lateinit var ingressWorkTracker: RadioIngressWorkTracker
 
     private lateinit var nodeManager: NodeManagerImpl
 
     @BeforeTest
     fun setUp() {
-        nodeManager = NodeManagerImpl(nodeRepository, serviceBroadcasts, notificationManager, testScope)
+        ingressWorkTracker = RadioIngressWorkTracker()
+        nodeManager =
+            NodeManagerImpl(nodeRepository, serviceBroadcasts, notificationManager, ingressWorkTracker, testScope)
     }
 
     @Test
@@ -72,6 +89,54 @@ class NodeManagerImplTest {
         assertEquals(nodeNum, result.num)
         assertTrue(result.user.long_name.startsWith("Meshtastic"))
         assertEquals(DataPacket.nodeNumToDefaultId(nodeNum), result.user.id)
+    }
+
+    @Test
+    fun `awaited cache load ignores replayed old state and waits for direct active database snapshot`() = runTest {
+        val oldNode = Node(num = 1, user = User(id = "!00000001", long_name = "old"))
+        val newNode = Node(num = 2, user = User(id = "!00000002", long_name = "new"))
+        val newMyInfo = com.ntsocial.meshlink.core.testing.TestDataFactory.createMyNodeInfo(myNodeNum = newNode.num)
+        val directSnapshotGate = CompletableDeferred<Unit>()
+        every { nodeRepository.nodeDBbyNum } returns MutableStateFlow(mapOf(oldNode.num to oldNode))
+        everySuspend { nodeRepository.readCurrentNodeSnapshot() } calls
+            {
+                directSnapshotGate.await()
+                CurrentNodeSnapshot(nodesByNumber = mapOf(newNode.num to newNode), myNodeInfo = newMyInfo)
+            }
+
+        val load = async { nodeManager.loadCachedNodeDBAndAwait() }
+        runCurrent()
+
+        assertFalse(load.isCompleted)
+        assertEquals(emptyMap(), nodeManager.nodeDBbyNodeNum)
+
+        directSnapshotGate.complete(Unit)
+        load.await()
+
+        assertEquals(mapOf(newNode.num to newNode), nodeManager.nodeDBbyNodeNum)
+        assertEquals(newNode.num, nodeManager.myNodeNum.value)
+    }
+
+    @Test
+    fun `user-owned node update still persists while radio ingress is paused`() = testScope.runTest {
+        nodeManager.setNodeDbReady(true)
+        ingressWorkTracker.pauseAndAwaitRetiredWork()
+
+        nodeManager.updateNode(42) { it.copy(isFavorite = true) }
+        runCurrent()
+
+        verifySuspend { nodeRepository.upsert(any()) }
+    }
+
+    @Test
+    fun `radio-owned node update is rejected while retired ingress is paused`() = testScope.runTest {
+        nodeManager.setNodeDbReady(true)
+        ingressWorkTracker.pauseAndAwaitRetiredWork()
+
+        nodeManager.updateNodeFromRadio(43) { it.copy(lastHeard = 99) }
+        runCurrent()
+
+        verifySuspend(mode = VerifyMode.not) { nodeRepository.upsert(any()) }
     }
 
     @Test

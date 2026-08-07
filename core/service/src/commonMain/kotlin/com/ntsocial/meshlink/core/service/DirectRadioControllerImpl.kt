@@ -31,11 +31,15 @@ import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.model.service.ServiceAction
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MeshLocationManager
+import com.ntsocial.meshlink.core.repository.MeshMessageProcessor
 import com.ntsocial.meshlink.core.repository.MeshRouter
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.NodeRepository
+import com.ntsocial.meshlink.core.repository.PacketHandler
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.ServiceRepository
+import com.ntsocial.meshlink.core.repository.SessionManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ClientNotification
@@ -63,6 +67,9 @@ class DirectRadioControllerImpl(
     private val nodeManager: NodeManager,
     private val radioInterfaceService: RadioInterfaceService,
     private val locationManager: MeshLocationManager,
+    private val messageProcessor: MeshMessageProcessor,
+    private val packetHandler: PacketHandler,
+    private val sessionManager: SessionManager,
 ) : RadioController {
 
     private val actionHandler
@@ -241,5 +248,29 @@ class DirectRadioControllerImpl(
     override fun setDeviceAddress(address: String) {
         actionHandler.handleUpdateLastAddress(address)
         radioInterfaceService.setDeviceAddress(address)
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    override suspend fun setDeviceAddressAndAwait(address: String) {
+        // Pause and drain old ingress before teardown clears radio-owned state. Otherwise an already decoded admin
+        // response could repopulate a just-cleared passkey after disconnect. The caller holds ChannelOperationLock,
+        // which keeps Gateway admission closed while the old session is being retired.
+        messageProcessor.quiesceIngress()
+        radioInterfaceService.disconnect()
+        packetHandler.stopPacketQueueAndAwait()
+        sessionManager.clearAll()
+        radioInterfaceService.resetReceivedBuffer()
+        if (actionHandler.handleUpdateLastAddressAndAwait(address)) {
+            messageProcessor.resumeIngress()
+            try {
+                if (!radioInterfaceService.setDeviceAddress(address)) messageProcessor.quiesceIngress()
+            } catch (cancelled: CancellationException) {
+                messageProcessor.quiesceIngress()
+                throw cancelled
+            } catch (error: Exception) {
+                messageProcessor.quiesceIngress()
+                throw error
+            }
+        }
     }
 }

@@ -22,6 +22,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress("TooManyFunctions")
+
 package com.ntsocial.meshlink.core.repository
 
 import org.meshtastic.proto.MeshPacket
@@ -32,6 +34,9 @@ import org.meshtastic.proto.ToRadio
 interface PacketHandler {
     /** Sends a command/packet directly to the radio. */
     fun sendToRadio(p: ToRadio)
+
+    /** Sends a raw control frame only through the exact configured radio session. */
+    fun sendToRadioForSession(p: ToRadio, expectedRadioSessionEpoch: Long): Boolean = false
 
     /** Adds a mesh packet to the queue for sending. */
     fun sendToRadio(packet: MeshPacket)
@@ -47,6 +52,33 @@ interface PacketHandler {
      */
     suspend fun sendToRadioAndAwait(packet: MeshPacket): Boolean
 
+    /**
+     * Atomically admits [packet] only while [expectedRadioSessionEpoch] still owns the open outbound generation. The
+     * production implementation linearizes the exact-session check with queue stop/resume admission so a delayed
+     * coroutine from a retired radio cannot enqueue into its replacement radio's generation.
+     */
+    suspend fun sendToRadioAndAwaitForSession(packet: MeshPacket, expectedRadioSessionEpoch: Long): Boolean =
+        sendToRadioAndAwait(packet)
+
+    /** Retains the durable Gateway source identity until exact-session radio queue admission completes. */
+    suspend fun sendToRadioAndAwaitForGatewaySession(
+        packet: MeshPacket,
+        expectedRadioSessionEpoch: Long,
+        expectedSourceChannelId: String,
+    ): Boolean = sendToRadioAndAwaitForSession(packet, expectedRadioSessionEpoch)
+
+    /** Gateway-specific worker-owned validation and QueueStatus result at the actual dispatch boundary. */
+    suspend fun dispatchGatewayPacketAndAwait(
+        packet: MeshPacket,
+        expectedRadioSessionEpoch: Long,
+        expectedSourceChannelId: String,
+    ): GatewayPacketDispatchResult =
+        if (sendToRadioAndAwaitForGatewaySession(packet, expectedRadioSessionEpoch, expectedSourceChannelId)) {
+            GatewayPacketDispatchResult.ACCEPTED
+        } else {
+            GatewayPacketDispatchResult.TRANSIENT_FAILURE
+        }
+
     /** Processes queue status updates from the radio. */
     fun handleQueueStatus(queueStatus: QueueStatus)
 
@@ -55,4 +87,18 @@ interface PacketHandler {
 
     /** Stops the packet queue. */
     fun stopPacketQueue()
+
+    /** Stops the packet queue and waits until its worker and pending response state are fully retired. */
+    suspend fun stopPacketQueueAndAwait() {
+        stopPacketQueue()
+    }
+
+    /** Reopens the current outbound generation after a replacement transport reaches Connected. */
+    suspend fun resumePacketQueueAndAwait() = Unit
+}
+
+enum class GatewayPacketDispatchResult {
+    ACCEPTED,
+    SOURCE_IDENTITY_MISMATCH,
+    TRANSIENT_FAILURE,
 }

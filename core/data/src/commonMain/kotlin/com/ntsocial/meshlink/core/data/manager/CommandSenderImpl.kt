@@ -22,6 +22,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress("FunctionSignature")
+
 package com.ntsocial.meshlink.core.data.manager
 
 import co.touchlab.kermit.Logger
@@ -33,6 +35,7 @@ import com.ntsocial.meshlink.core.model.TelemetryType
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.isWithinSizeLimit
 import com.ntsocial.meshlink.core.repository.CommandSender
+import com.ntsocial.meshlink.core.repository.GatewayPacketDispatchResult
 import com.ntsocial.meshlink.core.repository.NeighborInfoHandler
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.PacketHandler
@@ -137,6 +140,20 @@ class CommandSenderImpl(
     private fun getChannelIndex(toNum: Int): Int = nodeManager.nodeDBbyNodeNum[toNum]?.channel ?: 0
 
     override fun sendData(p: DataPacket) {
+        packetHandler.sendToRadio(buildDataMeshPacket(p))
+    }
+
+    override suspend fun sendDataAwaitForGatewaySession(
+        p: DataPacket,
+        expectedRadioSessionEpoch: Long,
+        expectedSourceChannelId: String,
+    ): GatewayPacketDispatchResult = packetHandler.dispatchGatewayPacketAndAwait(
+        packet = buildDataMeshPacket(p),
+        expectedRadioSessionEpoch = expectedRadioSessionEpoch,
+        expectedSourceChannelId = expectedSourceChannelId,
+    )
+
+    private fun buildDataMeshPacket(p: DataPacket): MeshPacket {
         if (p.id == 0) p.id = generatePacketId()
         val bytes = p.bytes ?: ByteString.EMPTY
         require(p.dataType != 0) { "Port numbers must be non-zero!" }
@@ -146,8 +163,6 @@ class CommandSenderImpl(
                     "port=${p.dataType} bytes=${bytes.size} wantAck=${p.wantAck}"
             }
         }
-
-        // Use Wire extension for accurate size validation
         val data =
             Data(
                 portnum = PortNum.fromValue(p.dataType) ?: PortNum.UNKNOWN_APP,
@@ -155,19 +170,11 @@ class CommandSenderImpl(
                 reply_id = p.replyId ?: 0,
                 emoji = p.emoji,
             )
-
         if (!Data.ADAPTER.isWithinSizeLimit(data, Constants.DATA_PAYLOAD_LEN.value)) {
-            val actualSize = Data.ADAPTER.encodedSize(data)
             p.status = MessageStatus.ERROR
-            error("Message too long: $actualSize bytes")
-        } else {
-            p.status = MessageStatus.QUEUED
+            error("Message too long: ${Data.ADAPTER.encodedSize(data)} bytes")
         }
-
-        sendNow(p)
-    }
-
-    private fun sendNow(p: DataPacket) {
+        p.status = MessageStatus.QUEUED
         val meshPacket =
             buildMeshPacket(
                 to = resolveNodeNum(p.to ?: DataPacket.ID_BROADCAST),
@@ -190,7 +197,7 @@ class CommandSenderImpl(
             }
         }
         p.time = nowMillis
-        packetHandler.sendToRadio(meshPacket)
+        return meshPacket
     }
 
     override fun sendAdmin(destNum: Int, requestId: Int, wantResponse: Boolean, initFn: () -> AdminMessage) {
@@ -210,6 +217,19 @@ class CommandSenderImpl(
         val packet =
             buildAdminPacket(to = destNum, id = requestId, wantResponse = wantResponse, adminMessage = adminMsg)
         return packetHandler.sendToRadioAndAwait(packet)
+    }
+
+    override suspend fun sendAdminAwaitForSession(
+        expectedRadioSessionEpoch: Long,
+        destNum: Int,
+        requestId: Int,
+        wantResponse: Boolean,
+        initFn: () -> AdminMessage,
+    ): Boolean {
+        val adminMsg = initFn().copy(session_passkey = sessionManager.getPasskey(destNum))
+        val packet =
+            buildAdminPacket(to = destNum, id = requestId, wantResponse = wantResponse, adminMessage = adminMsg)
+        return packetHandler.sendToRadioAndAwaitForSession(packet, expectedRadioSessionEpoch)
     }
 
     override fun sendPosition(pos: ProtoPosition, destNum: Int?, wantResponse: Boolean) {
@@ -307,6 +327,20 @@ class CommandSenderImpl(
     }
 
     override fun requestTelemetry(requestId: Int, destNum: Int, typeValue: Int) {
+        packetHandler.sendToRadio(buildTelemetryRequest(requestId, destNum, typeValue))
+    }
+
+    override suspend fun requestTelemetryForSession(
+        expectedRadioSessionEpoch: Long,
+        requestId: Int,
+        destNum: Int,
+        typeValue: Int,
+    ): Boolean = packetHandler.sendToRadioAndAwaitForSession(
+        buildTelemetryRequest(requestId, destNum, typeValue),
+        expectedRadioSessionEpoch,
+    )
+
+    private fun buildTelemetryRequest(requestId: Int, destNum: Int, typeValue: Int): MeshPacket {
         val type = TelemetryType.entries.getOrNull(typeValue) ?: TelemetryType.DEVICE
 
         val portNum: PortNum
@@ -330,13 +364,11 @@ class CommandSenderImpl(
                     .toByteString()
         }
 
-        packetHandler.sendToRadio(
-            buildMeshPacket(
-                to = destNum,
-                id = requestId,
-                channel = getChannelIndex(destNum),
-                decoded = Data(portnum = portNum, payload = payloadBytes, want_response = true, dest = destNum),
-            ),
+        return buildMeshPacket(
+            to = destNum,
+            id = requestId,
+            channel = getChannelIndex(destNum),
+            decoded = Data(portnum = portNum, payload = payloadBytes, want_response = true, dest = destNum),
         )
     }
 

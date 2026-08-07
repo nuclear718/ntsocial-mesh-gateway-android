@@ -48,7 +48,6 @@ import kotlinx.atomicfu.update
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import okio.ByteString
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
@@ -69,6 +68,7 @@ class NodeManagerImpl(
     private val nodeRepository: NodeRepository,
     private val serviceBroadcasts: ServiceBroadcasts,
     private val notificationManager: NotificationManager,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : NodeManager {
 
@@ -109,15 +109,18 @@ class NodeManagerImpl(
     }
 
     override fun loadCachedNodeDB() {
-        scope.handledLaunch {
-            val nodes = nodeRepository.nodeDBbyNum.first()
-            _nodeDBbyNodeNum.value = persistentMapOf<Int, Node>().putAll(nodes)
-            val byId = mutableMapOf<String, Node>()
-            nodes.values.forEach { byId[it.user.id] = it }
-            _nodeDBbyID.value = persistentMapOf<String, Node>().putAll(byId)
-            if (myNodeNum.value == null) {
-                myNodeNum.value = nodeRepository.myNodeInfo.value?.myNodeNum
-            }
+        scope.handledLaunch { loadCachedNodeDBAndAwait() }
+    }
+
+    override suspend fun loadCachedNodeDBAndAwait() {
+        val snapshot = nodeRepository.readCurrentNodeSnapshot()
+        val nodes = snapshot.nodesByNumber
+        _nodeDBbyNodeNum.value = persistentMapOf<Int, Node>().putAll(nodes)
+        val byId = mutableMapOf<String, Node>()
+        nodes.values.forEach { byId[it.user.id] = it }
+        _nodeDBbyID.value = persistentMapOf<String, Node>().putAll(byId)
+        if (myNodeNum.value == null) {
+            myNodeNum.value = snapshot.myNodeInfo?.myNodeNum
         }
     }
 
@@ -183,6 +186,20 @@ class NodeManagerImpl(
         }
 
     override fun updateNode(nodeNum: Int, withBroadcast: Boolean, channel: Int, transform: (Node) -> Node) {
+        updateNodeOwned(nodeNum, withBroadcast, channel, radioIngress = false, transform)
+    }
+
+    override fun updateNodeFromRadio(nodeNum: Int, withBroadcast: Boolean, channel: Int, transform: (Node) -> Node) {
+        updateNodeOwned(nodeNum, withBroadcast, channel, radioIngress = true, transform)
+    }
+
+    private fun updateNodeOwned(
+        nodeNum: Int,
+        withBroadcast: Boolean,
+        channel: Int,
+        radioIngress: Boolean,
+        transform: (Node) -> Node,
+    ) {
         // Perform read + transform inside update{} to ensure atomicity.
         // Without this, concurrent calls for the same nodeNum could read the same snapshot
         // and the last writer would silently overwrite the other's changes.
@@ -199,7 +216,11 @@ class NodeManagerImpl(
         }
 
         if (result.user.id.isNotEmpty() && isNodeDbReady.value) {
-            scope.handledLaunch { nodeRepository.upsert(result) }
+            if (radioIngress) {
+                ingressWorkTracker.launch(scope) { nodeRepository.upsert(result) }
+            } else {
+                scope.handledLaunch { nodeRepository.upsert(result) }
+            }
         }
 
         if (withBroadcast) {
@@ -208,7 +229,7 @@ class NodeManagerImpl(
     }
 
     override fun handleReceivedUser(fromNum: Int, p: User, channel: Int, manuallyVerified: Boolean) {
-        updateNode(fromNum) { node ->
+        updateNodeFromRadio(fromNum) { node ->
             val newNode = (node.isUnknownUser && p.hw_model != HardwareModel.UNSET)
             val shouldPreserve = shouldPreserveExistingUser(node.user, p)
 
@@ -226,7 +247,7 @@ class NodeManagerImpl(
                     )
                 }
             if (newNode && !shouldPreserve) {
-                scope.handledLaunch {
+                ingressWorkTracker.launch(scope) {
                     notificationManager.dispatch(
                         Notification(
                             title = getStringSuspend(Res.string.new_node_seen, next.user.short_name),
@@ -248,7 +269,7 @@ class NodeManagerImpl(
             return
         }
 
-        updateNode(fromNum) { node ->
+        updateNodeFromRadio(fromNum) { node ->
             val posTime = if (p.time != 0) p.time else (defaultTime / TIME_MS_TO_S).toInt()
             val newLastHeard = maxOf(node.lastHeard, posTime)
 
@@ -270,7 +291,7 @@ class NodeManagerImpl(
     }
 
     override fun handleReceivedTelemetry(fromNum: Int, telemetry: Telemetry) {
-        updateNode(fromNum) { node ->
+        updateNodeFromRadio(fromNum) { node ->
             var nextNode = node
             telemetry.device_metrics?.let { nextNode = nextNode.copy(deviceMetrics = it) }
             telemetry.environment_metrics?.let { nextNode = nextNode.copy(environmentMetrics = it) }
@@ -283,7 +304,7 @@ class NodeManagerImpl(
     }
 
     override fun handleReceivedPaxcounter(fromNum: Int, p: Paxcount) {
-        updateNode(fromNum) { it.copy(paxcounter = p) }
+        updateNodeFromRadio(fromNum) { it.copy(paxcounter = p) }
     }
 
     override fun handleReceivedNodeStatus(fromNum: Int, s: StatusMessage) {
@@ -291,11 +312,11 @@ class NodeManagerImpl(
     }
 
     override fun updateNodeStatus(nodeNum: Int, status: String?) {
-        updateNode(nodeNum) { it.copy(nodeStatus = status?.takeIf { s -> s.isNotEmpty() }) }
+        updateNodeFromRadio(nodeNum) { it.copy(nodeStatus = status?.takeIf { s -> s.isNotEmpty() }) }
     }
 
     override fun installNodeInfo(info: ProtoNodeInfo, withBroadcast: Boolean) {
-        updateNode(info.num, withBroadcast = withBroadcast) { node ->
+        updateNodeFromRadio(info.num, withBroadcast = withBroadcast) { node ->
             var next = node
             val user = info.user
             if (user != null) {
@@ -332,6 +353,10 @@ class NodeManagerImpl(
 
     override fun insertMetadata(nodeNum: Int, metadata: DeviceMetadata) {
         scope.handledLaunch { nodeRepository.insertMetadata(nodeNum, metadata) }
+    }
+
+    override fun insertMetadataFromRadio(nodeNum: Int, metadata: DeviceMetadata) {
+        ingressWorkTracker.launch(scope) { nodeRepository.insertMetadata(nodeNum, metadata) }
     }
 
     private fun shouldPreserveExistingUser(existing: User, incoming: User): Boolean {

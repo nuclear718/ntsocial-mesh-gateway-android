@@ -73,6 +73,17 @@ interface RadioInterfaceService : RadioTransportCallback {
     /** Flow of the current device address. */
     val currentDeviceAddressFlow: StateFlow<String?>
 
+    /** Atomic selected/active/configured transport-session facts for fail-closed integration boundaries. */
+    val radioSessionState: StateFlow<RadioSessionState>
+
+    /**
+     * Marks [expectedEpoch] configured only if it is still the active selected transport session.
+     *
+     * Returns true only when the exact epoch is current (including an idempotent repeat for an already-configured
+     * current session). Callers must stop every handshake-completion side effect when this returns false.
+     */
+    fun markCurrentSessionConfigured(expectedEpoch: Long): Boolean
+
     /** Whether we are currently using a mock transport. */
     fun isMockTransport(): Boolean
 
@@ -99,8 +110,20 @@ interface RadioInterfaceService : RadioTransportCallback {
     /** Sends a raw byte array to the radio. */
     fun sendToRadio(bytes: ByteArray)
 
+    /**
+     * Sends only when [expectedRadioSessionEpoch] is still the exact configured owner of the current transport.
+     * Implementations that cannot linearize this check with transport replacement must fail closed.
+     */
+    fun sendToRadioForSession(bytes: ByteArray, expectedRadioSessionEpoch: Long): Boolean = false
+
     /** Initiates the connection to the radio. */
     fun connect()
+
+    /**
+     * Hydrates the authoritative persisted radio selection before the per-radio database is chosen. Must be called
+     * before [connect]; it never starts a transport.
+     */
+    suspend fun awaitHydratedDeviceAddress(): String? = getDeviceAddress()
 
     /**
      * Explicitly tears down the active transport, sending a polite `ToRadio(disconnect = true)` goodbye frame first

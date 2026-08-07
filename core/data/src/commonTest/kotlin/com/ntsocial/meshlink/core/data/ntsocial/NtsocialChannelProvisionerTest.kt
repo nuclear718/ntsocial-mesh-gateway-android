@@ -28,9 +28,16 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Position
 import com.ntsocial.meshlink.core.model.SessionStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannel
+import com.ntsocial.meshlink.core.repository.ChannelMutationLock
+import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.CommandSender
+import com.ntsocial.meshlink.core.repository.MeshConfigFlowManager
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.SessionManager
 import com.ntsocial.meshlink.core.testing.FakeRadioConfigRepository
+import com.ntsocial.meshlink.core.testing.FakeRadioInterfaceService
+import dev.mokkery.MockMode
+import dev.mokkery.mock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
@@ -47,9 +54,51 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.time.Clock
 
 class NtsocialChannelProvisionerTest {
+
+    @Test
+    fun `stale handshake session cannot provision after acquiring channel lock`() = runTest {
+        val fixture = fixture()
+
+        val result =
+            fixture.provisioner.ensureDefaultChannelForSession(
+                myNodeNum = MY_NODE_NUM,
+                maxChannels = 8,
+                expectedRadioSessionEpoch = 99,
+            )
+
+        assertNull(result)
+        assertEquals(emptyList(), fixture.commandSender.events)
+    }
+
+    @Test
+    fun `same-address reconnect before admin admission cannot provision replacement session`() = runTest {
+        val fixture = fixture()
+        fixture.repository.setChannelSet(ChannelSet(settings = listOf(otherSettings("Primary"))))
+        fixture.repository.setLocalConfigDirect(
+            LocalConfig(lora = Config.LoRaConfig(region = Config.LoRaConfig.RegionCode.UNSET)),
+        )
+        val expectedEpoch = fixture.radioInterfaceService.radioSessionState.value.epoch
+        fixture.commandSender.beforeSessionAdmission = { message ->
+            if (message.set_config != null) fixture.reconnectSameRadio()
+        }
+
+        val result =
+            fixture.provisioner.ensureDefaultChannelForSession(
+                myNodeNum = MY_NODE_NUM,
+                maxChannels = 8,
+                expectedRadioSessionEpoch = expectedEpoch,
+            )
+
+        assertNull(result)
+        assertEquals(listOf("set_config"), fixture.commandSender.sessionAdmissionAttempts)
+        assertEquals(emptyList(), fixture.commandSender.events)
+        assertEquals(null, fixture.repository.lastSetLocalConfig)
+        assertEquals(emptyList(), fixture.commandSender.setChannels)
+    }
 
     @Test
     fun `does nothing when canonical NTsocial channel already exists`() = runTest {
@@ -192,15 +241,28 @@ class NtsocialChannelProvisionerTest {
         val repository = FakeRadioConfigRepository()
         val sessionManager = FakeSessionManager(sessionActive)
         val commandSender = RecordingCommandSender(sessionManager)
+        val gatewayRepository = mock<NtsocialGatewayRepository>(MockMode.autofill)
+        val meshConfigFlowManager = mock<MeshConfigFlowManager>(MockMode.autofill)
+        val radioInterfaceService = FakeRadioInterfaceService()
+        radioInterfaceService.setDeviceAddress(RADIO_ADDRESS)
+        radioInterfaceService.connect()
+        radioInterfaceService.onConnect()
+        check(radioInterfaceService.markCurrentSessionConfigured(radioInterfaceService.radioSessionState.value.epoch))
+        commandSender.currentRadioSessionEpoch = { radioInterfaceService.radioSessionState.value.epoch }
         return Fixture(
             repository = repository,
             commandSender = commandSender,
+            radioInterfaceService = radioInterfaceService,
             provisioner =
             NtsocialChannelProvisioner(
                 commandSender,
                 repository,
                 sessionManager,
-                com.ntsocial.meshlink.core.repository.ChannelOperationLock(),
+                ChannelOperationLock(),
+                ChannelMutationLock(),
+                radioInterfaceService,
+                gatewayRepository,
+                lazy { meshConfigFlowManager },
             ),
         )
     }
@@ -211,8 +273,17 @@ class NtsocialChannelProvisionerTest {
     private data class Fixture(
         val repository: FakeRadioConfigRepository,
         val commandSender: RecordingCommandSender,
+        val radioInterfaceService: FakeRadioInterfaceService,
         val provisioner: NtsocialChannelProvisioner,
-    )
+    ) {
+        fun reconnectSameRadio() {
+            radioInterfaceService.onDisconnect(isPermanent = true, errorMessage = null)
+            radioInterfaceService.onConnect()
+            check(
+                radioInterfaceService.markCurrentSessionConfigured(radioInterfaceService.radioSessionState.value.epoch),
+            )
+        }
+    }
 
     private class FakeSessionManager(sessionActive: Boolean) : SessionManager {
         private val activeNodes = mutableSetOf<Int>()
@@ -253,6 +324,9 @@ class NtsocialChannelProvisionerTest {
     private class RecordingCommandSender(private val sessionManager: FakeSessionManager) : CommandSender {
         val events = mutableListOf<String>()
         val setChannels = mutableListOf<Channel>()
+        val sessionAdmissionAttempts = mutableListOf<String>()
+        var beforeSessionAdmission: ((AdminMessage) -> Unit)? = null
+        var currentRadioSessionEpoch: () -> Long = { 0L }
         var writeBeforeSession = false
             private set
 
@@ -286,9 +360,26 @@ class NtsocialChannelProvisionerTest {
             if (message.set_channel != null || message.set_config != null) {
                 writeBeforeSession = writeBeforeSession || !sessionManager.hasActiveSession(destNum)
             }
+            if (message.get_device_metadata_request == true) {
+                sessionManager.recordSession(destNum, PASSKEY)
+            }
             message.set_channel?.let { setChannels += it }
             events += message.eventName()
             return true
+        }
+
+        override suspend fun sendAdminAwaitForSession(
+            expectedRadioSessionEpoch: Long,
+            destNum: Int,
+            requestId: Int,
+            wantResponse: Boolean,
+            initFn: () -> AdminMessage,
+        ): Boolean {
+            val message = initFn()
+            sessionAdmissionAttempts += message.eventName()
+            beforeSessionAdmission?.invoke(message)
+            if (currentRadioSessionEpoch() != expectedRadioSessionEpoch) return false
+            return sendAdminAwait(destNum, requestId, wantResponse) { message }
         }
 
         override fun sendPosition(pos: org.meshtastic.proto.Position, destNum: Int?, wantResponse: Boolean) = Unit
@@ -315,6 +406,7 @@ class NtsocialChannelProvisionerTest {
 
     private companion object {
         const val MY_NODE_NUM = 123
+        const val RADIO_ADDRESS = "same-radio"
         val PASSKEY: ByteString = ByteString.of(1, 2, 3, 4)
         val canonicalSettings: ChannelSettings = NtsocialDefaultChannel.channelSet.settings.single()
         val defaultLora: Config.LoRaConfig = NtsocialDefaultChannel.channelSet.lora_config!!

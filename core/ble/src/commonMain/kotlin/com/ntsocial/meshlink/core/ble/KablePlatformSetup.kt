@@ -27,6 +27,9 @@ package com.ntsocial.meshlink.core.ble
 import com.juul.kable.Peripheral
 import com.juul.kable.PeripheralBuilder
 
+/** Initializes platform BLE facilities before Kable creates its central manager or a peripheral. */
+internal expect fun initializePlatformBle()
+
 /** Platform-specific configuration for the Peripheral builder based on device type. */
 internal expect fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean)
 
@@ -37,7 +40,7 @@ internal expect fun createPeripheral(address: String, builderAction: PeripheralB
  * Returns the negotiated maximum write payload length in bytes (i.e. ATT MTU minus the 3-byte ATT header), or `null` if
  * MTU has not yet been negotiated on this platform.
  */
-internal expect fun Peripheral.negotiatedMaxWriteLength(): Int?
+internal expect suspend fun Peripheral.negotiatedMaxWriteLength(writeType: BleWriteType): Int?
 
 /**
  * Requests the highest-throughput BLE connection priority (smallest connection interval) supported by the platform.

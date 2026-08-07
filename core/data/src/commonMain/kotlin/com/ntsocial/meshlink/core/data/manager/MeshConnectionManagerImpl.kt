@@ -22,18 +22,23 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress("ReturnCount")
+
 package com.ntsocial.meshlink.core.data.manager
 
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.common.util.nowSeconds
+import com.ntsocial.meshlink.core.data.ntsocial.NtsocialChannelProvisionResult
 import com.ntsocial.meshlink.core.data.ntsocial.NtsocialChannelProvisioner
 import com.ntsocial.meshlink.core.data.ntsocial.toDefaultChannelStatus
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DeviceType
 import com.ntsocial.meshlink.core.model.TelemetryType
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
+import com.ntsocial.meshlink.core.repository.ChannelMutationLock
+import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.CommandSender
@@ -112,6 +117,8 @@ class MeshConnectionManagerImpl(
     private val ntsocialChannelProvisioner: NtsocialChannelProvisioner,
     private val ntsocialGatewayRepository: NtsocialGatewayRepository,
     private val channelReliabilityManager: ChannelReliabilityManager,
+    private val channelOperationLock: ChannelOperationLock,
+    private val channelMutationLock: ChannelMutationLock,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshConnectionManager {
     /**
@@ -266,6 +273,7 @@ class MeshConnectionManagerImpl(
     }
 
     private fun handleConnected() {
+        val radioSessionEpoch = radioInterfaceService.radioSessionState.value.epoch
         // Track whether this connection was restored from device sleep (vs. a fresh connect),
         // matching Apple's "connectionRestored" attribute for cross-platform DataDog parity.
         connectionRestored = serviceRepository.connectionState.value is ConnectionState.DeviceSleep
@@ -282,10 +290,16 @@ class MeshConnectionManagerImpl(
         // (sendToRadio is fire-and-forget through async coroutine launches).
         preHandshakeJob =
             scope.handledLaunch {
-                heartbeatSender.sendHeartbeat("pre-handshake")
-                delay(PRE_HANDSHAKE_SETTLE_MS)
-                Logger.i { "Starting mesh handshake (Stage 1)" }
-                startConfigOnly()
+                channelOperationLock.withLock {
+                    if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = false)) return@withLock
+                    packetHandler.resumePacketQueueAndAwait()
+                    if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = false)) return@withLock
+                    heartbeatSender.sendHeartbeat("pre-handshake")
+                    delay(PRE_HANDSHAKE_SETTLE_MS)
+                    if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = false)) return@withLock
+                    Logger.i { "Starting mesh handshake (Stage 1)" }
+                    startConfigOnly()
+                }
             }
     }
 
@@ -313,7 +327,8 @@ class MeshConnectionManagerImpl(
     }
 
     private suspend fun tearDownConnection() {
-        packetHandler.stopPacketQueue()
+        ntsocialGatewayRepository.invalidateInboundSession()
+        packetHandler.stopPacketQueueAndAwait()
         sessionManager.clearAll() // Prevent stale per-node passkeys on reconnect.
         locationReconcileMutex.withLock {
             activeLocationNodeNum = null
@@ -376,6 +391,12 @@ class MeshConnectionManagerImpl(
         action()
     }
 
+    override fun startConfigOnlyForSession(expectedRadioSessionEpoch: Long): Boolean =
+        packetHandler.sendToRadioForSession(
+            ToRadio(want_config_id = HandshakeConstants.CONFIG_NONCE),
+            expectedRadioSessionEpoch,
+        )
+
     override fun startNodeInfoOnly() {
         val action = { packetHandler.sendToRadio(ToRadio(want_config_id = HandshakeConstants.NODE_INFO_NONCE)) }
         startHandshakeStallGuard(2, HANDSHAKE_TIMEOUT_STAGE2, action)
@@ -383,9 +404,13 @@ class MeshConnectionManagerImpl(
     }
 
     override fun onRadioConfigLoaded() {
+        val radioSessionEpoch = radioInterfaceService.radioSessionState.value.epoch
+        if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = false)) return
         scope.handledLaunch {
+            if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = false)) return@handledLaunch
             val queuedPackets = packetRepository.getQueuedPackets()
             queuedPackets.forEach { packet ->
+                if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = false)) return@handledLaunch
                 try {
                     workerManager.enqueueSendMessage(packet.id)
                 } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
@@ -395,69 +420,163 @@ class MeshConnectionManagerImpl(
         }
     }
 
-    override fun onNodeDbReady() {
-        handshakeTimeout?.cancel()
-        handshakeTimeout = null
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
+    override suspend fun onNodeDbReady(radioSessionEpoch: Long): Boolean {
+        // Bind every remaining completion side effect to the exact transport epoch. In particular, a stale completion
+        // must not send admin traffic or start channel repair/provisioning against a replacement radio.
+        if (!radioInterfaceService.markCurrentSessionConfigured(radioSessionEpoch)) {
+            Logger.w { "Ignoring stale node-database completion for radio session $radioSessionEpoch" }
+            return false
+        }
 
         val myNodeNum = nodeManager.myNodeNum.value ?: 0
 
-        // Do not depend on MyNodeInfo emitting a distinct object after a reconnect to restore the location feed.
-        reconcileLocation()
-
         // Set device time now that the full node picture is ready. Sending this during Stage 1
-        // (onRadioConfigLoaded) introduced GATT write contention with the Stage 2 node-info burst.
-        commandSender.sendAdmin(myNodeNum) { AdminMessage(set_time_only = nowSeconds.toInt()) }
+        // (onRadioConfigLoaded) introduced GATT write contention with the Stage 2 node-info burst. Exact-session
+        // admission closes the same-address reconnect window between the configured check above and packet enqueue.
+        commandSender.sendAdminAwaitForSession(radioSessionEpoch, myNodeNum) {
+            AdminMessage(set_time_only = nowSeconds.toInt())
+        }
+        if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return false
 
         // Proactively seed the session passkey. The firmware embeds session_passkey in every
         // admin *response* (wantResponse=true), but set_time_only has no response. A get_owner
         // request is the lightest way to trigger a response and populate the passkey cache so
         // that subsequent write operations don't fail with ADMIN_BAD_SESSION_KEY.
-        commandSender.sendAdmin(myNodeNum, wantResponse = true) { AdminMessage(get_owner_request = true) }
+        commandSender.sendAdminAwaitForSession(
+            expectedRadioSessionEpoch = radioSessionEpoch,
+            destNum = myNodeNum,
+            wantResponse = true,
+        ) {
+            AdminMessage(get_owner_request = true)
+        }
+        if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return false
+
+        // Cancel only after both exact-session startup admissions still prove ownership. A retired completion must not
+        // continue into location, Gateway, MQTT, history, analytics, or telemetry side effects for its replacement.
+        handshakeTimeout?.cancel()
+        handshakeTimeout = null
+
+        // Do not depend on MyNodeInfo emitting a distinct object after a reconnect to restore the location feed.
+        reconcileLocation()
+        if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return false
+
+        // These immediate requests are part of the just-completed handshake too. Keep their epoch check and queue
+        // generation capture on the same admission boundary so a same-address replacement cannot receive them.
+        commandSender.requestTelemetryForSession(
+            expectedRadioSessionEpoch = radioSessionEpoch,
+            requestId = commandSender.generatePacketId(),
+            destNum = myNodeNum,
+            typeValue = TelemetryType.LOCAL_STATS.ordinal,
+        )
+        if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return false
+        commandSender.requestTelemetryForSession(
+            expectedRadioSessionEpoch = radioSessionEpoch,
+            requestId = commandSender.generatePacketId(),
+            destNum = myNodeNum,
+            typeValue = TelemetryType.DEVICE.ordinal,
+        )
+        if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return false
 
         scope.handledLaunch {
-            // Reconcile the user-approved snapshot before the built-in channel provisioner can occupy a secondary
-            // slot that is only temporarily missing. This keeps missing-only drift provable and conflict-safe.
-            when (val repairResult = channelReliabilityManager.reconcileProtectedChannelSet()) {
-                ChannelReliabilityResult.REPAIRED -> Logger.i { "Restored missing protected secondary channels" }
+            channelMutationLock.withLock { mutationLease ->
+                if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@withLock
+                // Close ingress before the first admin command: firmware can apply a channel change before the local
+                // DataStore mutation advances channelSnapshotGeneration. Only a fully completed exact-session sequence
+                // may publish a replacement ingress identity.
+                val ingressClosed =
+                    channelOperationLock.withLock {
+                        if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) {
+                            return@withLock false
+                        }
+                        ntsocialGatewayRepository.invalidateInboundSession()
+                        true
+                    }
+                if (!ingressClosed) return@withLock
+                // Reconcile the user-approved snapshot before the built-in channel provisioner can occupy a secondary
+                // slot that is only temporarily missing. This keeps missing-only drift provable and conflict-safe.
+                val repairResult =
+                    channelReliabilityManager.reconcileProtectedChannelSetForSession(radioSessionEpoch, mutationLease)
+                when (repairResult) {
+                    ChannelReliabilityResult.REPAIRED -> Logger.i { "Restored missing protected secondary channels" }
 
-                ChannelReliabilityResult.CONFLICT ->
-                    Logger.w { "Protected channel snapshot conflicts with the radio; automatic repair skipped" }
+                    ChannelReliabilityResult.CONFLICT ->
+                        Logger.w { "Protected channel snapshot conflicts with the radio; automatic repair skipped" }
 
-                else -> Logger.d { "Protected channel reconciliation result=$repairResult" }
+                    else -> Logger.d { "Protected channel reconciliation result=$repairResult" }
+                }
+                if (!repairResult.isChannelIdentitySafe()) {
+                    Logger.w { "Gateway ingress remains closed after ambiguous channel repair result=$repairResult" }
+                    return@withLock
+                }
+                if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@withLock
+
+                val result =
+                    ntsocialChannelProvisioner.ensureDefaultChannelForSession(
+                        myNodeNum = myNodeNum,
+                        maxChannels = nodeManager.getMyNodeInfo()?.maxChannels ?: DEFAULT_MAX_CHANNELS,
+                        expectedRadioSessionEpoch = radioSessionEpoch,
+                        mutationLease = mutationLease,
+                    ) ?: return@withLock
+                if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@withLock
+                val defaultChannelIndex = ntsocialChannelProvisioner.currentDefaultChannelIndex(mutationLease)
+                if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@withLock
+                ntsocialGatewayRepository.updateDefaultChannelStatus(result.toDefaultChannelStatus(defaultChannelIndex))
+                if (!result.isChannelIdentitySafe()) {
+                    Logger.w { "Gateway ingress remains closed after ambiguous channel provisioning result=$result" }
+                    return@withLock
+                }
+                val activated =
+                    channelOperationLock.withLock {
+                        isCurrentActiveSession(radioSessionEpoch, requireConfigured = true) &&
+                            ntsocialGatewayRepository.activateInboundSession(radioSessionEpoch)
+                    }
+                if (!activated) {
+                    Logger.w { "Gateway ingress remains closed because the final channel snapshot was not ready" }
+                }
             }
-
-            val result =
-                ntsocialChannelProvisioner.ensureDefaultChannel(
-                    myNodeNum = myNodeNum,
-                    maxChannels = nodeManager.getMyNodeInfo()?.maxChannels ?: DEFAULT_MAX_CHANNELS,
-                )
-            ntsocialGatewayRepository.updateDefaultChannelStatus(
-                result.toDefaultChannelStatus(ntsocialChannelProvisioner.currentDefaultChannelIndex()),
-            )
         }
 
         // Start MQTT if enabled
         scope.handledLaunch {
+            if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@handledLaunch
             val moduleConfig = radioConfigRepository.moduleConfigFlow.first()
+            if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@handledLaunch
             mqttManager.startProxy(
                 moduleConfig.mqtt?.enabled == true,
                 moduleConfig.mqtt?.proxy_to_client_enabled == true,
             )
         }
 
+        if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return false
         reportConnection()
 
         // Request history
         scope.handledLaunch {
+            if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@handledLaunch
             val moduleConfig = radioConfigRepository.moduleConfigFlow.first()
+            if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@handledLaunch
             moduleConfig.store_forward?.let {
                 historyManager.requestHistoryReplay("onNodeDbReady", myNodeNum, it, "Unknown")
             }
         }
 
-        // Request immediate LocalStats and DeviceMetrics update on connection with proper request IDs
-        commandSender.requestTelemetry(commandSender.generatePacketId(), myNodeNum, TelemetryType.LOCAL_STATS.ordinal)
-        commandSender.requestTelemetry(commandSender.generatePacketId(), myNodeNum, TelemetryType.DEVICE.ordinal)
+        return true
+    }
+
+    private fun ChannelReliabilityResult.isChannelIdentitySafe(): Boolean =
+        this != ChannelReliabilityResult.RADIO_REJECTED && this != ChannelReliabilityResult.READBACK_FAILED
+
+    private fun NtsocialChannelProvisionResult.isChannelIdentitySafe(): Boolean =
+        this != NtsocialChannelProvisionResult.RadioRejected && this != NtsocialChannelProvisionResult.ReadbackFailed
+
+    private fun isCurrentActiveSession(radioSessionEpoch: Long, requireConfigured: Boolean): Boolean {
+        val session = radioInterfaceService.radioSessionState.value
+        return session.epoch == radioSessionEpoch &&
+            session.selectedDeviceAddress != null &&
+            session.selectedDeviceAddress == session.activeDeviceAddress &&
+            session.transportConnectionState == ConnectionState.Connected &&
+            (!requireConfigured || session.configured)
     }
 
     private fun reportConnection() {

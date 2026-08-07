@@ -36,4 +36,17 @@ interface MeshMessageProcessor {
 
     /** Clears the buffer of early received packets. */
     fun clearEarlyPackets()
+
+    /** Clears the early-packet buffer and does not return until the mutation is complete. */
+    suspend fun clearEarlyPacketsAndAwait() {
+        clearEarlyPackets()
+    }
+
+    /** Pauses ingress and waits for all work owned by the retired radio generation. */
+    suspend fun quiesceIngress() {
+        clearEarlyPacketsAndAwait()
+    }
+
+    /** Resumes ingress after the replacement database and transport are ready. */
+    fun resumeIngress() = Unit
 }

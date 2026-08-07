@@ -24,32 +24,40 @@
  */
 package com.ntsocial.meshlink.core.data.repository
 
+import com.ntsocial.meshlink.core.data.manager.RadioIngressWorkTracker
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Position
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeCodec
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialEnvelopeDirection
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayIdentity
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.PacketRepository
+import com.ntsocial.meshlink.core.testing.FakeDatabaseManager
 import com.ntsocial.meshlink.core.testing.FakeNodeRepository
 import com.ntsocial.meshlink.core.testing.FakeRadioConfigRepository
+import com.ntsocial.meshlink.core.testing.FakeRadioInterfaceService
 import dev.mokkery.MockMode
 import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
+import dev.mokkery.every
 import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.verify.VerifyMode
 import dev.mokkery.verifySuspend
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import okio.ByteString
@@ -57,6 +65,7 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config
 import org.meshtastic.proto.LocalConfig
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.User
@@ -78,12 +87,25 @@ class NtsocialGatewayRepositoryImplTest {
         }
     private val radioConfigRepository =
         FakeRadioConfigRepository().apply {
-            setChannelSet(
+            setCompleteChannelReadback(
                 ChannelSet(
                     settings = listOf(ChannelSettings(name = "primary"), ChannelSettings(name = "native", id = 42)),
                 ),
             )
         }
+    private val radioInterfaceService =
+        FakeRadioInterfaceService(CoroutineScope(SupervisorJob())).apply {
+            setDeviceAddress(RADIO_A)
+            onConnect()
+            markCurrentSessionConfigured(radioSessionState.value.epoch)
+        }
+    private val databaseManager = FakeDatabaseManager().apply { setCurrentAddressForTest(RADIO_A) }
+
+    init {
+        everySuspend { packetRepository.readCurrentGatewayHistoryState(emptyList()) } returns
+            NtsocialGatewayHistoryState(historyEpoch = "epoch-a", messageChangeSeq = 0)
+    }
+
     private val repository =
         NtsocialGatewayRepositoryImpl(
             commandSender,
@@ -91,11 +113,15 @@ class NtsocialGatewayRepositoryImplTest {
             messageQueue,
             nodeRepository,
             radioConfigRepository,
+            radioInterfaceService,
+            databaseManager,
+            RadioIngressWorkTracker(),
             CoroutineScope(SupervisorJob()),
         )
 
     @Test
-    fun `cacheInbound caches valid PRIVATE_APP NTsocial envelope`() {
+    fun `cacheInbound caches valid PRIVATE_APP NTsocial envelope`() = runTest {
+        activateInbound(repository)
         val payload = "inbound".encodeToByteArray().toByteString()
         val raw = NtsocialEnvelopeCodec.encode(headerMsgId = testHeaderMsgId(), payload = payload)
         val packet = MeshPacket(id = 42)
@@ -112,7 +138,60 @@ class NtsocialGatewayRepositoryImplTest {
     }
 
     @Test
-    fun `cacheInbound rejects non NTsocial PRIVATE_APP payload`() {
+    fun `cache captures insertion-time channel identity and history epoch`() = runTest {
+        val history = MutableStateFlow(NtsocialGatewayHistoryState(historyEpoch = "epoch-a", messageChangeSeq = 0))
+        val packetStore = mock<PacketRepository>(MockMode.autofill)
+        every { packetStore.getGatewayHistoryState(emptyList()) } returns history
+        val channels =
+            FakeRadioConfigRepository().apply {
+                setCompleteChannelReadback(ChannelSet(settings = listOf(ChannelSettings(name = "stable", id = 42))))
+            }
+        everySuspend { packetStore.readCurrentGatewayHistoryState(emptyList()) } returns history.value
+        val scopedRepository =
+            NtsocialGatewayRepositoryImpl(
+                commandSender,
+                packetStore,
+                messageQueue,
+                nodeRepository,
+                channels,
+                radioInterfaceService,
+                databaseManager,
+                RadioIngressWorkTracker(),
+                backgroundScope,
+            )
+        activateInbound(scopedRepository)
+
+        val firstRaw =
+            NtsocialEnvelopeCodec.encode(
+                headerMsgId = testHeaderMsgId(),
+                payload = "first".encodeToByteArray().toByteString(),
+            )
+        scopedRepository.cacheInbound(
+            MeshPacket(id = 7),
+            dataPacket(portNum = NtsocialTransport.PRIVATE_APP_PORT_NUM, raw = firstRaw).copy(channel = 0),
+        )
+        val captured = scopedRepository.cachedEnvelopes.value.single()
+        val expectedSourceId =
+            NtsocialGatewayIdentity.channel(
+                org.meshtastic.proto.Channel(
+                    index = 0,
+                    role = org.meshtastic.proto.Channel.Role.PRIMARY,
+                    settings = ChannelSettings(name = "stable", id = 42),
+                ),
+            )
+                .sourceChannelId
+
+        channels.setChannelSet(ChannelSet(settings = listOf(ChannelSettings(name = "replacement", id = 99))))
+        history.value = NtsocialGatewayHistoryState(historyEpoch = "epoch-b", messageChangeSeq = 0)
+        runCurrent()
+
+        assertEquals(expectedSourceId, captured.sourceChannelId)
+        assertEquals("epoch-a", captured.historyEpoch)
+    }
+
+    @Test
+    fun `cacheInbound rejects non NTsocial PRIVATE_APP payload`() = runTest {
+        activateInbound(repository)
         val dataPacket =
             dataPacket(
                 portNum = NtsocialTransport.PRIVATE_APP_PORT_NUM,
@@ -126,7 +205,8 @@ class NtsocialGatewayRepositoryImplTest {
     }
 
     @Test
-    fun `cacheInbound accepts legacy port as receive-only compatibility`() {
+    fun `cacheInbound accepts legacy port as receive-only compatibility`() = runTest {
+        activateInbound(repository)
         val payload = "legacy".encodeToByteArray().toByteString()
         val raw = NtsocialEnvelopeCodec.encode(headerMsgId = testHeaderMsgId(), payload = payload)
         val dataPacket = dataPacket(portNum = NtsocialTransport.LEGACY_RECEIVE_ONLY_PORT_NUM, raw = raw)
@@ -140,7 +220,8 @@ class NtsocialGatewayRepositoryImplTest {
     }
 
     @Test
-    fun `cacheInbound deduplicates envelopes by header message id`() {
+    fun `cacheInbound deduplicates envelopes by header message id`() = runTest {
+        activateInbound(repository)
         val headerMsgId = testHeaderMsgId()
         val firstRaw =
             NtsocialEnvelopeCodec.encode(
@@ -165,6 +246,332 @@ class NtsocialGatewayRepositoryImplTest {
         val cached = repository.cachedEnvelopes.value.single()
         assertEquals("first".encodeToByteArray().toByteString(), cached.envelope.payload)
         assertEquals(1, repository.cachedEnvelopes.value.size)
+    }
+
+    @Test
+    fun `radio switch invalidates stale ingress identity before replacement is ready`() = runTest {
+        activateInbound(repository)
+        val raw =
+            NtsocialEnvelopeCodec.encode(
+                headerMsgId = testHeaderMsgId(),
+                payload = "radio-a".encodeToByteArray().toByteString(),
+            )
+        assertTrue(
+            repository.cacheInbound(MeshPacket(id = 50), dataPacket(NtsocialTransport.PRIVATE_APP_PORT_NUM, raw)),
+        )
+
+        radioInterfaceService.setDeviceAddress(RADIO_B)
+        databaseManager.setCurrentAddressForTest(RADIO_B)
+        val replacementRaw =
+            NtsocialEnvelopeCodec.encode(
+                headerMsgId = testHeaderMsgId().toByteArray().reversedArray().toByteString(),
+                payload = "radio-b-not-ready".encodeToByteArray().toByteString(),
+            )
+
+        assertFalse(
+            repository.cacheInbound(
+                MeshPacket(id = 51),
+                dataPacket(NtsocialTransport.PRIVATE_APP_PORT_NUM, replacementRaw),
+            ),
+        )
+        assertEquals(listOf(50), repository.cachedEnvelopes.value.map { it.packetId })
+    }
+
+    @Test
+    fun `activation ignores lagged history and channel collectors and captures exact replacement`() = runTest {
+        val staleHistory = MutableStateFlow(NtsocialGatewayHistoryState("epoch-a", 0))
+        val packetStore = mock<PacketRepository>(MockMode.autofill)
+        every { packetStore.getGatewayHistoryState(emptyList()) } returns staleHistory
+        everySuspend { packetStore.readCurrentGatewayHistoryState(emptyList()) } returns
+            NtsocialGatewayHistoryState("epoch-b", 0)
+        val exactChannels = ChannelSet(settings = listOf(ChannelSettings(name = "radio-b", id = 99)))
+        val channels = FakeRadioConfigRepository().apply { setCompleteChannelReadback(exactChannels) }
+        val replacementRadio =
+            FakeRadioInterfaceService(backgroundScope).apply {
+                setDeviceAddress(RADIO_B)
+                onConnect()
+                markCurrentSessionConfigured(radioSessionState.value.epoch)
+            }
+        val replacementDb = FakeDatabaseManager().apply { setCurrentAddressForTest(RADIO_B) }
+        val scopedRepository =
+            NtsocialGatewayRepositoryImpl(
+                commandSender,
+                packetStore,
+                messageQueue,
+                nodeRepository,
+                channels,
+                replacementRadio,
+                replacementDb,
+                RadioIngressWorkTracker(),
+                backgroundScope,
+            )
+
+        // Do not run the repository's asynchronous collectors before activation.
+        assertTrue(scopedRepository.activateInboundSession(replacementRadio.radioSessionState.value.epoch))
+        val raw =
+            NtsocialEnvelopeCodec.encode(
+                headerMsgId = testHeaderMsgId(),
+                payload = "exact-b".encodeToByteArray().toByteString(),
+            )
+        assertTrue(
+            scopedRepository.cacheInbound(
+                MeshPacket(id = 52),
+                dataPacket(NtsocialTransport.PRIVATE_APP_PORT_NUM, raw).copy(channel = 0),
+            ),
+        )
+
+        val cached = scopedRepository.cachedEnvelopes.value.single()
+        val expectedChannelId =
+            NtsocialGatewayIdentity.channel(
+                org.meshtastic.proto.Channel(
+                    index = 0,
+                    role = org.meshtastic.proto.Channel.Role.PRIMARY,
+                    settings = exactChannels.settings.single(),
+                ),
+            )
+                .sourceChannelId
+        assertEquals(expectedChannelId, cached.sourceChannelId)
+        assertEquals("epoch-b", cached.historyEpoch)
+    }
+
+    @Test
+    fun `ordinary channel mutation revokes old identity until exact final snapshot is activated`() = runTest {
+        val history = MutableStateFlow(NtsocialGatewayHistoryState("epoch-a", 0))
+        val packetStore = mock<PacketRepository>(MockMode.autofill)
+        every { packetStore.getGatewayHistoryState(emptyList()) } returns history
+        everySuspend { packetStore.readCurrentGatewayHistoryState(emptyList()) } calls { history.value }
+        val channels =
+            FakeRadioConfigRepository().apply {
+                setCompleteChannelReadback(ChannelSet(settings = listOf(ChannelSettings(name = "primary", id = 1))))
+            }
+        val exactRadio =
+            FakeRadioInterfaceService(backgroundScope).apply {
+                setDeviceAddress(RADIO_A)
+                onConnect()
+                markCurrentSessionConfigured(radioSessionState.value.epoch)
+            }
+        val exactDb = FakeDatabaseManager().apply { setCurrentAddressForTest(RADIO_A) }
+        val scopedRepository =
+            NtsocialGatewayRepositoryImpl(
+                commandSender,
+                packetStore,
+                messageQueue,
+                nodeRepository,
+                channels,
+                exactRadio,
+                exactDb,
+                RadioIngressWorkTracker(),
+                backgroundScope,
+            )
+        assertTrue(scopedRepository.activateInboundSession(exactRadio.radioSessionState.value.epoch))
+
+        val secondary = ChannelSettings(name = "new-secondary", id = 77)
+        channels.updateChannelSettings(
+            org.meshtastic.proto.Channel(
+                index = 1,
+                role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                settings = secondary,
+            ),
+        )
+        val raw =
+            NtsocialEnvelopeCodec.encode(
+                headerMsgId = testHeaderMsgId(),
+                payload = "new-slot".encodeToByteArray().toByteString(),
+            )
+
+        // The collector has deliberately not run: the synchronous snapshot revision check must close the old identity.
+        assertFalse(
+            scopedRepository.cacheInbound(
+                MeshPacket(id = 53),
+                dataPacket(NtsocialTransport.PRIVATE_APP_PORT_NUM, raw).copy(channel = 1),
+            ),
+        )
+
+        history.value = NtsocialGatewayHistoryState("epoch-b", 0)
+        assertTrue(scopedRepository.activateInboundSession(exactRadio.radioSessionState.value.epoch))
+        assertTrue(
+            scopedRepository.cacheInbound(
+                MeshPacket(id = 54),
+                dataPacket(NtsocialTransport.PRIVATE_APP_PORT_NUM, raw).copy(channel = 1),
+            ),
+        )
+        val expectedSource =
+            NtsocialGatewayIdentity.channel(
+                org.meshtastic.proto.Channel(
+                    index = 1,
+                    role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                    settings = secondary,
+                ),
+            )
+                .sourceChannelId
+        assertEquals(expectedSource, scopedRepository.cachedEnvelopes.value.single().sourceChannelId)
+        assertEquals("epoch-b", scopedRepository.cachedEnvelopes.value.single().historyEpoch)
+    }
+
+    @Test
+    fun `manual invalidation latch stays closed across lora and channel snapshot collectors`() = runTest {
+        val history = MutableStateFlow(NtsocialGatewayHistoryState("epoch-a", 0))
+        val packetStore = mock<PacketRepository>(MockMode.autofill)
+        every { packetStore.getGatewayHistoryState(emptyList()) } returns history
+        everySuspend { packetStore.readCurrentGatewayHistoryState(emptyList()) } calls { history.value }
+        val channels =
+            FakeRadioConfigRepository().apply {
+                setCompleteChannelReadback(ChannelSet(settings = listOf(ChannelSettings(name = "primary", id = 1))))
+            }
+        val exactRadio =
+            FakeRadioInterfaceService(backgroundScope).apply {
+                setDeviceAddress(RADIO_A)
+                onConnect()
+                markCurrentSessionConfigured(radioSessionState.value.epoch)
+            }
+        val scopedRepository =
+            NtsocialGatewayRepositoryImpl(
+                commandSender,
+                packetStore,
+                messageQueue,
+                nodeRepository,
+                channels,
+                exactRadio,
+                FakeDatabaseManager().apply { setCurrentAddressForTest(RADIO_A) },
+                RadioIngressWorkTracker(),
+                backgroundScope,
+            )
+        val sessionEpoch = exactRadio.radioSessionState.value.epoch
+        assertTrue(scopedRepository.activateInboundSession(sessionEpoch))
+
+        scopedRepository.invalidateInboundSession()
+        channels.setLocalConfig(Config(lora = Config.LoRaConfig(use_preset = true)))
+        runCurrent()
+        assertFalse(scopedRepository.isInboundSessionActive(sessionEpoch))
+
+        channels.updateChannelSettings(
+            org.meshtastic.proto.Channel(
+                index = 1,
+                role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                settings = ChannelSettings(name = "after-lora", id = 2),
+            ),
+        )
+        runCurrent()
+        assertFalse(scopedRepository.isInboundSessionActive(sessionEpoch))
+
+        assertTrue(scopedRepository.activateInboundSession(sessionEpoch))
+        assertTrue(scopedRepository.isInboundSessionActive(sessionEpoch))
+    }
+
+    @Test
+    fun `late even snapshot collector cannot supersede suspended explicit activation`() = runTest {
+        val history = MutableStateFlow(NtsocialGatewayHistoryState("epoch-a", 0))
+        val explicitReadStarted = CompletableDeferred<Unit>()
+        val releaseExplicitRead = CompletableDeferred<Unit>()
+        var readCount = 0
+        val packetStore = mock<PacketRepository>(MockMode.autofill)
+        every { packetStore.getGatewayHistoryState(emptyList()) } returns history
+        everySuspend { packetStore.readCurrentGatewayHistoryState(emptyList()) } calls
+            {
+                readCount += 1
+                if (readCount == 2) {
+                    explicitReadStarted.complete(Unit)
+                    releaseExplicitRead.await()
+                }
+                history.value
+            }
+        val channels =
+            FakeRadioConfigRepository().apply {
+                setCompleteChannelReadback(ChannelSet(settings = listOf(ChannelSettings(name = "primary", id = 1))))
+            }
+        val exactRadio =
+            FakeRadioInterfaceService(backgroundScope).apply {
+                setDeviceAddress(RADIO_A)
+                onConnect()
+                markCurrentSessionConfigured(radioSessionState.value.epoch)
+            }
+        val scopedRepository =
+            NtsocialGatewayRepositoryImpl(
+                commandSender,
+                packetStore,
+                messageQueue,
+                nodeRepository,
+                channels,
+                exactRadio,
+                FakeDatabaseManager().apply { setCurrentAddressForTest(RADIO_A) },
+                RadioIngressWorkTracker(),
+                backgroundScope,
+            )
+        val sessionEpoch = exactRadio.radioSessionState.value.epoch
+        assertTrue(scopedRepository.activateInboundSession(sessionEpoch))
+        channels.updateChannelSettings(
+            org.meshtastic.proto.Channel(
+                index = 1,
+                role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                settings = ChannelSettings(name = "final", id = 9),
+            ),
+        )
+
+        val explicitActivation = async { scopedRepository.activateInboundSession(sessionEpoch) }
+        explicitReadStarted.await()
+        runCurrent() // The even-generation collector queues behind the explicit opener's identity mutex.
+        releaseExplicitRead.complete(Unit)
+
+        assertTrue(explicitActivation.await())
+        runCurrent()
+        assertTrue(scopedRepository.isInboundSessionActive(sessionEpoch))
+    }
+
+    @Test
+    fun `even snapshot refresh survives concurrent stale cache identity clear`() = runTest {
+        val history = MutableStateFlow(NtsocialGatewayHistoryState("epoch-a", 0))
+        val packetStore = mock<PacketRepository>(MockMode.autofill)
+        every { packetStore.getGatewayHistoryState(emptyList()) } returns history
+        everySuspend { packetStore.readCurrentGatewayHistoryState(emptyList()) } calls { history.value }
+        val channels =
+            FakeRadioConfigRepository().apply {
+                setCompleteChannelReadback(ChannelSet(settings = listOf(ChannelSettings(name = "primary", id = 1))))
+            }
+        val exactRadio =
+            FakeRadioInterfaceService(backgroundScope).apply {
+                setDeviceAddress(RADIO_A)
+                onConnect()
+                markCurrentSessionConfigured(radioSessionState.value.epoch)
+            }
+        val scopedRepository =
+            NtsocialGatewayRepositoryImpl(
+                commandSender,
+                packetStore,
+                messageQueue,
+                nodeRepository,
+                channels,
+                exactRadio,
+                FakeDatabaseManager().apply { setCurrentAddressForTest(RADIO_A) },
+                RadioIngressWorkTracker(),
+                backgroundScope,
+            )
+        val sessionEpoch = exactRadio.radioSessionState.value.epoch
+        assertTrue(scopedRepository.activateInboundSession(sessionEpoch))
+        channels.updateChannelSettings(
+            org.meshtastic.proto.Channel(
+                index = 1,
+                role = org.meshtastic.proto.Channel.Role.SECONDARY,
+                settings = ChannelSettings(name = "replacement", id = 8),
+            ),
+        )
+        val raw =
+            NtsocialEnvelopeCodec.encode(
+                headerMsgId = testHeaderMsgId(),
+                payload = "stale-clear".encodeToByteArray().toByteString(),
+            )
+        var concurrentCacheAccepted = true
+        scopedRepository.beforeInboundIdentityClearCompareAndSetForTest = {
+            concurrentCacheAccepted =
+                scopedRepository.cacheInbound(
+                    MeshPacket(id = 55),
+                    dataPacket(NtsocialTransport.PRIVATE_APP_PORT_NUM, raw).copy(channel = 1),
+                )
+        }
+
+        runCurrent()
+
+        assertFalse(concurrentCacheAccepted)
+        assertTrue(scopedRepository.isInboundSessionActive(sessionEpoch))
     }
 
     @Test
@@ -260,13 +667,13 @@ class NtsocialGatewayRepositoryImplTest {
             repository.persistAndQueueRawEnvelope(
                 rawEnvelope = raw,
                 to = DataPacket.ID_BROADCAST,
-                channelIndex = 2,
+                channelIndex = 1,
                 hopLimit = 3,
                 wantAck = true,
                 packetId = 77,
             )
 
-        verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any(), any()) }
+        verifySuspend { packetRepository.savePacket(any(), any(), any(), any(), any(), any(), any(), any(), any()) }
         assertEquals(listOf(77), messageQueue.packetIds)
         assertEquals(77, queued.packetId)
         assertTrue(commandSender.sentData.isEmpty())
@@ -450,6 +857,15 @@ class NtsocialGatewayRepositoryImplTest {
 
     private fun testHeaderMsgId() =
         ByteArray(NtsocialTransport.HEADER_MSG_ID_SIZE_BYTES) { index -> (index + 1).toByte() }.toByteString()
+
+    private suspend fun activateInbound(target: NtsocialGatewayRepositoryImpl) {
+        assertTrue(target.activateInboundSession(radioInterfaceService.radioSessionState.value.epoch))
+    }
+
+    private companion object {
+        const val RADIO_A = "xAA:AA:AA:AA:AA:AA"
+        const val RADIO_B = "xBB:BB:BB:BB:BB:BB"
+    }
 
     private class RecordingCommandSender : CommandSender {
         val sentData = mutableListOf<DataPacket>()

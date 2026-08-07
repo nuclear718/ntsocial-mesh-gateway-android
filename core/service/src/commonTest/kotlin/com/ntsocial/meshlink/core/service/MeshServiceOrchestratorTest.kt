@@ -26,10 +26,13 @@ package com.ntsocial.meshlink.core.service
 
 import co.touchlab.kermit.Severity
 import com.ntsocial.meshlink.core.common.database.DatabaseManager
+import com.ntsocial.meshlink.core.data.manager.NodeManagerImpl
+import com.ntsocial.meshlink.core.data.manager.RadioIngressWorkTracker
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.service.ServiceAction
 import com.ntsocial.meshlink.core.repository.CommandSender
+import com.ntsocial.meshlink.core.repository.CurrentNodeSnapshot
 import com.ntsocial.meshlink.core.repository.MeshActionHandler
 import com.ntsocial.meshlink.core.repository.MeshConfigHandler
 import com.ntsocial.meshlink.core.repository.MeshConnectionManager
@@ -38,27 +41,36 @@ import com.ntsocial.meshlink.core.repository.MeshRouter
 import com.ntsocial.meshlink.core.repository.MeshServiceNotifications
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.NodeRepository
+import com.ntsocial.meshlink.core.repository.NotificationManager
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.repository.TakPrefs
 import com.ntsocial.meshlink.core.takserver.TAKMeshIntegration
 import com.ntsocial.meshlink.core.takserver.TAKServerManager
 import com.ntsocial.meshlink.core.takserver.fountain.CoTHandler
 import dev.mokkery.MockMode
+import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
 import dev.mokkery.every
+import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.verify
 import dev.mokkery.verify.VerifyMode.Companion.atLeast
 import dev.mokkery.verify.VerifyMode.Companion.exactly
 import dev.mokkery.verifySuspend
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.LocalModuleConfig
+import org.meshtastic.proto.User
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -93,6 +105,7 @@ class MeshServiceOrchestratorTest {
         serviceAction: MutableSharedFlow<ServiceAction> = MutableSharedFlow(),
         takEnabledFlow: MutableStateFlow<Boolean> = MutableStateFlow(false),
         takRunningFlow: MutableStateFlow<Boolean> = MutableStateFlow(false),
+        selectedNodeManager: NodeManager = nodeManager,
     ): MeshServiceOrchestrator {
         every { radioInterfaceService.receivedData } returns receivedData
         every { radioInterfaceService.connectionError } returns connectionError
@@ -118,7 +131,7 @@ class MeshServiceOrchestratorTest {
         return MeshServiceOrchestrator(
             radioInterfaceService = radioInterfaceService,
             serviceRepository = serviceRepository,
-            nodeManager = nodeManager,
+            nodeManager = selectedNodeManager,
             messageProcessor = messageProcessor,
             router = router,
             serviceNotifications = serviceNotifications,
@@ -140,7 +153,7 @@ class MeshServiceOrchestratorTest {
         assertTrue(orchestrator.isRunning)
 
         verify { serviceNotifications.initChannels() }
-        verify { nodeManager.loadCachedNodeDB() }
+        verifySuspend { nodeManager.loadCachedNodeDBAndAwait() }
 
         orchestrator.stop()
         assertFalse(orchestrator.isRunning)
@@ -171,7 +184,7 @@ class MeshServiceOrchestratorTest {
 
     @Test
     fun testStartCallsSwitchActiveDatabase() {
-        every { radioInterfaceService.getDeviceAddress() } returns "tcp:192.168.1.100"
+        everySuspend { radioInterfaceService.awaitHydratedDeviceAddress() } returns "tcp:192.168.1.100"
 
         val orchestrator = createOrchestrator()
         orchestrator.start()
@@ -179,6 +192,64 @@ class MeshServiceOrchestratorTest {
         verifySuspend { databaseManager.switchActiveDatabase("tcp:192.168.1.100") }
         verify { radioInterfaceService.connect() }
 
+        orchestrator.stop()
+    }
+
+    @Test
+    fun `cold start waits for selected database cache before connecting`() = runTest(testDispatcher) {
+        val defaultNode = Node(num = 1, user = User(id = "!default"))
+        val selectedNode = Node(num = 2, user = User(id = "!selected"))
+        val switchStarted = CompletableDeferred<Unit>()
+        val allowSwitch = CompletableDeferred<Unit>()
+        val selectedLoadStarted = CompletableDeferred<Unit>()
+        val allowSelectedLoad = CompletableDeferred<Unit>()
+        var activeAddress = "default"
+        var connected = false
+        everySuspend { nodeRepository.readCurrentNodeSnapshot() } calls
+            {
+                if (activeAddress == SELECTED_ADDRESS) {
+                    selectedLoadStarted.complete(Unit)
+                    allowSelectedLoad.await()
+                    CurrentNodeSnapshot(mapOf(selectedNode.num to selectedNode), null)
+                } else {
+                    CurrentNodeSnapshot(mapOf(defaultNode.num to defaultNode), null)
+                }
+            }
+        everySuspend { radioInterfaceService.awaitHydratedDeviceAddress() } returns SELECTED_ADDRESS
+        everySuspend { databaseManager.switchActiveDatabase(SELECTED_ADDRESS) } calls
+            {
+                switchStarted.complete(Unit)
+                allowSwitch.await()
+                activeAddress = SELECTED_ADDRESS
+            }
+        every { radioInterfaceService.connect() } calls { connected = true }
+        val actualNodeManager =
+            NodeManagerImpl(
+                nodeRepository = nodeRepository,
+                serviceBroadcasts = mock<ServiceBroadcasts>(MockMode.autofill),
+                notificationManager = mock<NotificationManager>(MockMode.autofill),
+                ingressWorkTracker = RadioIngressWorkTracker(),
+                scope = backgroundScope,
+            )
+        actualNodeManager.loadCachedNodeDBAndAwait()
+        assertEquals(setOf(defaultNode.num), actualNodeManager.nodeDBbyNodeNum.keys)
+        val orchestrator = createOrchestrator(selectedNodeManager = actualNodeManager)
+
+        orchestrator.start()
+        switchStarted.await()
+        assertFalse(connected)
+        assertEquals(setOf(defaultNode.num), actualNodeManager.nodeDBbyNodeNum.keys)
+
+        allowSwitch.complete(Unit)
+        selectedLoadStarted.await()
+        assertFalse(connected)
+        assertEquals(setOf(defaultNode.num), actualNodeManager.nodeDBbyNodeNum.keys)
+
+        allowSelectedLoad.complete(Unit)
+        runCurrent()
+
+        assertTrue(connected)
+        assertEquals(setOf(selectedNode.num), actualNodeManager.nodeDBbyNodeNum.keys)
         orchestrator.stop()
     }
 
@@ -195,6 +266,10 @@ class MeshServiceOrchestratorTest {
         verify { serviceRepository.setErrorMessage("BLE connection lost", Severity.Warn) }
 
         orchestrator.stop()
+    }
+
+    private companion object {
+        const val SELECTED_ADDRESS = "tcp:192.168.1.200"
     }
 
     @Test
@@ -225,7 +300,7 @@ class MeshServiceOrchestratorTest {
 
         // Components should only be initialized once
         verify(exactly(1)) { serviceNotifications.initChannels() }
-        verify(exactly(1)) { nodeManager.loadCachedNodeDB() }
+        verifySuspend(exactly(1)) { nodeManager.loadCachedNodeDBAndAwait() }
 
         orchestrator.stop()
         assertFalse(orchestrator.isRunning)

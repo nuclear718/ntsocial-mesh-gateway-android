@@ -70,6 +70,7 @@ class TelemetryPacketHandlerImplTest {
                 nodeManager = nodeManager,
                 connectionManager = lazy { connectionManager },
                 notificationManager = notificationManager,
+                ingressWorkTracker = RadioIngressWorkTracker(),
                 scope = testScope,
             )
     }
@@ -105,7 +106,7 @@ class TelemetryPacketHandlerImplTest {
         advanceUntilIdle()
 
         verify { connectionManager.updateTelemetry(any()) }
-        verify { nodeManager.updateNode(myNodeNum, any(), any(), any()) }
+        verify { nodeManager.updateNodeFromRadio(myNodeNum, any(), any(), any()) }
     }
 
     // ---------- Device metrics from remote node ----------
@@ -120,7 +121,7 @@ class TelemetryPacketHandlerImplTest {
         handler.handleTelemetry(packet, dataPacket, myNodeNum)
         advanceUntilIdle()
 
-        verify { nodeManager.updateNode(remoteNodeNum, any(), any(), any()) }
+        verify { nodeManager.updateNodeFromRadio(remoteNodeNum, any(), any(), any()) }
     }
 
     // ---------- Environment metrics ----------
@@ -138,7 +139,7 @@ class TelemetryPacketHandlerImplTest {
         handler.handleTelemetry(packet, dataPacket, myNodeNum)
         advanceUntilIdle()
 
-        verify { nodeManager.updateNode(remoteNodeNum, any(), any(), any()) }
+        verify { nodeManager.updateNodeFromRadio(remoteNodeNum, any(), any(), any()) }
     }
 
     // ---------- Power metrics ----------
@@ -152,7 +153,7 @@ class TelemetryPacketHandlerImplTest {
         handler.handleTelemetry(packet, dataPacket, myNodeNum)
         advanceUntilIdle()
 
-        verify { nodeManager.updateNode(remoteNodeNum, any(), any(), any()) }
+        verify { nodeManager.updateNodeFromRadio(remoteNodeNum, any(), any(), any()) }
     }
 
     // ---------- Telemetry time handling ----------
@@ -166,7 +167,7 @@ class TelemetryPacketHandlerImplTest {
         handler.handleTelemetry(packet, dataPacket, myNodeNum)
         advanceUntilIdle()
 
-        verify { nodeManager.updateNode(myNodeNum, any(), any(), any()) }
+        verify { nodeManager.updateNodeFromRadio(myNodeNum, any(), any(), any()) }
     }
 
     // ---------- Null payload ----------

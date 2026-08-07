@@ -26,7 +26,6 @@ package com.ntsocial.meshlink.core.data.manager
 
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.util.NumberFormatter
-import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.model.fullRouteDiscovery
 import com.ntsocial.meshlink.core.model.getTracerouteResponse
@@ -51,6 +50,7 @@ import org.meshtastic.proto.MeshPacket
 class TracerouteHandlerImpl(
     private val serviceRepository: ServiceRepository,
     private val nodeRepository: NodeRepository,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : TracerouteHandler {
 
@@ -69,7 +69,7 @@ class TracerouteHandlerImpl(
         // Require both directions for a "full" traceroute response
         if (forwardRoute.isEmpty() || returnRoute.isEmpty()) return
 
-        scope.handledLaunch {
+        ingressWorkTracker.launch(scope) {
             val full =
                 routeDiscovery.getTracerouteResponse(
                     getUser = { num ->

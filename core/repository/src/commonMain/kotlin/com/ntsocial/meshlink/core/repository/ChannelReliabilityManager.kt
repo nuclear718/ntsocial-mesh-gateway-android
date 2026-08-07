@@ -22,6 +22,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress("FunctionLiteral", "FunctionSignature", "MaxLineLength")
+
 package com.ntsocial.meshlink.core.repository
 
 import kotlinx.coroutines.flow.StateFlow
@@ -46,11 +48,42 @@ enum class ChannelReliabilityResult {
     READBACK_FAILED,
 }
 
-/** Serializes every local-node channel transaction, including built-in channel provisioning. */
+/** Serializes radio-selection, exact command admission, handshake commit, and Gateway route/admission boundaries. */
 class ChannelOperationLock {
     private val mutex = Mutex()
 
     suspend fun <T> withLock(block: suspend () -> T): T = mutex.withLock { block() }
+}
+
+/**
+ * Serializes complete channel mutations without blocking the handshake commit that produces their verified readback. A
+ * lease is valid only for the dynamic extent of [withLock] and lets one owner compose repair, provisioning, and final
+ * activation without pretending that [kotlinx.coroutines.sync.Mutex] is reentrant.
+ */
+class ChannelMutationLock {
+    class Lease internal constructor(internal val owner: ChannelMutationLock) {
+        internal var active: Boolean = true
+    }
+
+    private val mutex = Mutex()
+
+    suspend fun <T> withLock(block: suspend (Lease) -> T): T = mutex.withLock {
+        val lease = Lease(this)
+        try {
+            block(lease)
+        } finally {
+            lease.active = false
+        }
+    }
+
+    suspend fun <T> withLease(lease: Lease?, block: suspend (Lease) -> T): T = if (lease == null) {
+        withLock(block)
+    } else {
+        require(lease.owner === this && lease.active) {
+            "Channel mutation lease is stale or belongs to another lock"
+        }
+        block(lease)
+    }
 }
 
 /** Applies local channel sets with radio acknowledgement/readback and owns opt-in snapshot protection. */
@@ -69,4 +102,17 @@ interface ChannelReliabilityManager {
 
     /** Conservatively repairs only secondary slots proven missing from a protected snapshot. */
     suspend fun reconcileProtectedChannelSet(): ChannelReliabilityResult
+
+    /**
+     * Reconciles only if [expectedRadioSessionEpoch] is still the configured active radio after acquiring the shared
+     * channel-operation lock. This prevents delayed handshake work from repairing a replacement radio.
+     */
+    suspend fun reconcileProtectedChannelSetForSession(expectedRadioSessionEpoch: Long): ChannelReliabilityResult =
+        reconcileProtectedChannelSet()
+
+    /** Same exact-session reconciliation composed inside an already validated channel-mutation lease. */
+    suspend fun reconcileProtectedChannelSetForSession(
+        expectedRadioSessionEpoch: Long,
+        mutationLease: ChannelMutationLock.Lease,
+    ): ChannelReliabilityResult = reconcileProtectedChannelSetForSession(expectedRadioSessionEpoch)
 }

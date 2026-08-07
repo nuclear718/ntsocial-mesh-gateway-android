@@ -51,6 +51,8 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
+private data class NegotiatedWriteLengths(val withResponse: Int? = null, val withoutResponse: Int? = null)
+
 /** [BleService] implementation backed by a Kable [Peripheral] for a specific GATT service. */
 class KableBleService(private val peripheral: Peripheral, private val serviceUuid: Uuid) : BleService {
     override fun hasCharacteristic(characteristic: BleCharacteristic): Boolean = peripheral.services.value?.any { svc ->
@@ -106,6 +108,8 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
 
     @Volatile private var connectionScope: CoroutineScope? = null
 
+    @Volatile private var negotiatedWriteLengths = NegotiatedWriteLengths()
+
     companion object {
         /** Settle delay between a direct connect failure and the autoConnect fallback attempt. */
         private val AUTOCONNECT_FALLBACK_DELAY = 1.seconds
@@ -123,6 +127,7 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
 
     @Suppress("CyclomaticComplexMethod", "LongMethod")
     override suspend fun connect(device: BleDevice) {
+        initializePlatformBle()
         val meshtasticDevice = device as? MeshtasticBleDevice ?: error("Unsupported BleDevice type: ${device::class}")
         var autoConnect = meshtasticDevice.advertisement == null
 
@@ -148,6 +153,7 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
         withContext(NonCancellable) {
             cleanUpPeripheral(device.address)
             peripheral = p
+            negotiatedWriteLengths = NegotiatedWriteLengths()
             ActiveBleConnection.active = ActiveConnection(p, device.address)
         }
 
@@ -177,6 +183,7 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
                         oldScope.coroutineContext.job.cancel()
                     }
                     connectionScope = p.connect()
+                    cacheNegotiatedWriteLengths(p, device.address)
                     false
                 } catch (e: CancellationException) {
                     throw e
@@ -230,6 +237,7 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
         safeClosePeripheral("disconnect")
         peripheral = null
         connectionScope = null
+        negotiatedWriteLengths = NegotiatedWriteLengths()
 
         if (owned != null && ActiveBleConnection.active?.peripheral === owned) {
             ActiveBleConnection.active = null
@@ -249,13 +257,33 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
         return withTimeout(timeout) { cScope.setup(service) }
     }
 
-    override fun maximumWriteValueLength(writeType: BleWriteType): Int? = peripheral?.negotiatedMaxWriteLength()
+    override fun maximumWriteValueLength(writeType: BleWriteType): Int? = when (writeType) {
+        BleWriteType.WITH_RESPONSE -> negotiatedWriteLengths.withResponse
+        BleWriteType.WITHOUT_RESPONSE -> negotiatedWriteLengths.withoutResponse
+    }
 
     override fun requestHighConnectionPriority(): Boolean = peripheral?.requestHighConnectionPriority() == true
 
     /** Ensures the previous peripheral's GATT resources are fully released. */
     private suspend fun cleanUpPeripheral(tag: String) {
         withContext(NonCancellable) { safeClosePeripheral(tag) }
+    }
+
+    private suspend fun cacheNegotiatedWriteLengths(peripheral: Peripheral, address: String) {
+        suspend fun read(writeType: BleWriteType): Int? = try {
+            peripheral.negotiatedMaxWriteLength(writeType)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            Logger.w(e) { "[$address] Unable to read the negotiated $writeType write length" }
+            null
+        }
+
+        negotiatedWriteLengths =
+            NegotiatedWriteLengths(
+                withResponse = read(BleWriteType.WITH_RESPONSE),
+                withoutResponse = read(BleWriteType.WITHOUT_RESPONSE),
+            )
     }
 
     /**

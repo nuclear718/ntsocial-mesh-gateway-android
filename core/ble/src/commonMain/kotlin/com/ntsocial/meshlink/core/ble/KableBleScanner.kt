@@ -35,6 +35,7 @@ import kotlin.uuid.Uuid
 @Single(binds = [BleScanner::class])
 class KableBleScanner(private val loggingConfig: BleLoggingConfig) : BleScanner {
     override fun scan(timeout: Duration, serviceUuid: Uuid?, address: String?): Flow<BleDevice> {
+        initializePlatformBle()
         val scanner = Scanner {
             logging { applyConfig(loggingConfig) }
             // When both address and serviceUuid are provided, use OR-semantics so the device

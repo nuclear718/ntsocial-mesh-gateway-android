@@ -30,6 +30,8 @@ import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
+import com.ntsocial.meshlink.core.repository.ChannelMutationLock
+import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.CommandSender
@@ -45,6 +47,7 @@ import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioSessionState
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.repository.SessionManager
@@ -59,7 +62,9 @@ import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.verify
+import dev.mokkery.verify.VerifyMode
 import dev.mokkery.verifySuspend
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -67,6 +72,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.LocalConfig
@@ -76,6 +82,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MeshConnectionManagerImplTest {
@@ -99,10 +106,21 @@ class MeshConnectionManagerImplTest {
     private val appWidgetUpdater = mock<AppWidgetUpdater>(MockMode.autofill)
     private val ntsocialChannelProvisioner = mock<NtsocialChannelProvisioner>(MockMode.autofill)
     private val ntsocialGatewayRepository = mock<NtsocialGatewayRepository>(MockMode.autofill)
+    private val channelReliabilityManager = mock<ChannelReliabilityManager>(MockMode.autofill)
 
     private val dataPacket = DataPacket(id = 456, time = 0L, to = "0", from = "0", bytes = null, dataType = 0)
 
     private val radioConnectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    private val radioSessionState =
+        MutableStateFlow(
+            RadioSessionState(
+                epoch = SESSION_EPOCH,
+                selectedDeviceAddress = RADIO_ADDRESS,
+                activeDeviceAddress = RADIO_ADDRESS,
+                transportConnectionState = ConnectionState.Connected,
+                configured = false,
+            ),
+        )
     private val connectionStateFlow = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     private val localConfigFlow = MutableStateFlow(LocalConfig())
     private val moduleConfigFlow = MutableStateFlow(LocalModuleConfig())
@@ -114,7 +132,26 @@ class MeshConnectionManagerImplTest {
 
     @BeforeTest
     fun setUp() {
+        radioSessionState.value =
+            RadioSessionState(
+                epoch = SESSION_EPOCH,
+                selectedDeviceAddress = RADIO_ADDRESS,
+                activeDeviceAddress = RADIO_ADDRESS,
+                transportConnectionState = ConnectionState.Connected,
+                configured = false,
+            )
         every { radioInterfaceService.connectionState } returns radioConnectionState
+        every { radioInterfaceService.radioSessionState } returns radioSessionState
+        every { radioInterfaceService.markCurrentSessionConfigured(any()) } calls
+            { call ->
+                val current = radioSessionState.value
+                val accepted =
+                    call.arg<Long>(0) == current.epoch &&
+                        current.selectedDeviceAddress == current.activeDeviceAddress &&
+                        current.transportConnectionState == ConnectionState.Connected
+                if (accepted) radioSessionState.value = current.copy(configured = true)
+                accepted
+            }
         every { radioConfigRepository.localConfigFlow } returns localConfigFlow
         every { radioConfigRepository.moduleConfigFlow } returns moduleConfigFlow
         every { uiPrefs.shouldProvideNodeLocation(any()) } calls
@@ -128,7 +165,9 @@ class MeshConnectionManagerImplTest {
             }
         every { serviceNotifications.updateServiceStateNotification(any(), any()) } returns Unit
         every { commandSender.sendAdmin(any(), any(), any(), any()) } returns Unit
-        every { packetHandler.stopPacketQueue() } returns Unit
+        everySuspend { commandSender.sendAdminAwaitForSession(any(), any(), any(), any(), any()) } returns true
+        everySuspend { commandSender.requestTelemetryForSession(any(), any(), any(), any()) } returns true
+        everySuspend { packetHandler.stopPacketQueueAndAwait() } returns Unit
         every { locationManager.stop() } returns Unit
         every { locationManager.restart() } returns Unit
         every { locationManager.setLocationAccessAllowed(any()) } returns Unit
@@ -137,12 +176,26 @@ class MeshConnectionManagerImplTest {
         every { packetHandler.sendToRadio(any<org.meshtastic.proto.ToRadio>()) } returns Unit
         everySuspend { ntsocialChannelProvisioner.ensureDefaultChannel(any(), any()) } returns
             NtsocialChannelProvisionResult.AlreadyPresent
+        everySuspend { ntsocialChannelProvisioner.ensureDefaultChannelForSession(any(), any(), any()) } returns
+            NtsocialChannelProvisionResult.AlreadyPresent
+        everySuspend { ntsocialChannelProvisioner.ensureDefaultChannelForSession(any(), any(), any(), any()) } returns
+            NtsocialChannelProvisionResult.AlreadyPresent
         everySuspend { ntsocialChannelProvisioner.currentDefaultChannelIndex() } returns 0
+        everySuspend { ntsocialChannelProvisioner.currentDefaultChannelIndex(any()) } returns 0
+        everySuspend { channelReliabilityManager.reconcileProtectedChannelSet() } returns
+            ChannelReliabilityResult.NO_SNAPSHOT
+        everySuspend { channelReliabilityManager.reconcileProtectedChannelSetForSession(any()) } returns
+            ChannelReliabilityResult.NO_SNAPSHOT
+        everySuspend { channelReliabilityManager.reconcileProtectedChannelSetForSession(any(), any()) } returns
+            ChannelReliabilityResult.NO_SNAPSHOT
+        everySuspend { ntsocialGatewayRepository.activateInboundSession(any()) } returns true
     }
 
     private fun createManager(
         scope: CoroutineScope,
         meshLocationManager: MeshLocationManager = locationManager,
+        channelOperationLock: ChannelOperationLock = ChannelOperationLock(),
+        channelMutationLock: ChannelMutationLock = ChannelMutationLock(),
     ): MeshConnectionManagerImpl = MeshConnectionManagerImpl(
         radioInterfaceService,
         serviceRepository,
@@ -165,10 +218,9 @@ class MeshConnectionManagerImplTest {
         DataLayerHeartbeatSender(packetHandler),
         ntsocialChannelProvisioner,
         ntsocialGatewayRepository,
-        mock<ChannelReliabilityManager>(MockMode.autofill).also { reliabilityManager ->
-            everySuspend { reliabilityManager.reconcileProtectedChannelSet() } returns
-                ChannelReliabilityResult.NO_SNAPSHOT
-        },
+        channelReliabilityManager,
+        channelOperationLock,
+        channelMutationLock,
         scope,
     )
 
@@ -216,6 +268,44 @@ class MeshConnectionManagerImplTest {
     }
 
     @Test
+    fun `exact config readback rejection never arms stale retry guard`() = runTest(testDispatcher) {
+        every { packetHandler.sendToRadioForSession(any(), SESSION_EPOCH) } returns false
+        manager = createManager(backgroundScope)
+        connectionStateFlow.value = ConnectionState.Connecting
+
+        assertFalse(manager.startConfigOnlyForSession(SESSION_EPOCH))
+        advanceTimeBy(50_000L)
+
+        verify(mode = VerifyMode.exactly(1)) { packetHandler.sendToRadioForSession(any(), SESSION_EPOCH) }
+        verify(mode = VerifyMode.not) { packetHandler.sendToRadio(any<org.meshtastic.proto.ToRadio>()) }
+    }
+
+    @Test
+    fun `retired Connected job cannot reopen packet admission after radio selection stops it`() =
+        runTest(testDispatcher) {
+            val operationLock = ChannelOperationLock()
+            operationLock.withLock {
+                manager = createManager(backgroundScope, channelOperationLock = operationLock)
+                radioConnectionState.value = ConnectionState.Connected
+                runCurrent()
+
+                // Model selection while the stale pre-handshake job is waiting for the same operation lock.
+                radioSessionState.value =
+                    radioSessionState.value.copy(
+                        epoch = SESSION_EPOCH + 1,
+                        selectedDeviceAddress = "xBB:BB:BB:BB:BB:BB",
+                        activeDeviceAddress = null,
+                        transportConnectionState = ConnectionState.Disconnected,
+                    )
+                packetHandler.stopPacketQueueAndAwait()
+            }
+            runCurrent()
+
+            verifySuspend(mode = VerifyMode.not) { packetHandler.resumePacketQueueAndAwait() }
+            verify(mode = VerifyMode.not) { packetHandler.sendToRadio(any<org.meshtastic.proto.ToRadio>()) }
+        }
+
+    @Test
     fun `Disconnect during pre-handshake settle cancels config start`() = runTest(testDispatcher) {
         val sentPackets = mutableListOf<org.meshtastic.proto.ToRadio>()
         every { packetHandler.sendToRadio(any<org.meshtastic.proto.ToRadio>()) } calls
@@ -257,7 +347,7 @@ class MeshConnectionManagerImplTest {
             serviceRepository.connectionState.value,
             "State should be Disconnected after radio Disconnected",
         )
-        verify { packetHandler.stopPacketQueue() }
+        verifySuspend { packetHandler.stopPacketQueueAndAwait() }
         verify { locationManager.stop() }
         verify { mqttManager.stop() }
     }
@@ -389,20 +479,168 @@ class MeshConnectionManagerImplTest {
                 store_forward = ModuleConfig.StoreForwardConfig(enabled = true),
             )
         moduleConfigFlow.value = moduleConfig
-        every { commandSender.requestTelemetry(any(), any(), any()) } returns Unit
         every { nodeManager.myNodeNum } returns MutableStateFlow(123)
         every { mqttManager.startProxy(any(), any()) } returns Unit
         every { historyManager.requestHistoryReplay(any(), any(), any(), any()) } returns Unit
         every { nodeManager.getMyNodeInfo() } returns null
 
         manager = createManager(backgroundScope)
-        manager.onNodeDbReady()
+        manager.onNodeDbReady(SESSION_EPOCH)
         advanceUntilIdle()
 
+        verify { radioInterfaceService.markCurrentSessionConfigured(SESSION_EPOCH) }
+        verifySuspend(mode = VerifyMode.exactly(1)) {
+            ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH)
+        }
+        verifySuspend(mode = VerifyMode.exactly(2)) {
+            commandSender.sendAdminAwaitForSession(SESSION_EPOCH, 123, any(), any(), any())
+        }
+        verify(mode = VerifyMode.not) { commandSender.sendAdmin(any(), any(), any(), any()) }
+        verifySuspend(mode = VerifyMode.exactly(2)) {
+            commandSender.requestTelemetryForSession(SESSION_EPOCH, any(), 123, any())
+        }
+        verify(mode = VerifyMode.not) { commandSender.requestTelemetry(any(), any(), any()) }
         verify { mqttManager.startProxy(true, true) }
         verify { historyManager.requestHistoryReplay(any(), any(), any(), any()) }
-        verifySuspend { ntsocialChannelProvisioner.ensureDefaultChannel(123, 8) }
+        verifySuspend { ntsocialChannelProvisioner.ensureDefaultChannelForSession(123, 8, SESSION_EPOCH, any()) }
     }
+
+    @Test
+    fun `ambiguous channel repair failure keeps gateway ingress closed`() = runTest(testDispatcher) {
+        every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+        every { nodeManager.getMyNodeInfo() } returns null
+        everySuspend {
+            channelReliabilityManager.reconcileProtectedChannelSetForSession(SESSION_EPOCH, any())
+        } returns ChannelReliabilityResult.READBACK_FAILED
+        manager = createManager(backgroundScope)
+
+        manager.onNodeDbReady(SESSION_EPOCH)
+        advanceUntilIdle()
+
+        verifySuspend(mode = VerifyMode.not) { ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH) }
+        verifySuspend(mode = VerifyMode.not) {
+            ntsocialChannelProvisioner.ensureDefaultChannelForSession(any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `ambiguous provisioning acknowledgement timeout keeps gateway ingress closed`() = runTest(testDispatcher) {
+        every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+        every { nodeManager.getMyNodeInfo() } returns null
+        everySuspend {
+            ntsocialChannelProvisioner.ensureDefaultChannelForSession(123, 8, SESSION_EPOCH, any())
+        } returns NtsocialChannelProvisionResult.RadioRejected
+        manager = createManager(backgroundScope)
+
+        manager.onNodeDbReady(SESSION_EPOCH)
+        advanceUntilIdle()
+
+        verifySuspend(mode = VerifyMode.not) { ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH) }
+        verifySuspend { ntsocialChannelProvisioner.ensureDefaultChannelForSession(123, 8, SESSION_EPOCH, any()) }
+    }
+
+    @Test
+    fun `same-address reconnect during provisioning keeps gateway ingress closed`() = runTest(testDispatcher) {
+        every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+        every { nodeManager.getMyNodeInfo() } returns null
+        everySuspend {
+            ntsocialChannelProvisioner.ensureDefaultChannelForSession(123, 8, SESSION_EPOCH, any())
+        } calls
+            {
+                radioSessionState.value = radioSessionState.value.copy(epoch = SESSION_EPOCH + 1)
+                null
+            }
+        manager = createManager(backgroundScope)
+
+        manager.onNodeDbReady(SESSION_EPOCH)
+        advanceUntilIdle()
+
+        verifySuspend(mode = VerifyMode.not) { ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH) }
+        verifySuspend { ntsocialChannelProvisioner.ensureDefaultChannelForSession(123, 8, SESSION_EPOCH, any()) }
+    }
+
+    @Test
+    fun `stale node database completion sends no admin or provisioning work`() = runTest(testDispatcher) {
+        every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+        radioSessionState.value = radioSessionState.value.copy(epoch = SESSION_EPOCH + 1)
+        manager = createManager(backgroundScope)
+
+        val accepted = manager.onNodeDbReady(SESSION_EPOCH)
+        advanceUntilIdle()
+
+        assertFalse(accepted)
+        verify { radioInterfaceService.markCurrentSessionConfigured(SESSION_EPOCH) }
+        verify(mode = VerifyMode.not) { commandSender.sendAdmin(any(), any(), any(), any()) }
+        verifySuspend(mode = VerifyMode.not) {
+            commandSender.sendAdminAwaitForSession(any(), any(), any(), any(), any())
+        }
+        verify(mode = VerifyMode.not) { commandSender.requestTelemetry(any(), any(), any()) }
+        verifySuspend(mode = VerifyMode.not) {
+            commandSender.requestTelemetryForSession(any(), any(), any(), any())
+        }
+        verifySuspend(mode = VerifyMode.not) {
+            ntsocialChannelProvisioner.ensureDefaultChannelForSession(any(), any(), any(), any())
+        }
+        verifySuspend(mode = VerifyMode.not) {
+            channelReliabilityManager.reconcileProtectedChannelSetForSession(any(), any())
+        }
+    }
+
+    @Test
+    fun `gateway does not activate while protected repair is still running`() = runTest(testDispatcher) {
+        val repairStarted = CompletableDeferred<Unit>()
+        val releaseRepair = CompletableDeferred<Unit>()
+        every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+        every { nodeManager.getMyNodeInfo() } returns null
+        everySuspend {
+            channelReliabilityManager.reconcileProtectedChannelSetForSession(SESSION_EPOCH, any())
+        } calls
+            {
+                repairStarted.complete(Unit)
+                releaseRepair.await()
+                ChannelReliabilityResult.NO_SNAPSHOT
+            }
+        manager = createManager(backgroundScope)
+
+        assertEquals(true, manager.onNodeDbReady(SESSION_EPOCH))
+        repairStarted.await()
+        verifySuspend(mode = VerifyMode.not) { ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH) }
+
+        releaseRepair.complete(Unit)
+        advanceUntilIdle()
+
+        verifySuspend(mode = VerifyMode.exactly(1)) {
+            ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH)
+        }
+    }
+
+    @Test
+    fun `same-address reconnect at startup admin admission stops all later completion work`() =
+        runTest(testDispatcher) {
+            every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+            every { nodeManager.getMyNodeInfo() } returns null
+            var admissions = 0
+            everySuspend { commandSender.sendAdminAwaitForSession(SESSION_EPOCH, 123, any(), any(), any()) } calls
+                {
+                    admissions += 1
+                    radioSessionState.value = radioSessionState.value.copy(epoch = SESSION_EPOCH + 1)
+                    false
+                }
+            manager = createManager(backgroundScope)
+
+            assertFalse(manager.onNodeDbReady(SESSION_EPOCH))
+            advanceUntilIdle()
+
+            assertEquals(1, admissions)
+            verify(mode = VerifyMode.not) { commandSender.sendAdmin(any(), any(), any(), any()) }
+            verifySuspend(mode = VerifyMode.not) {
+                channelReliabilityManager.reconcileProtectedChannelSetForSession(any(), any())
+            }
+            verifySuspend(mode = VerifyMode.not) {
+                ntsocialChannelProvisioner.ensureDefaultChannelForSession(any(), any(), any(), any())
+            }
+            verifySuspend(mode = VerifyMode.not) { ntsocialGatewayRepository.activateInboundSession(any()) }
+        }
 
     @Test
     fun `DeviceSleep timeout is capped at MAX_SLEEP_TIMEOUT_SECONDS for high ls_secs`() = runTest(testDispatcher) {
@@ -545,5 +783,10 @@ class MeshConnectionManagerImplTest {
         override fun stop() {
             events += "stop"
         }
+    }
+
+    private companion object {
+        const val SESSION_EPOCH = 42L
+        const val RADIO_ADDRESS = "xAA:BB:CC:DD:EE:FF"
     }
 }

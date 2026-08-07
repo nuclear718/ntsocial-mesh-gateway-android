@@ -34,6 +34,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -52,6 +53,8 @@ class RadioPrefsImpl(
 
     override val devName: StateFlow<String?> =
         dataStore.data.map { it[KEY_DEV_NAME_PREF] }.stateIn(scope, SharingStarted.Eagerly, null)
+
+    override suspend fun readPersistedDevAddr(): String? = dataStore.data.first()[KEY_DEV_ADDR_PREF]
 
     override fun setDevAddr(address: String?) {
         scope.launch {

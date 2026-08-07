@@ -57,6 +57,7 @@ class TelemetryPacketHandlerImpl(
     private val nodeManager: NodeManager,
     private val connectionManager: Lazy<MeshConnectionManager>,
     private val notificationManager: NotificationManager,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : TelemetryPacketHandler {
 
@@ -77,7 +78,7 @@ class TelemetryPacketHandlerImpl(
             connectionManager.value.updateTelemetry(t)
         }
 
-        nodeManager.updateNode(fromNum) { node: Node ->
+        nodeManager.updateNodeFromRadio(fromNum) { node: Node ->
             val metrics = t.device_metrics
             val environment = t.environment_metrics
             val power = t.power_metrics
@@ -92,7 +93,7 @@ class TelemetryPacketHandlerImpl(
                             (metrics.voltage ?: 0f) > BATTERY_PERCENT_UNSUPPORTED &&
                             (metrics.battery_level ?: 0) <= BATTERY_PERCENT_LOW_THRESHOLD
                         ) {
-                            scope.launch {
+                            ingressWorkTracker.launch(scope) {
                                 if (shouldBatteryNotificationShow(fromNum, t, myNodeNum)) {
                                     notificationManager.dispatch(
                                         Notification(
@@ -113,7 +114,7 @@ class TelemetryPacketHandlerImpl(
                                 }
                             }
                         } else {
-                            scope.launch {
+                            ingressWorkTracker.launch(scope) {
                                 batteryMutex.withLock {
                                     if (batteryPercentCooldowns.containsKey(fromNum)) {
                                         batteryPercentCooldowns.remove(fromNum)

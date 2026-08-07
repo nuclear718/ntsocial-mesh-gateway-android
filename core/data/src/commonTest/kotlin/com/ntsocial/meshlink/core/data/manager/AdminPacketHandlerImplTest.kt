@@ -197,7 +197,7 @@ class AdminPacketHandlerImplTest {
 
         handler.handleAdminMessage(packet, myNodeNum)
 
-        verify { nodeManager.insertMetadata(remoteNode, metadata) }
+        verify { nodeManager.insertMetadataFromRadio(remoteNode, metadata) }
     }
 
     // ---------- Edge cases ----------

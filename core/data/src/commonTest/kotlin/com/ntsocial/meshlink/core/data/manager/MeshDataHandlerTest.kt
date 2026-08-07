@@ -125,6 +125,7 @@ class MeshDataHandlerTest {
                 telemetryHandler = telemetryHandler,
                 adminPacketHandler = adminPacketHandler,
                 ntsocialGatewayRepository = ntsocialGatewayRepository,
+                ingressWorkTracker = RadioIngressWorkTracker(),
                 scope = testScope,
             )
 

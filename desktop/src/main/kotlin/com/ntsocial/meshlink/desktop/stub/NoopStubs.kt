@@ -43,6 +43,7 @@ import com.ntsocial.meshlink.core.repository.MeshLocationManager
 import com.ntsocial.meshlink.core.repository.MeshWorkerManager
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioSessionState
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +80,18 @@ class NoopRadioInterfaceService : RadioInterfaceService {
 
     override val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val currentDeviceAddressFlow = MutableStateFlow<String?>(null)
+    override val radioSessionState =
+        MutableStateFlow(
+            RadioSessionState(
+                epoch = 1,
+                selectedDeviceAddress = null,
+                activeDeviceAddress = null,
+                transportConnectionState = ConnectionState.Disconnected,
+                configured = false,
+            ),
+        )
+
+    override fun markCurrentSessionConfigured(expectedEpoch: Long): Boolean = false
 
     override fun isMockTransport(): Boolean = false
 

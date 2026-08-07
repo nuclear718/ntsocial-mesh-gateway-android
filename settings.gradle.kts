@@ -99,6 +99,7 @@ include(
     ":core:datastore",
     ":core:di",
     ":core:domain",
+    ":core:gateway",
     ":core:model",
     ":core:meshcore",
     ":core:navigation",
@@ -120,6 +121,7 @@ include(
     ":feature:settings",
     ":feature:firmware",
     ":feature:wifi-provision",
+    ":ios:runtime",
     ":desktop",
 )
 

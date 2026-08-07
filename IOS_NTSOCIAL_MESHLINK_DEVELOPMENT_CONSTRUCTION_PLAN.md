@@ -1,35 +1,85 @@
 # iOS NTsocial MeshLink 開發施工計畫
 
-> 文件狀態：可供工程拆票與實作的架構基線  
-> 稽核日期：2026-08-07（Asia/Taipei）  
-> 目標專案：`nuclear718/ntsocial-mesh-gateway-android`  
-> 目標基線：`main@9443b6ed38f49e9db5d215927d8a9c610b4b14ac`  
-> 唯讀參考專案：`nuclear718/NTsocial_release` 的 `main` 分支（稽核快照：2026-08-07）  
-> 適用對象：iOS、Kotlin Multiplatform、BLE／Meshtastic、資安、QA 與 release 工程師  
+> 文件狀態：iOS 原始碼 vertical slice 已完成；進入簽章、實機與 release 驗證
+> 稽核日期：2026-08-07（Asia/Taipei）
+> 目標專案：`nuclear718/ntsocial-mesh-gateway-android`
+> 實作分支／基底：`codex/feat/ios-meshlink`，基底 HEAD `988d3327e45772e73dd2147ee7fffe4a26d370a6`；本文件更新時 iOS 變更尚未 commit
+> 母程式專案：`nuclear718/NTsocial_release`（Apple Gateway adapter 由另行授權的工作樹實作；仍需簽章雙 App 驗證）
+> 適用對象：iOS、Kotlin Multiplatform、BLE／Meshtastic、資安、QA 與 release 工程師
 > 文件目的：把現有 Android NTsocial MeshLink 的責任邊界、Gateway 語意與 Meshtastic 控制流程，轉化為可在 Apple 平台施工、測試及交付的方案。
+
+---
+
+## 0. 2026-08-07 實作狀態補充
+
+本節是目前原始碼與可重現證據的最高優先摘要；若後續章節仍保留早期「建議／未實作」文字而與本節衝突，以本節、`specs/004-ios-meshlink/` 與實際 source/test 為準。
+
+### 0.1 已完成的 source vertical slice
+
+- iOS 已正式列為本 repository 的第三產品軌。`ios/runtime` 產生 static `MeshLinkKit` framework；`iosApp` 提供 iOS 17+ SwiftUI/Xcode host，bundle ID 為 `com.ntsocial.meshlink.ios`。
+- Runtime 使用真實 Koin graph，重用 `DirectRadioControllerImpl`、`MeshServiceOrchestrator`、shared repositories、Room 與 radio state machine。`IosDurableMessageQueue` 以 Room `QUEUED` packet 作為重啟／重連後的 durable work record，不把 queue admission 誤稱為 RF delivered。
+- Apple BLE 採 **Kable-first**：真實 CoreBluetooth availability、peripheral UUID reconstruction、central state restoration 設定與 negotiated maximum write length 均在 `core/ble/src/iosMain`；沒有第二套 Swift radio transport owner。
+- iOS secure random 使用 `SecRandomCopyBytes`，偏好使用 file-backed DataStore，radio/private state 使用 Room KMP SQLite。
+- Apple Gateway v1 已實作：App Group SQLite mailbox、私有 durable idempotency ledger、versioned/length-delimited HMAC-SHA256 command codec、nonce replay protection、32-byte Base64URL/120 秒 route、caller/source/captured-slot/generation/capability 綁定、opaque generation rotation、claim/reclaim、durable result、bounded overlay ingress 與 stable-only native text feed。`overlay_epoch_state` 讓每個 history epoch 的 high-water 不因 128-row retention 淘汰而倒退，舊 v1 檔案缺表時會由 retained rows additive backfill，`user_version` 維持 1。已 accepted 的私有 ledger record 可在「ledger commit 後、result publish 前」crash/restart 時先於 process-local route resolution 重播原 packet ID；相同 client ID 若內容不同仍回 `IDEMPOTENCY_CONFLICT`。
+- Radio readiness、inbound projection 與 admission 共用 selected/active radio、atomic session epoch/configured、所選 radio 的 active Room DB、complete-channel readback／final snapshot generation、Bluetooth、transport/App connection、history epoch 與 channel fingerprint 的 exact identity；route 發出時捕捉，durable admission 前在 `ChannelOperationLock` 內重新比對。所選 radio 或任一 routing context 改變都會撤銷舊 route。`READY` 或 inbound-identity-only revision 會立即 drain durable mailbox，暫時失敗再以 500／1,000／2,000 ms、最多三次的單一 coalesced job 處理。每輪最多 64 commands；budget 用盡時排下一個 delayed pass，第 65 筆不會 starvation，也不以 busy loop 續跑。
+- Radio replacement 現在先以 generation-bound callback facade 與同步 validation／side-effect lock 撤銷 retired transport 的 connect／disconnect／data callback，再等待舊 ingress handler／child write、outbound queue／status／mesh-log generation 完全 quiesce；之後才切換 per-radio DB、由該 active DB 的 direct snapshot hydrate node cache、resume ingress 並啟動 replacement transport。Expected epoch 會保留到 packet dequeue 與同步 transport send 線性化點，即使 replacement 使用相同 address／transport object，retired admin、readback 或 raw send 也不能進入新 session。
+- Manual／QR apply、public protected-channel reconcile 與 built-in provision 現在共用 serialized mutation contract：validate exact session／ensure admin → invalidate Gateway ingress → exact-session firmware mutation → correlated fresh readback → activate verified final identity。Fresh readback 沿用 firmware `69420` config-only sentinel，由 prior FULL Stage 2 已完成且無其他 owner 時才能建立的 host exclusive owner/token 歸屬；completion 使用專用 host flow，不以 generic generation、stale FULL response 或 parallel handshake 代替。Radio rejection、readback mismatch／timeout 或 session replacement 均保持 fail-closed。
+- 已 `ACCEPTED_LOCAL` 但尚未 dispatch 的 Gateway packet 在 private Room row 保留原 `source_channel_id`；actual drain 會重新驗證 exact session、active ingress 與 slot/PSK/LoRa-derived source identity，並將 validation 到 matching firmware `QueueStatus` 維持在 operation boundary 內。Channel identity 已變更時舊 packet fail closed，不會因相同 numeric slot 送到新 channel。
+- Swift bootstrap 解析 App Group `group.com.ntsocial.meshlink.gateway`，在 shared Keychain group `$(AppIdentifierPrefix)com.ntsocial.meshlink.gateway` 讀取／建立 32-byte HMAC key，監聽 payload-free Darwin command hint，並支援 `ntsocial-meshlink://process` foreground handoff。
+- Focused UI 只提供 host/App Group/Bluetooth/background/parent handoff readiness，以及 scan/select/connect/disconnect/forget。Routes browser、native-text composer、results browser、Gateway reset/panic-wipe UI、maps 與完整 Meshtastic settings 不列入首版必要範圍，避免複製母程式 UX。Xcode host 已包含 source Privacy Manifest 與 `Assets.xcassets/AppIcon.appiconset`；其聲明與圖示仍須在 signed archive／App Store 階段複核。
+- 另行授權的 `NTsocial_release` 工作樹已實作 Swift App Group/Keychain/Darwin/deep-link adapter、production payload provider、canonical-store import、Android-compatible projection identity、current catalog 與 same-epoch historical source resolver 分離、commit-before-cursor，以及 authenticated `enqueueNativeBroadcastText` API。First-send pending 會立即 durable 記錄 exact message／attempt／transport 的 `.queued`＋`.admission`，但不冒充 accepted；multipart restart correlation 保存 final social-header message ID、attempt、part kind/index/count、transfer ID 與 logical channel。Slot-indexed duplicate source identity 仍保留給 outbound route，canonical/history projection 則以 PRIMARY 優先、再 lowest slot deterministic collapse，security semantics 衝突時拒絕。Retention gap、malformed envelope、lost/expired transfer 只有在 durable gap／quarantine／abandoned-transfer terminal record 成功後才做 bounded cursor recovery；transient store/projection failure 不前進，已被 retention 淘汰的 row 也不宣稱可恢復。母程式 composer 仍刻意 deferred；這不改變 GPL companion 與 proprietary parent 分離的邊界。
+
+### 0.2 已保留的驗證證據
+
+- `:core:gateway:jvmTest`：36 tests passed；Gateway iosArm64／iosSimulatorArm64 compile passed。新增證據涵蓋 retention-safe `overlay_epoch_state`／additive v1 backfill、accepted-ledger crash replay、不同 fingerprint conflict，以及 admission 後 accepted-ledger commit 失敗的 retryable 狀態。
+- Current-source focused slices 共 135/135：domain 16/16、data 104/104、`:ios:runtime:jvmTest` 15/15。Runtime 分布為 session／active-DB guard 4、bounded retry scheduler 3、64-command drain budget 3、durable dispatch identity 2、inbound-projection signal 1、shell/deep-link 2；data 分布為 config flow 32、connection 21、provision 11、packet handler 17、Gateway 22、real-lock integration 1。Deterministic tests 亦涵蓋 same-address reconnect、69420 host owner/token correlation、mutation/readback producer progress、premature activation window 與 accepted-before-drain channel replacement。Spotless、五個 changed modules Detekt、iOS Simulator Arm64 compile 與 diff check 通過；最終 bounded audit 對這些邊界無可重現 P0/P1。
+- JDK 21、en-US `JAVA_TOOL_OPTIONS`、one worker 下，current-source root `./gradlew --no-daemon --max-workers=1 assembleDebug test allTests kmpSmokeCompile --continue --console=plain` 於 2m `BUILD SUCCESSFUL`：1,406 actionable tasks（333 executed、1 from cache、1,072 up-to-date）。Native iOS test link/run 仍依 convention `SKIPPED`。Root `detekt --continue` 只因五項既有 finding 非零：BLE `JvmDesktopBluetoothPairingService` line 154 `TooGenericExceptionCaught`、lines 143/188 `ThrowsCount`；model `NtsocialGatewayIdentity` line 168 `MagicNumber`；network `BleRadioTransport` line 246 `ThrowsCount`。Changed modules 與 Spotless 全綠。
+- 母程式 `swift test --package-path ios --filter AppleGatewayAdapterTests`：27/27 passed；完整 `swift test --package-path ios`：668/668 passed，release build 亦 green。Focused suite 涵蓋共同 HMAC／identity vector、精確 Keychain service/account v1 座標、invalid HMAC、nonce replay、payload-conflict idempotency、newer-schema rejection、stream/result/cursor round-trip、additive `overlay_epoch_state` migration、first-send pending restart correlation、multipart all-parts terminal aggregation、chunk final-ID/UInt32 restart metadata、duplicate source deterministic collapse／security conflict、overlay gap／poison durable terminal recovery、same-epoch historical backlog、terminal rejection、native-text enqueue，以及 canonical commit-before-cursor。這仍是 source/test/build evidence，不是 signed two-App interoperability proof。
+- 下列命令成功：
+
+  ```bash
+  xcodebuild -project iosApp/NTsocialMeshLink.xcodeproj \
+    -scheme NTsocialMeshLink \
+    -configuration Debug \
+    -sdk iphonesimulator \
+    -destination 'id=E3249756-57AF-4D9C-AA2B-3332E9309529' \
+    CODE_SIGNING_ALLOWED=NO build
+  ```
+
+  Final Xcode 前找到的 Koin cycle（`NtsocialGatewayRepositoryImpl ↔ IosDurableMessageQueue`）已以 cycle-free `GatewayIngressSessionGate.activeSessionEpoch` 取代 queue 對 repository 的依賴；修正後 runtime 15/15、runtime Detekt、Simulator compile/framework link 均綠。Fresh Simulator Debug Derived Data `/tmp/ntsocial-ios-final-fixed.2fROK9` 的 signing-disabled `clean build -quiet` exit 0／零輸出；App 安裝並 cold-launch 於 `Codex iPhone 17`（UDID `E3249756-57AF-4D9C-AA2B-3332E9309529`）為 PID 67524，兩秒後仍為同一 PID。Fresh generic-iphoneos Release Derived Data `/tmp/ntsocial-ios-final-device.YaTk5N` 同樣 signing-disabled quiet exit 0／零輸出；bundle 為 `1.0.0`／build `1`，含 `Assets.car` 與 `PrivacyInfo.xcprivacy`。Zero quiet output 證明本輪無 Xcode／linker／ICU warning；上述仍是 unsigned source/simulator evidence，不是 signed archive 或可安裝實機證據。
+
+### 0.3 尚未完成、不可宣稱的事項
+
+- 尚未以 Apple Developer portal／provisioning profile 證明兩個**已簽章** App 真的共享 App Group、Keychain 與 Darwin／deep-link 流程。Source entitlement 字串不是此證據。
+- 尚無 iPhone 實機 Bluetooth permission、scan、handshake、state restoration、reconnect、node reboot；無 connected-radio local admission、LoRa airtime、第二台 radio reception、remote receipt 或 Android↔iOS RF interoperability 證據。
+- CoreBluetooth restoration 與 Darwin hint 皆為 best effort；不保證永久背景執行或被終止 App 的 command wake。
+- Repository convention 仍關閉 Kotlin/Native iOS test link/run task；`iosSimulatorArm64Test` 即使顯示 Gradle success，也可能只代表相關 task 被 skip。目前 native test 證據僅為 test compilation／framework link。
+- 唯一已知 open source P2 是 exact readback 已 admit 後 caller timeout/cancel、且 firmware 永遠不回 late response 時，host owner 在同一 epoch 維持 fail-closed，需 reconnect/new epoch 才恢復 readback／identity activation。這是 bounded liveness/availability，不是錯頻、跨 session 寫入或資料外洩。
+- 先前 `libicu.icudtl_dat.o` 的 iOS Simulator 18.5 對 host 17.0 warning 已關閉：Xcode build phase 只接受經檢查為 `__text = 0`、單一 ICU data symbol、固定 `__const` bytes 的已知 Skiko member，將其 LC_BUILD_VERSION relink 為 deployment target 後原子重建 static archive；未知 layout 會 fail closed。此為 source／simulator toolchain evidence，仍不能取代 signed archive 驗證。
+- 尚未完成 signed archive、Privacy Manifest／privacy nutrition label 的最終 linked-API 稽核、license/source offer、TestFlight、App Store metadata/review。此文件不宣稱 App Store readiness。
+- 使用者口述 Android 已上架 Google Play 尚未由本 repository 的簽章／Console／Play-installed artifact 證據驗證，不得覆蓋 `AGENTS.md` 現有 Android Play 狀態。
 
 ---
 
 ## 1. 結論摘要
 
-本次程式碼稽核得到四項關鍵結論。
+本次程式碼稽核與實作得到四項關鍵結論。
 
 1. **Android 版不是單純的 Meshtastic UI fork，而是「LoRa/radio owner＋受保護 Gateway」**。MeshLink 負責無線電連線、Meshtastic 原生訊息、節點／頻道投影、route token、命令驗證與 durable idempotency；NTsocial 母程式保有社交 UI、帳號政策及 canonical social history。iOS 版必須保留這個所有權分界，不能讓兩個 App 同時控制同一個 Meshtastic radio。
-2. **現有 Kotlin Multiplatform 核心有實質可重用價值，但 iOS 目前仍是 scaffold**。`MeshServiceOrchestrator`、`SharedRadioInterfaceService`、`DirectRadioControllerImpl` 等平台中立邏輯可以沿用；然而 iOS BLE、亂數、權限、持久化、生命週期與宿主 App 尚未達 production-ready。尤其 `core/ble/src/iosMain/.../NoopStubs.kt` 仍含 `UnsupportedOperationException` 與 no-op 行為，現況不能上架。
-3. **iOS 不應照抄 Android 的 `ContentProvider`、BroadcastReceiver、UID/package 驗證**。Apple sandbox 沒有等價 IPC。應建立語意等價、傳輸不同的 Apple Gateway：以 App Group 共用容器承載 durable projection／command mailbox，以 Keychain access group 保存協議金鑰；Darwin notification 只當提示，不當資料真相。
-4. **建議交付型態為獨立的 GPL-3.0-or-later「NTsocial MeshLink iOS companion app」**。這可延續本專案與 Meshtastic Apple 程式碼的授權邊界，避免把 GPL radio implementation 直接嵌入 NTsocial 母程式。`NTsocial_release` 本次只讀，任何 App Group、Keychain entitlement 或 provider adapter 修改均列為後續工作，未在本計畫中執行。
+2. **KMP iOS vertical slice 已從 scaffold 進入可編譯、可 link、可啟動的 source implementation**。`MeshServiceOrchestrator`、`SharedRadioInterfaceService`、`DirectRadioControllerImpl`、Room、DataStore 與 Kable 已接到真實 iOS runtime；但未經實機 BLE／radio/RF 與簽章雙 App 驗證，因此還不是 production-ready。
+3. **iOS 沒有照抄 Android IPC**。Apple Gateway 已以 App Group mailbox、shared-Keychain HMAC、private in-memory routes／durable ledger、payload-free Darwin hint 與 foreground deep link 實作相同安全／durability 語意。
+4. **交付型態維持獨立 GPL-3.0-or-later companion**。母程式 adapter 已在另行授權工作樹完成 source 與 focused tests，但 NTsocial 母程式仍不 link MeshLink radio implementation；正式互通要等匹配 entitlement 的 signed-device proof。
 
 iOS 1.0 的最小完整路徑應為：
 
 ```text
-KMP 核心可在 iOS 編譯與測試
-→ CoreBluetooth transport
-→ Apple lifecycle host
-→ 本機 Meshtastic 原生收發
-→ Apple Gateway v2
-→ NTsocial iOS provider adapter
+KMP 核心與 Apple Gateway source（已完成）
+→ Kable/CoreBluetooth runtime＋SwiftUI host（已完成 source／simulator）
+→ NTsocial iOS provider adapter（已完成 source／focused tests）
+→ signed dual-App App Group／Keychain 驗證
+→ 實機 BLE／本機 Meshtastic 收發
 → 實機 RF／背景／重啟／跨版本驗收
-→ TestFlight
+→ signing／TestFlight／App Store gates
 ```
 
 ---
@@ -39,17 +89,17 @@ KMP 核心可在 iOS 編譯與測試
 ### 2.1 已檢查範圍
 
 - 目標專案根目錄規範、Gradle/KMP 結構、Android Gateway、radio service、route token、命令驗證、iOS source set 與現有測試配置。
-- `NTsocial_release` 的 iOS SwiftPM 模組、App lifecycle owner、provider health／release capability、entitlements 與 Android 端 MeshLink Gateway consumer。
+- `NTsocial_release` 的 iOS SwiftPM 模組、App lifecycle owner、Apple Gateway adapter、provider health／release capability、source entitlements 與 Android 端 MeshLink Gateway consumer；母程式變更由另一個明確授權工作樹執行。
 - Meshtastic Apple 專案的 Apple 平台實作型態，特別是 CoreBluetooth actor、serial delegate queue、state restoration 與 GPLv3 授權邊界。
 
 ### 2.2 證據分類
 
 | 分類 | 本文件中的意義 |
 |---|---|
-| 已確認 | 可直接由目前程式碼、設定或 capability 文件證實 |
+| 已確認 | 可直接由目前程式碼、設定、focused test 或 simulator evidence 證實；仍需標明證據層級 |
 | 架構決策 | 本計畫為消除平台差異而明確指定的施工方向 |
 | 待實機驗證 | 需要 iPhone＋Meshtastic node、背景切換、斷線或 RF 環境才能確認 |
-| 母程式後續修改 | 只列介面與驗收要求；本次沒有寫入 `NTsocial_release` |
+| 母程式 source 已實作、待裝置整合 | adapter／tests 已完成，但尚未有 matching signed entitlements 與雙 App 實機證據 |
 
 ### 2.3 非目標
 
@@ -58,7 +108,7 @@ KMP 核心可在 iOS 編譯與測試
 - 不承諾 iOS 有 Android foreground service 等價物。
 - 不在 App Group 暴露 PSK、raw protobuf、完整位置、radio config 或 MeshLink 私有資料庫。
 - 不讓 NTsocial iOS 與 MeshLink iOS 同時建立同一 radio 的 BLE session。
-- 不修改本次被指定為 read-only 的 `NTsocial_release`。
+- 不把 `NTsocial_release` 的 proprietary business logic 或 secrets 複製進 GPL companion；母程式只透過另行授權變更消費公開 Apple Gateway contract。
 
 ---
 
@@ -147,62 +197,47 @@ iOS 版 1.0 應維持 120 秒 TTL，除非 RF 實測證明需要調整；不可�
 | 元件 | 可重用內容 | iOS 施工要求 |
 |---|---|---|
 | `MeshServiceOrchestrator` | start/stop、先選 DB 再接 radio、state flow、supervised actions | 由 Apple lifecycle coordinator 驅動，不依賴 Android Service |
-| `SharedRadioInterfaceService` | radio lifecycle、FIFO、heartbeat、transport factory、reconnect、polite disconnect | 以 CoreBluetooth/TCP actual adapter 接入 |
+| `SharedRadioInterfaceService` | radio lifecycle、FIFO、heartbeat、transport factory、reconnect、polite disconnect | iOS 1.0 以單一 Kable/CoreBluetooth BLE actual 接入；不啟用 TCP |
 | `DirectRadioControllerImpl` | in-process radio controller | iOS 使用 direct controller，不移植 Android AIDL |
 | 共用 models/protobuf | Meshtastic message、node/channel domain | 建立 Android/iOS golden fixtures 防止 schema drift |
 | 共用 repository/use case | radio/cache/message policy | 移除 Android-only clock、UUID、storage、permission 依賴 |
 
 ---
 
-## 4. 現有 iOS 狀態與 P0 缺口
+## 4. 現有 iOS 實作狀態與未關閉 gate
 
-現有 iOS source set 並非空白，但仍屬「能讓部分 common code 編譯」的 scaffold，而不是可用 App。
-
-| 缺口 | 已確認現況 | 風險 | 優先級 |
+| 範圍 | 目前 source／證據 | 尚未完成 | 優先級 |
 |---|---|---|---|
-| iOS host | 無完整 Xcode app/workspace、Info.plist、entitlements、native lifecycle tests | 無法安裝、配對、背景恢復或上架 | P0 |
-| CoreBluetooth | `NoopStubs.kt` 仍會 throw 或 no-op | 一進入 radio path 即失敗，或產生假成功 | P0 |
-| 安全亂數 | iOS stub 不可作為 route/token/nonce production RNG | token 可預測、驗證失去意義 | P0 |
-| 持久化 | 尚未證明 iOS durable DB 與 migration | 重啟後 history、idempotency、cursor 遺失 | P0 |
-| 權限 | stub 可能回報假成功 | UI 與實際 Bluetooth authorization 不一致 | P0 |
-| 背景生命週期 | 無 Apple state restoration owner | 斷線／背景後狀態與 queue 不可靠 | P0 |
-| Gateway | 無 Apple 跨 App transport | NTsocial iOS 無法取得真實 provider | P0 |
-| Keychain/App Group | 目標與母程式尚未完成共同 entitlement | 無法安全共享 mailbox/key | P0 |
-| 實機測試 | 無 iOS radio/RF/restore matrix | 模擬器通過仍可能實機失敗 | P0 |
-| diagnostics | 尚無可匯出、可遮蔽敏感資料的 iOS trace | 現場問題難以定位 | P1 |
+| iOS host | Xcode project、SwiftUI host、Info.plist、source entitlements、Privacy Manifest、AppIcon asset、static framework；current-source fresh clean simulator、install/cold-launch/alive 與 unsigned generic-iphoneos Release pass | signed archive、實機 lifecycle、App Store pipeline | P0 |
+| BLE | Kable/CoreBluetooth real availability、UUID reconstruction、restoration config、negotiated write length | 實機 permission/scan/handshake/restore/reconnect/node reboot | P0 |
+| 安全亂數 | `SecRandomCopyBytes`；Gateway CSPRNG tests | device entropy／failure-path retention evidence | P0 |
+| 持久化 | Room KMP、file-backed DataStore、App Group SQLite、private ledger、durable queue | signed cross-process migration/corruption/concurrency/crash recovery matrix | P0 |
+| Gateway | common engine＋iOS coordinator/radio port/wake sink；36 JVM tests；exact session／active-DB／readback identity、retired-work barriers、READY drain、bounded retry、retention-safe overlay epoch high-water、accepted-ledger crash replay | signed two-App command/ingress/result round trip | P0 |
+| Keychain/App Group | matching source identifiers＋Swift HMAC bootstrap | Apple Developer portal/profile entitlement proof | P0 |
+| 母程式 | Swift adapter＋production payload provider＋restart-stable pending/multipart correlation＋deterministic current/historical resolver＋durable gap/poison recovery＋native-text egress API；focused 27/27、full SwiftPM 668/668、release build green | signed parent/companion device interop and release capability enablement；composer deferred | P0 |
+| Native tests | iOS test source compiles | convention 仍 disabled link/run；必須啟用並執行 | P0 |
+| Toolchain | data-only Skiko ICU archive normalization；generic-iphoneos Release signing-disabled clean build 產生 arm64 Mach-O，無 Xcode／linker／ICU warning | signed archive／Apple delivery toolchain 複驗；目前 artifact 仍 unsigned | P0 |
+| RF | 無 | connected-radio admission、airtime、第二台 radio receipt、Android↔iOS matrix | P0 |
+| diagnostics/admin UI | focused health/connection UI | redacted export、reset/panic-wipe 等視真實產品需求後續決定 | P1／deferred |
 
-**施工規則：任何 production path 中的 throw/no-op/fake-success stub，都必須在 Phase 1 被刪除、實作或以 build-time fail-fast 阻止進入 release。**
+**施工規則：source implementation、simulator、signed entitlement、實機 BLE、connected-radio、RF、background 與 App Store 是不同證據層級；不可用較低層級代替較高層級。**
 
 ---
 
 ## 5. NTsocial iOS 母程式的相容邊界
 
-唯讀稽核顯示，`NTsocial_release` 的 Apple 端已具備良好的 host 架構：
+`NTsocial_release` 的 Apple Gateway adapter 已在另行授權的工作樹實作，並保留以下邊界：
 
-- Swift 6.1、iOS 17+、macOS 14+。
-- SwiftPM 模組涵蓋 Core、Crypto、WireProto、BLE、HighSpeed、Store、UI。
-- `NTSocialApp.swift` 已有明確 runtime owner；onboarding 後啟動、active 時 restore、panic wipe 前先停止 runtime。
-- provider health 可在 UI test 注入，但目前不是真實 Meshtastic provider。
-- release capability 明確標示 Meshtastic LoRa provider 為 unavailable／scaffold-only。
-- 現有 entitlements 尚未具備 MeshLink/NTsocial 共用 App Group 與 Keychain access group。
-- iOS 背景傳輸被正確描述為 best-effort，沒有虛構 Android foreground-service parity。
+- 母程式 bundle ID 為 `com.ntsocial.ios`，只透過 App Group／Keychain／Darwin／deep link 操作 Apple Gateway，不 link `MeshLinkKit`，也不開第二個 Meshtastic BLE transport。
+- Swift adapter 可讀 status/channels/results/overlay/native cursor、簽署 outbound command，並使用 production `NTSocialMeshtasticAppPayloadProvider` 產生完整 `NM` application envelope；另提供 authenticated `enqueueNativeBroadcastText` API，但母程式 composer 不在本次最小範圍。
+- 只有 `ACCEPTED_LOCAL` 映射為 local accepted；文案不得翻譯成 RF、remote delivered 或 read。
+- Native feed 以精確 `source_channel_id` 建立 Android-compatible durable automatic projection；mailbox/catalog 保留 slot-indexed duplicate source identities 供 outbound route 使用，current catalog 只服務目前 route，same-history-epoch historical resolver 保留已觀察 source 的最小 routing identity。Canonical/history projection 對相同 stable identity 以 PRIMARY 優先、再 lowest slot deterministic collapse；若 duplicate source 的 security semantics 衝突則拒絕，不以任意 slot 繼續。這讓 channel replacement 後既有 native／overlay backlog 仍可匯入。
+- First-send `pendingLocalAcceptance` 立即 durable 寫入 exact message／attempt／transport 的 `.queued`＋`.admission`，保持 pending；後續同 attempt 的 `ACCEPTED_LOCAL` 只 ack／advance 一次。Parent-private restart correlation 保存 final social-header message ID、attempt、multipart kind/index/count、transfer ID 與 logical channel，不從 chunk 外層 16-byte header 或 hard-coded direct 0/1 重建。
+- 正常 row 只有匹配且成功寫入 canonical store 後才前進 cursor。若是 retention gap、malformed envelope 或 lost/expired multipart transfer，必須先 durable 寫入 gap／quarantine／abandoned-transfer terminal record，之後才可 bounded advance 到 `firstRetained - 1` 或略過 deterministic poison；transient store/projection failure 仍不前進、可 retry。此流程不宣稱已淘汰 row 可 lossless recovery。
+- Synthetic/native gateway author 不得污染 peer/profile/roster。
+- App Group `group.com.ntsocial.meshlink.gateway`、Keychain suffix `com.ntsocial.meshlink.gateway`、companion ID `com.ntsocial.meshlink.ios`、Darwin names 與 deep link 在 source 一致。
 
-因此 iOS MeshLink 的工作不是接管 NTsocial runtime，而是提供一個可被 `NTSocialCore` provider adapter 消費的獨立 provider。
-
-後續母程式需要的最小介面如下，**本次未執行**：
-
-```swift
-protocol MeshtasticProvider {
-    func health() async -> ProviderHealth
-    func status() async throws -> MeshGatewayStatus
-    func channels() async throws -> [MeshChannelRoute]
-    func messageChanges(after cursor: MessageCursor?) async throws -> MessageChangePage
-    func sendNativeText(_ request: NativeTextRequest) async throws -> SendAcceptance
-    func sendOverlay(_ request: OverlayRequest) async throws -> SendAcceptance
-}
-```
-
-此 protocol 的 domain type 應與 Android `MeshLinkGatewayContract` 對齊，但底層 transport 改為 Apple Gateway。
+Focused `AppleGatewayAdapterTests` 已 27/27 通過，完整 SwiftPM suite 已 668/668 通過，parent release build green；這證明目前 Swift codec/store/domain 與整體 package regression gate，不證明 Apple Developer entitlement、雙 App sandbox access、背景排程、BLE 或 RF。正式 release capability 只能在 signed two-App、connected-radio 與 RF gate 通過後標為 available。
 
 ---
 
@@ -291,94 +326,83 @@ flowchart TB
 
 ### 7.2 單一 radio owner 規則
 
-1. MeshLink process 是唯一可建立 Meshtastic BLE/TCP transport 的 process。
+1. MeshLink process 是唯一可建立 Meshtastic transport 的 process；iOS 1.0 只啟用 Kable/CoreBluetooth BLE。
 2. NTsocial provider adapter 僅寫 command mailbox、讀 projection。
 3. companion 未安裝／未開啟／權限不足時，provider 回傳明確 degraded/unavailable，不可偷偷自行連 radio。
 4. 如果未來要支援 embedded mode，必須另立 ADR 與授權審查，不得在 1.0 偷渡。
 
 ---
 
-## 8. 建議程式碼與模組配置
+## 8. 已實作的程式碼與模組配置
 
-以下路徑為新增／調整建議；實際 package 名稱應服從現有 Gradle convention，但責任不可混合。
+目前 source 的主要配置如下；未列出的 shared Android／Desktop modules 仍維持原責任，不因 iOS host
+而複製：
 
 ```text
 iosApp/
   NTsocialMeshLink.xcodeproj
-  App/
+  NTsocialMeshLink/
     NTsocialMeshLinkApp.swift
-    AppLifecycleCoordinator.swift
-    DependencyContainer.swift
-  Platform/
-    Bluetooth/
-      MeshtasticBluetoothTransport.swift
-      BluetoothStateRestoration.swift
-      BluetoothPermissionService.swift
-    Security/
-      SharedKeychainStore.swift
-      CommandAuthenticator.swift
-    Gateway/
-      AppGroupLocation.swift
-      GatewayNotificationHint.swift
-    Diagnostics/
-      DiagnosticExporter.swift
-  UI/
-    Onboarding/
-    Radio/
-    Channels/
-    Diagnostics/
+    ComposeRootView.swift
+    AppleGatewayBootstrap.swift
+    Info.plist
+    NTsocialMeshLink.entitlements
+    PrivacyInfo.xcprivacy
+    Assets.xcassets/AppIcon.appiconset/
+  Tools/normalize_skiko_icu_archive.sh
+
+ios/runtime/src/
+  commonMain/.../
+    IosGatewayRadioSessionGuard.kt
+    IosGatewayProjectionSignal.kt
+    BoundedGatewayRetryScheduler.kt
+    GatewayCommandDrain.kt
+    IosShell*.kt / IosConnectionScreen.kt
+  iosMain/.../
+    IosCompositionRoot.kt / MeshLinkRuntime.kt
+    IosAppleGatewayCoordinator.kt
+    IosAppleGatewayRadioPort.kt / IosAppleGatewayWakeSink.kt
+    IosDurableMessageQueue.kt
+    IosRadioTransportFactory.kt / IosRadioUiPort.kt
 
 core/ble/src/iosMain/kotlin/
-  IosRadioTransport.kt
-  IosRadioTransportBridge.kt
-  IosBluetoothPermission.kt
+  IosBluetoothRepository.kt
+  KablePlatformSetup.kt
 
 core/database/src/iosMain/kotlin/
-  IosDatabaseFactory.kt
-  IosMigrationRunner.kt
+  DatabaseBuilder.kt
 
 core/gateway/src/commonMain/kotlin/
-  GatewaySchema.kt
-  GatewayStatus.kt
-  GatewayCommand.kt
-  GatewayResult.kt
-  RouteTokenService.kt
-  IdempotencyStore.kt
+  AppleGatewayContract/Models/Schema/Store.kt
+  AppleGatewayCommandCodec/Validator.kt
+  AppleGatewayRouteRegistry/PrivateLedger/Idempotency.kt
+  AppleGatewayProviderEngine/RadioPort.kt
 
-core/gateway/src/iosMain/kotlin/
-  AppleGatewayRepository.kt
-  AppleGatewayWorker.kt
-  AppleGatewayCryptoBridge.kt
-
-core/platform/src/iosMain/kotlin/
-  SecureRandomIos.kt
-  ClockIos.kt
-  UuidIos.kt
-  FileProtectionIos.kt
-
-contract-fixtures/
-  gateway-v2/
-    status/*.json
-    channels/*.json
-    message-changes/*.json
-    commands/*.json
-    results/*.json
+shared common modules/
+  RadioSessionState + generation-bound transport callbacks
+  RadioIngressWorkTracker + awaited packet-queue generation barrier
+  active per-radio DatabaseManager + direct node-cache hydration
+  exact Gateway ingress identity + channel repair/provision fail-closed
 ```
 
 ### 8.1 Swift 與 Kotlin 的責任切割
 
-- Swift actor/serial queue：持有 `CBCentralManager`、`CBPeripheral`、characteristic reference、state restoration callback。
-- Kotlin common：Meshtastic framing、service state machine、message policy、queue、retry、repository、Gateway domain。
-- Bridge：只傳 immutable byte arrays/events；所有 callback 必須回到單一序列化 executor。
-- 禁止 Swift 與 Kotlin 各自實作一套 reconnect state machine。Swift 管 transport facts；Kotlin 管 protocol/service decisions。
+- Swift host：只負責 App lifecycle/scene、App Group path、shared-Keychain bootstrap、payload-free Darwin hint、
+  deep link 與 Compose view-controller embedding；不持有另一套 `CBCentralManager`／Meshtastic transport。
+- Kable/CoreBluetooth iOS actual：負責 Bluetooth availability、scan、peripheral reconstruction、GATT、
+  restoration configuration 與 negotiated write length，是唯一 Apple BLE transport owner。
+- Kotlin common/runtime：負責 Meshtastic framing、radio/service state machine、Room、message queue/retry、
+  repository、exact session/database barriers、Apple Gateway domain 與 focused Compose UI。
+- 禁止 Swift 與 Kotlin 各自實作 reconnect state machine；所有 retired transport callback 都先通過
+  generation-bound serialized validation，才可改變 shared session 或投遞 bytes。
 
 ---
 
-## 9. CoreBluetooth transport 施工規格
+## 9. Kable/CoreBluetooth transport 實作與實機 gate
 
-### 9.1 Transport actor
+### 9.1 單一 transport owner
 
-建立 `MeshtasticBluetoothTransport` actor（或一個明確的 serial delegate queue owner）：
+現行 source 由 Kable/CoreBluetooth actual 擔任唯一 owner；不得再建立平行 Swift transport：
 
 - `CBCentralManager` 使用固定 restoration identifier。
 - 掃描只針對 Meshtastic service UUID；不做無限制全頻掃描。
@@ -393,6 +417,8 @@ contract-fixtures/
 - restoration callback 只恢復可證明的 peripheral/session，不把 stale reference 當成 ready。
 
 ### 9.2 Transport 狀態
+
+下圖是 UI／QA 應區分的 readiness 真相模型，不是授權另建一套 Swift reconnect state machine：
 
 ```mermaid
 stateDiagram-v2
@@ -422,11 +448,23 @@ stateDiagram-v2
 - required services/characteristics discovered；
 - notification subscription successful；
 - protocol handshake completed；
-- private DB selected/opened；
-- radio generation 已建立；
-- inbound/outbound queues 可用。
+- persisted radio selection 已 authoritative hydrate，且其 private DB selected/opened；
+- active DB 的 node cache 已由 direct snapshot hydrate；
+- radio／transport callback／inbound／outbound generation 已建立且一致；
+- complete channel readback/final snapshot 已綁定同一 configured session；
+- inbound/outbound queues 已 resume 且可用。
 
 UI 不得把「BLE connected」直接顯示成「Meshtastic ready」。
+
+Radio selection／replacement 使用同一 awaited barrier：同步撤銷 retired transport callback generation，
+停止新 ingress/outbound admission，等待舊 handler、child persistence、queue worker、status 與 mesh-log write
+完成，切換 active per-radio DB 並 hydrate cache，最後才 resume ingress、建立 replacement transport。任何
+stale callback、已 dequeue 的舊-generation packet、late database collector 或舊 handshake completion 都不可
+改變新 session／DB。Manual／QR、repair/reconcile 與 built-in provision 由 mutation boundary 完整序列化，但
+短期 operation boundary 會釋放讓 readback producer commit；每次 mutation 前 invalidate ingress，只有 host
+owner/token 將 firmware 69420 config-only response 歸屬到同一 configured session 並完成專用 completion flow
+後才 activate。Radio rejection、readback failure 或 acknowledgement timeout 不得用 cache 猜測成功。
+Durable Gateway packet 另在 actual dispatch 重新驗證持久化 source identity；slot/PSK 改變即 fail closed。
 
 ### 9.3 測試注入點
 
@@ -458,6 +496,7 @@ iOS 沒有 Android foreground service 等價物，因此設計必須把「可恢
 | app active | reconcile permission、radio、mailbox、pending result |
 | app inactive/background | flush transaction、保存 queue/cursor、交給 CoreBluetooth restoration |
 | Bluetooth off | generation rollover、route token invalidation、狀態設為 unavailable |
+| radio selection replacement | revoke retired callback、quiesce ingress/outbound、switch DB/hydrate cache、再 connect |
 | protected data unavailable | 暫停 DB/Gateway，不做破壞性重建 |
 | user disconnect | polite disconnect、停止 auto reconnect |
 | account panic wipe | 先停止 runtime、關 DB、清 Keychain/App Group/private storage |
@@ -474,7 +513,7 @@ iOS 沒有 Android foreground service 等價物，因此設計必須把「可恢
 
 ---
 
-## 11. Apple Gateway v2
+## 11. Apple Gateway v1（已實作 contract）
 
 ### 11.1 傳輸選擇
 
@@ -486,103 +525,42 @@ iOS 沒有 Android foreground service 等價物，因此設計必須把「可恢
 - URL scheme／universal link：需要使用者介入時開啟 companion。
 - 不採用 clipboard、local HTTP server、私有 API、直接讀 companion private DB。
 
-### 11.2 Shared SQLite 建議
+### 11.2 Shared SQLite
 
-檔案：`<AppGroup>/MeshLinkGateway/gateway-v2.sqlite`
+檔案：App Group `group.com.ntsocial.meshlink.gateway` 中的 `gateway-v1.sqlite`；`PRAGMA user_version = 1`。
 
 規則：
 
 - WAL mode、foreign keys、busy timeout。
-- schema migration 必須是 transactional。
+- schema 初始化／additive migration 必須是 transactional；reader 遇到較新 schema 必須 fail closed。
 - 每張表指定 writer，避免雙方改同一 row：
-  - NTsocial：`command_queue`
-  - MeshLink：status/channel/message projection、`command_result`
-- command 消費使用 compare-and-set claim transaction。
+  - NTsocial：immutable `command_inbox`、自己的 `consumer_cursor`。
+  - MeshLink：status/caller/channel projections、`command_claim`、append-only `command_result`、overlay/native ingress。
+- command 消費以獨立 `command_claim` 做 reclaimable claim transaction；不改寫 immutable inbox row。
 - 資料庫 corruption 不可靜默清空；先備份、回報 health、重建 projection，commands 必須可稽核。
 - iOS file protection 使用「首次解鎖後可用」等符合背景 restoration 的等級；敏感 key 仍留在 Keychain。
-- projection 可重建；command/result/idempotency 不可任意丟棄。
+- projection 可重建；command/result/cursor 不可任意丟棄。Authoritative route 與 private idempotency ledger 均不在 App Group。
 
 ### 11.3 Schema
 
+現行 schema-v1 的共享表為 `gateway_meta`、`gateway_caller_projection`、`channel_projection`、
+`command_inbox`、`command_claim`、`command_result`、`overlay_ingress`、`overlay_epoch_state`、
+`native_message_change`、`consumer_cursor` 與 `used_nonce`。欄位與 index 的唯一 source of truth 是
+`AppleGatewaySchema.kt`，並須與母程式的 Swift mailbox schema 同步。
+
+本輪新增但不提升 `user_version` 的 additive state 為：
+
 ```sql
-CREATE TABLE gateway_meta (
-    key TEXT PRIMARY KEY,
-    value BLOB NOT NULL
-);
-
-CREATE TABLE status_projection (
-    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
-    schema_version INTEGER NOT NULL,
-    provider_instance_id TEXT NOT NULL,
-    provider_state TEXT NOT NULL,
-    bearer TEXT NOT NULL,
-    capabilities_json TEXT NOT NULL,
-    radio_generation INTEGER NOT NULL,
+CREATE TABLE IF NOT EXISTS overlay_epoch_state (
     history_epoch TEXT NOT NULL,
-    message_change_seq INTEGER NOT NULL,
-    background_mode TEXT NOT NULL,
-    updated_at_ms INTEGER NOT NULL
-);
-
-CREATE TABLE channel_projection (
-    source_channel_id TEXT PRIMARY KEY,
-    display_name TEXT,
-    slot INTEGER,
-    role TEXT NOT NULL,
-    security_mode TEXT NOT NULL,
-    capabilities_json TEXT NOT NULL,
-    route_token TEXT,
-    route_expires_at_ms INTEGER,
-    radio_generation INTEGER NOT NULL,
-    updated_at_ms INTEGER NOT NULL
-);
-
-CREATE TABLE message_change (
-    sequence INTEGER PRIMARY KEY,
-    history_epoch TEXT NOT NULL,
-    source_message_id TEXT NOT NULL,
-    source_channel_id TEXT,
-    from_node_id TEXT,
-    to_node_id TEXT,
-    message_kind TEXT NOT NULL,
-    text TEXT,
-    status TEXT NOT NULL,
-    sent_at_ms INTEGER,
-    received_at_ms INTEGER,
-    rx_rssi INTEGER,
-    rx_snr REAL,
-    hop_count INTEGER,
-    UNIQUE(history_epoch, source_message_id, status)
-);
-
-CREATE TABLE command_queue (
-    command_id TEXT PRIMARY KEY,
-    client_message_id TEXT NOT NULL,
-    caller_instance_id TEXT NOT NULL,
-    command_type TEXT NOT NULL,
-    canonical_payload BLOB NOT NULL,
-    request_fingerprint TEXT NOT NULL,
-    key_version INTEGER NOT NULL,
-    nonce TEXT NOT NULL,
-    created_at_ms INTEGER NOT NULL,
-    expires_at_ms INTEGER NOT NULL,
-    signature BLOB NOT NULL,
-    state TEXT NOT NULL,
-    claimed_at_ms INTEGER,
-    UNIQUE(caller_instance_id, client_message_id)
-);
-
-CREATE TABLE command_result (
-    command_id TEXT PRIMARY KEY,
-    client_message_id TEXT NOT NULL,
-    state TEXT NOT NULL,
-    packet_id TEXT,
-    error_code TEXT,
-    error_detail_safe TEXT,
-    accepted_at_ms INTEGER,
-    updated_at_ms INTEGER NOT NULL
+    high_water INTEGER NOT NULL CHECK (high_water >= 0),
+    PRIMARY KEY (history_epoch)
 );
 ```
+
+`appendNextOverlayIngress` 在同一 transaction 讀取／遞增此 high-water 並寫 ingress；retention 刪除舊
+`overlay_ingress` rows 不得降低 high-water。若開啟既有 v1 DB 時缺此表，初始化會從 retained rows 的
+`MAX(change_seq)` backfill；explicit reset 同時清除此 state。這避免清空 retained rows 後 sequence 重用。
 
 不得在 shared schema 出現：
 
@@ -598,52 +576,42 @@ CREATE TABLE command_result (
 
 ```json
 {
-  "schemaVersion": 2,
-  "providerBundleId": "com.ntsocial.meshlink.ios",
-  "providerInstanceId": "installation-uuid",
-  "providerState": "READY",
-  "bearer": "MESHTASTIC",
-  "capabilities": [
-    "NATIVE_TEXT_SEND",
-    "NATIVE_TEXT_HISTORY",
-    "CHANNEL_ROUTES",
-    "MESSAGE_CHANGES"
-  ],
-  "radioGeneration": 42,
+  "schemaVersion": 1,
+  "providerInstanceId": "process-uuid",
+  "readiness": "READY",
+  "radioGeneration": "opaque-generation",
   "historyEpoch": "epoch-uuid",
-  "messageChangeSeq": 1288,
-  "backgroundMode": "BEST_EFFORT",
-  "updatedAtMs": 1786057200000
+  "overlayHighWater": 1288,
+  "nativeTextHighWater": 4096,
+  "activeKeyVersion": 1,
+  "updatedAtMillis": 1786057200000
 }
 ```
 
-Reader 必須忽略未知 capability／field；writer 不可重用已改變語意的欄位。
+Channel capability、route token 與 expiry 位於 `channel_projection`；reader 必須拒絕較新 schema，且不可重用已改變語意的欄位。`READY` 只表示 selected/active radio、session epoch/configuration、active per-radio DB、complete readback/final snapshot、Bluetooth、transport/App state 與 channel fingerprint 的 exact guard 當下可 admission，不代表背景永久在線或 RF delivered。
 
 ### 11.5 Command envelope
 
 ```json
 {
-  "schemaVersion": 2,
-  "commandId": "uuid",
-  "clientMessageId": "stable-client-id",
-  "callerInstanceId": "ntsocial-installation-id",
-  "commandType": "SEND_NATIVE_TEXT",
+  "schemaVersion": 1,
+  "requestId": "uuid",
+  "callerId": "com.ntsocial.ios",
+  "clientMessageId": "0123456789ABCDEF0123456789ABCDEF",
   "sourceChannelId": "meshtastic-channel-id",
-  "routeToken": "short-lived-token",
-  "radioGeneration": 42,
-  "targetNodeId": "!12345678",
-  "payload": {
-    "text": "hello"
-  },
-  "createdAtMs": 1786057200000,
-  "expiresAtMs": 1786057320000,
-  "nonce": "base64url-128bit",
+  "routeToken": "base64url-32-bytes",
+  "radioGeneration": "opaque-generation",
+  "issuedAtMillis": 1786057200000,
+  "expiresAtMillis": 1786057320000,
   "keyVersion": 1,
-  "signature": "base64url-hmac-sha256"
+  "nonce": "16-bytes",
+  "commandType": "NATIVE_BROADCAST_TEXT",
+  "bodyPayload": "hello",
+  "authenticationTag": "hmac-sha256"
 }
 ```
 
-簽章輸入必須是 deterministic canonical representation，不可直接簽未定序 JSON。
+實際 persisted row 使用 typed columns／BLOB，不以 JSON 為 wire format。簽章輸入是 versioned、length-delimited canonical bytes，不可直接簽未定序 JSON。Native text 僅允許 nonblank、最多 180 UTF-8 bytes 的 broadcast；不接受 target node。另一 command body 是完整且通過驗證的 `NM` envelope。
 
 ### 11.6 驗證順序
 
@@ -651,49 +619,53 @@ Reader 必須忽略未知 capability／field；writer 不可重用已改變語�
 schema supported
 → required fields/type/size
 → created/expires clock window
-→ nonce format
 → key version
+→ nonce format
 → HMAC constant-time verify
-→ caller installation enabled
+→ exact accepted-ledger lookup（crash replay／conflict）
+→ expiry（只阻止新 admission，不阻止 exact accepted replay）
 → route token / source channel / generation
-→ clientMessageId reservation
-→ request fingerprint comparison
-→ durable accepted result
-→ enqueue radio work
+→ nonce reservation
+→ body validation
+→ private PENDING ledger reservation／fingerprint comparison
+→ exact session/channel guard under `ChannelOperationLock`
+→ Room＋durable retry queue admission
+→ private ACCEPTED ledger commit
+→ append-only `ACCEPTED_LOCAL` result
 ```
 
-任何一步失敗都不得建立 radio packet。
+只有通過 route/session/body/idempotency 驗證才可建立或 exact-content-check radio packet。若 radio admission 已完成但 ACCEPTED ledger commit 失敗，回傳 retryable `PENDING_PROVIDER_WAKE`／`QUEUE_FAILED` 並釋放 claim；這不能證明 packet 未排程，caller 必須以同一 client ID retry。
 
 ### 11.7 Route token
 
 - 32 bytes CSPRNG，Base64URL。
 - TTL 120 秒。
-- 綁定 `callerInstanceId + sourceChannelId + radioGeneration + capabilities`。
-- 儲存 token hash，不必在 private store 保存明文。
-- generation change、channel removed、security context change、panic wipe 時全部撤銷。
+- 綁定 exact caller `com.ntsocial.ios`、`sourceChannelId`、captured slot、opaque generation 與 routing capability。
+- Authoritative route 只存在 MeshLink process memory；App Group 只投影短期明文 token，process restart 不保留 route。
+- process restart、selected/active radio、session epoch/configured、active per-radio DB、complete readback/final snapshot、Bluetooth、transport/App state、history epoch、complete channel fingerprint 任一 routing-context inequality、channel removed 或 panic wipe 都撤銷舊 route。
 - route projection 可包含短期明文 token；過期後 parent 必須重新讀 channels。
 - token error 分為 `ROUTE_EXPIRED`、`ROUTE_GENERATION_MISMATCH`、`ROUTE_NOT_AUTHORIZED`，不可只回傳 generic failure。
 
 ### 11.8 Durable idempotency
 
-`requestFingerprint` 至少涵蓋：
+`requestFingerprint` 涵蓋 canonical command semantics，包括：
 
 ```text
 commandType
 sourceChannelId
-targetNodeId
 canonical payload hash
 radioGeneration
-routing mode
+routing／delivery flags
 ```
 
 規則：
 
 - 同 caller＋同 `clientMessageId`＋同 fingerprint：回傳原結果，不重送。
 - 同 caller＋同 `clientMessageId`＋不同 fingerprint：`IDEMPOTENCY_CONFLICT`。
-- record 至少保存到訊息最長 retry window＋安全餘量；以有界 LRU/age pruning 管理。
-- pruning 不可刪除仍為 pending/in-flight 的 record。
+- private ledger 每 caller 最多保留 256 筆 insertion-ordered record，沒有 TTL；不得放進 App Group。
+- pruning 不可刪除仍為 pending/in-flight 的 record；accepted record 可在新 process、route 已遺失或 command 已過期後重建同一 `ACCEPTED_LOCAL` result，且不做第二次 radio admission。
 - packet ID 應由 stable inputs deterministic derivation，避免 App crash 後換 ID 重送。
+- 這是 restart-stable local idempotency，不是 exactly-once RF；在 local admission 與 ACCEPTED ledger commit 間 crash，實體 RF 仍可能重複。
 
 ---
 
@@ -706,19 +678,24 @@ sequenceDiagram
     participant N as NTsocial iOS
     participant Q as App Group Queue
     participant G as MeshLink Gateway
+    participant L as Private Ledger
     participant R as Radio Service
     participant M as Meshtastic Node
 
     N->>N: 建立 clientMessageId
     N->>Q: 寫入 signed command transaction
     N-->>G: Darwin notification（提示）
-    G->>Q: 驗證／claim／idempotency reserve
-    G->>Q: 寫 ACCEPTED_LOCAL
-    G->>R: enqueue native text / overlay
+    G->>Q: claim immutable command
+    G->>G: HMAC／route／exact session guard
+    G->>L: reserve PENDING
+    G->>R: durable Room/retry admission
+    G->>L: commit ACCEPTED
+    G->>Q: append ACCEPTED_LOCAL
     R->>M: Meshtastic packet
-    R->>Q: 更新 SENT_TO_RADIO / ACK / FAILED
     N->>Q: 以 result cursor 讀取狀態
 ```
+
+`R->>M` 是 admission 後的可能後續，不由 `ACCEPTED_LOCAL` 證明；Apple Gateway v1 不在 App Group 虛構 `SENT_TO_RADIO`、ACK 或 remote-delivery state。
 
 ### 12.2 LoRa → NTsocial
 
@@ -733,10 +710,17 @@ sequenceDiagram
     M->>R: inbound packet
     R->>R: decode / validate / deduplicate
     R->>D: 保存 radio-native record
-    R->>G: append normalized message_change
+    R->>G: append complete overlay 或 stable native insertion
     R-->>N: Darwin notification（若 process 存活）
     N->>G: read after historyEpoch + sequence
-    N->>N: map/deduplicate into canonical social history
+    N->>N: current/historical source resolve / deduplicate
+    alt valid row
+        N->>N: canonical commit
+        N->>G: canonical commit 後才前進 cursor
+    else irrecoverable gap / poison / expired transfer
+        N->>N: durable terminal gap/quarantine record
+        N->>G: terminal record 後才 bounded advance
+    end
 ```
 
 ### 12.3 Send state
@@ -745,15 +729,14 @@ sequenceDiagram
 CREATED
 → AUTHENTICATED
 → ROUTE_VALIDATED
-→ RESERVED
+→ PENDING_LEDGER_RESERVED
+→ DURABLY_ADMITTED_TO_ROOM_AND_RETRY_QUEUE
+→ ACCEPTED_LEDGER_COMMITTED
 → ACCEPTED_LOCAL
-→ QUEUED_RADIO
-→ SENT_TO_RADIO
-→ ACKNOWLEDGED（若 protocol 有可信 ack）
-→ DELIVERED（只有具備端到端證據時才可使用）
 ```
 
-Failure 可發生於任一階段，必須包含 stable error code。UI 文案必須區分：
+Failure 可發生於任一階段，必須包含 stable error code。Apple Gateway v1 現行結果只表示
+`PENDING_PROVIDER_WAKE`、`ACCEPTED_LOCAL` 或 `REJECTED`；它不虛構後續 RF 狀態。UI 文案必須區分：
 
 - 已排入 MeshLink；
 - 已交給 radio；
@@ -764,11 +747,13 @@ Failure 可發生於任一階段，必須包含 stable error code。UI 文案必
 
 ### 12.4 Cursor 與 history epoch
 
-- parent cursor 為 `(historyEpoch, sequence)`。
+- parent 的 overlay/native cursor 都以 `(historyEpoch, sequence)` 為 domain。
 - projection 重建、不可相容 migration 或資料 wipe 時產生新 `historyEpoch`。
 - parent 發現 epoch 改變時，執行 bounded resync，而不是沿用舊 sequence。
-- `message_change` 必須 append-only；狀態更新以新 change 表示，不覆蓋導致漏讀。
-- retention 截斷時，status 提供 `oldestAvailableSequence`；落後 reader 必須收到 `CURSOR_TOO_OLD`。
+- `native_message_change` 是 stable-only insertion stream；更新／刪除不產生 change 或 tombstone，legacy nullable identity 不從目前 slot 重算。
+- `overlay_ingress` 最多保留 128 rows，但 `overlay_epoch_state` 的 high-water 不隨 retention 倒退。Parent 發現同 epoch retention gap 時，先 durable 記錄 gap terminal，再 bounded advance 到 `firstRetained - 1`；這保留可稽核的資料遺失事實，不宣稱已淘汰 row 可恢復。
+- Malformed envelope 或 deterministic poison 先 durable quarantine terminal 才可略過；lost/expired multipart transfer 先 durable abandoned-transfer terminal 才可清理／續讀。Transient store/projection failure 不寫 terminal、不前移 cursor，保持 retryable。
+- current catalog replacement 不得使同 epoch 已持久化 backlog 無法匯入；母程式以 historical source resolver 處理既有 overlay/native rows，但新送出仍只使用 current route projection。相同 stable source 的 catalog duplicates 在 outbound 保留各 slot route，canonical/history 則 PRIMARY 優先、再 lowest slot collapse；security semantics 衝突時 fail closed。
 
 ---
 
@@ -824,7 +809,7 @@ Failure 可發生於任一階段，必須包含 stable error code。UI 文案必
 | 偽造 command | App Group entitlement＋HMAC-SHA256＋key version |
 | replay | nonce、expiresAt、durable clientMessageId reservation |
 | route confused deputy | token 綁 caller/channel/generation/capability |
-| duplicate LoRa send | durable idempotency＋deterministic packet ID |
+| duplicate LoRa send | durable idempotency＋deterministic packet ID；exact accepted replay 不再 admission，但 local-admission/ledger-commit crash gap 不是 exactly-once RF |
 | DB tamper/corruption | schema validation、transaction、health fail-closed、audit |
 | secret leakage | shared projection 禁止 PSK/raw config；logs redaction |
 | stale Bluetooth identity | peripheral UUID 只作 transport hint；handshake node identity 才是真相 |
@@ -835,10 +820,9 @@ Failure 可發生於任一階段，必須包含 stable error code。UI 文案必
 
 ### 14.3 Key lifecycle
 
-- 首次完成 companion pairing/handshake 時建立 256-bit HMAC key。
+- Swift bootstrap 在 protected data、App Group 與 shared-Keychain access 可用時讀取／建立 256-bit HMAC key；不依賴 radio pairing 完成。
 - Keychain item 使用明確 access group、service、key version。
-- rotation：建立新 key → 雙讀短窗口 → parent 確認 → 停用舊 key。
-- panic wipe／team entitlement 改變／疑似 compromise 時立即撤銷。
+- 現行 source 使用 active key version 1；rotation、panic wipe／team entitlement 改變／疑似 compromise 的雙 App lifecycle 尚需 signed-device 設計與驗證，不可從 source bootstrap 推論已完成。
 - key 不可寫入 App Group SQLite、UserDefaults、log 或 diagnostic bundle。
 
 ### 14.4 Logging
@@ -867,16 +851,15 @@ Failure 可發生於任一階段，必須包含 stable error code。UI 文案必
 
 ## 15. UI 最小範圍
 
-iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
+iOS MeshLink 1.0 不複製母程式 social UX 或完整 Android/Meshtastic UI；目前最小範圍為：
 
-1. onboarding：用途、GPL/third-party notice、Bluetooth 權限、如何開啟 node；
-2. radio picker：掃描結果、上次裝置、連線階段；
-3. connection health：Bluetooth、protocol、DB、Gateway、background 限制分開顯示；
-4. channel/node 基本檢視；
-5. 原生 Meshtastic text 的最小驗證介面，供不依賴 NTsocial 的 RF 測試；
-6. NTsocial integration health：App Group、Keychain、last command、last projection；
-7. diagnostics：建立已 redacted bundle、顯示 app/build/schema/protocol 版本；
-8. disconnect、forget radio、reset gateway、panic wipe。
+1. host/App Group／Keychain bootstrap readiness；
+2. Bluetooth permission/power 與 radio scan／selection；
+3. connect/configuration state、disconnect、forget；
+4. best-effort background truth與 parent handoff；
+5. NTsocial integration readiness，不顯示 payload 或 secret。
+
+Routes/channel browser、native-text composer、command-results admin、Gateway reset/panic-wipe UI、diagnostic export、maps、firmware 與 broad settings 均 deferred。Native broadcast-text egress 已由母程式 authenticated adapter API 提供，不需在 companion 複製 composer。
 
 禁止以單一綠燈掩蓋「BLE connected 但 handshake/Gateway 未 ready」。
 
@@ -890,7 +873,7 @@ iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
 
 - ADR-001 合併。
 - 鎖定 iOS deployment target、Swift/Kotlin/Gradle/Xcode version。
-- 建立 Gateway v2 neutral schema 與 fixtures。
+- 建立 Gateway v1 neutral schema 與 fixtures。
 - 建立 third-party notices、GPL source/release policy。
 - 定義 bundle IDs、App Group ID、Keychain access group、URL scheme。
 - 建立單一 radio owner invariant 與 threat model。
@@ -899,7 +882,7 @@ iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
 
 - Android contract fixtures 全數可由 common module decode。
 - iOS 架構、授權與 entitlement naming 經 engineering/release 審查。
-- 沒有任何人把 `NTsocial_release` 當作本 PR 的可寫入範圍。
+- 母程式變更只在另行授權、獨立審查的工作樹／PR 中進行。
 
 ### Phase 1 — iOS KMP production baseline（P0）
 
@@ -917,14 +900,14 @@ iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
 - cold start/restart 後 DB state、installation ID、idempotency record 可保留。
 - Bluetooth denied/off 狀態可正確顯示，不 crash。
 
-### Phase 2 — CoreBluetooth/TCP radio transport（P0）
+### Phase 2 — Kable/CoreBluetooth BLE radio transport（source 已完成；device gate P0）
 
-**交付**
+**已完成 source**
 
-- CoreBluetooth transport actor、scan/connect/discover/subscribe/handshake。
-- framing、fragmentation、write backpressure、reconnect、state restoration。
-- 接入 `SharedRadioInterfaceService` 與 `DirectRadioControllerImpl`。
-- 可選 TCP transport：只在 Android 已有語意可共用且不延誤 BLE P0 時加入。
+- Kable iOS availability、scan、peripheral UUID reconstruction、GATT profile 與 restoration configuration。
+- negotiated maximum write length、shared framing／queue／reconnect path。
+- 接入 `SharedRadioInterfaceService`、`DirectRadioControllerImpl` 與 generation-bound callback guard。
+- TCP／USB／serial 不在 iOS 1.0 範圍；backend parity 只有新產品需求與獨立 gate 時再評估。
 
 **退出條件**
 
@@ -932,22 +915,21 @@ iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
 - background/foreground、Bluetooth off/on、node reboot 後可恢復。
 - 無雙重 reconnect state machine、無 unbounded queue。
 
-### Phase 3 — iOS companion host 與 diagnostics（P0）
+### Phase 3 — iOS companion host 與 focused diagnostics（source／simulator 已完成；device gate P0）
 
-**交付**
+**已完成 source**
 
-- lifecycle coordinator、onboarding、radio picker、health UI。
-- startup/restore/disconnect/forget/panic wipe。
-- redacted diagnostic export。
-- crash breadcrumbs 與 state-transition metrics。
+- SwiftUI lifecycle host、Compose root、radio picker、integration/health UI。
+- startup、foreground handoff、scan/select/connect/disconnect/forget。
+- source Privacy Manifest、AppIcon asset catalog 與 fail-closed ICU normalization。
+- Gateway reset/panic-wipe UI、diagnostic export、routes/results browser 與 broad settings deferred。
 
 **退出條件**
 
-- 使用者可不依賴 NTsocial 完成配對、channel 檢視與 native text smoke test。
-- panic wipe 經測試不留下 private DB、shared projection 或 Keychain key。
+- 使用者可不依賴 NTsocial 完成配對與連線／integration readiness 檢視；native-text egress 由母程式 adapter API 提供，companion composer deferred。
 - background 限制以真實文案呈現。
 
-### Phase 4 — Apple Gateway v2（P0）
+### Phase 4 — Apple Gateway v1（source 已完成；signed cross-process gate P0）
 
 **交付**
 
@@ -965,16 +947,17 @@ iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
 - shared DB 不含禁止資料。
 - Android/iOS fixtures 的 domain semantics 一致。
 
-### Phase 5 — NTsocial iOS provider adapter（母程式後續；本次不修改）
+### Phase 5 — NTsocial iOS provider adapter（source 已完成；signed device integration 待驗證）
 
-**交付建議**
+**已完成 source**
 
-- 新增 App Group／Keychain entitlements。
-- 實作 `MeshtasticProvider` adapter。
-- provider health 接到既有 startup/runtime owner。
-- backend selector 顯示 companion missing/locked/permission/background states。
-- canonical social history 做 source message ID dedupe。
-- command acceptance 與 delivery 狀態文案分離。
+- source App Group／Keychain entitlement 宣告與 `MeshLinkGatewayAdapter`。
+- provider health 接到既有 startup/runtime owner；stop/start 會 detach／reattach observer/provider。
+- canonical social history 做 source message ID dedupe；outbound 保留 duplicate source 的 slot routes，canonical/history 以 PRIMARY 優先、再 lowest slot collapse，security conflict fail closed，並以 same-epoch historical source resolver 處理 catalog replacement 後 backlog。
+- overlay 與 native ingress 先 commit canonical store 再前進 cursor；retention gap／malformed poison／lost-or-expired transfer 只有在 durable terminal record 後才做 bounded recovery，transient failure 不前移。
+- complete `NM` 與 authenticated native broadcast-text enqueue API；parent composer deferred。
+- command acceptance 與 delivery 狀態文案分離；first-send pending 有 exact message/attempt/transport durable correlation，multipart 等所有 part terminal 才整體 accepted，任一 rejection 只 fail 一次，後續 part result 只 drain cursor。
+- chunked restart 保存 final social-header ID、attempt、part metadata、transfer ID 與 logical channel，不從 wrapper header 或 hard-coded channel semantics 重建。
 
 **退出條件**
 
@@ -1013,14 +996,14 @@ iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
 | IOS-010 | P0 | secure RNG、clock、UUID actual | KMP/iOS | M | deterministic tests＋CSPRNG device test |
 | IOS-011 | P0 | private SQLite DB/migration | KMP/Data | L | restart/crash/migration matrix 通過 |
 | IOS-012 | P0 | Keychain adapter/rotation | iOS/Security | M | key 不落 disk/log，rotation test 通過 |
-| IOS-020 | P0 | CoreBluetooth transport owner | iOS/BLE | XL | scan→ready→disconnect 完整 |
+| IOS-020 | P0 | Kable/CoreBluetooth transport owner | iOS/BLE | XL | scan→ready→disconnect 完整 |
 | IOS-021 | P0 | reconnect/state restoration | iOS/BLE | L | background、BT toggle、node reboot 通過 |
 | IOS-022 | P0 | framing/MTU/backpressure | BLE/KMP | L | fragmentation/load tests 無丟包或 OOM |
-| IOS-023 | P1 | TCP transport parity | Network/KMP | M | 與 common transport contract 相容 |
+| IOS-023 | deferred | non-BLE transport parity | Network/KMP | M | 不屬 iOS 1.0；有獨立產品需求／ADR 才啟動 |
 | IOS-030 | P0 | lifecycle runtime owner | iOS | L | cold/warm/background/panic wipe 通過 |
 | IOS-031 | P0 | background truth model | iOS/Product | M | health/UI 不做虛假 always-on 承諾 |
 | IOS-032 | P0 | permissions/onboarding | iOS/UI | M | denied/restricted/off/on 流程完整 |
-| IOS-040 | P0 | Gateway v2 common schema | KMP/API | L | golden fixtures＋compat tests |
+| IOS-040 | P0 | Gateway v1 common schema | KMP/API | L | golden fixtures＋compat tests |
 | IOS-041 | P0 | App Group projection DB | iOS/Data | L | cross-process read/write/recovery 通過 |
 | IOS-042 | P0 | signed command envelope | Security/KMP | L | tamper/replay/expiry tests 通過 |
 | IOS-043 | P0 | route token service | Security/KMP | M | caller/channel/generation/TTL 綁定 |
@@ -1031,7 +1014,7 @@ iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
 | IOS-060 | P0 | Android/iOS contract fixtures | QA/KMP | L | CI 雙端 decode/encode 通過 |
 | IOS-061 | P0 | RF interoperability matrix | QA/BLE | XL | node/firmware/message types 有證據 |
 | IOS-062 | P0 | chaos/lifecycle/security suite | QA/Security | XL | P0 failure modes automation/record |
-| IOS-070 | P0 | NTsocial parent adapter proposal | iOS/API | L | read-only repo 開獨立後續 PR |
+| IOS-070 | P0 | NTsocial parent adapter | iOS/API | L | source＋27/27 focused／668/668 full tests＋green release build；signed dual-App gate 另驗 |
 | IOS-071 | P0 | TestFlight/release runbook | Release | L | signed archive、staged rollout、rollback |
 
 ---
@@ -1055,7 +1038,7 @@ iOS MeshLink 1.0 不需要複製所有 Android 畫面，但至少必須具備：
 
 - Android producer → neutral fixture → iOS reader。
 - iOS producer → neutral fixture → Android/common reader。
-- v1 reader 讀 v2 additive payload。
+- early-v1 reader／database 與 current schema-v1 additive table migration。
 - unknown capability/field。
 - missing required field。
 - old/new schema coexist。
@@ -1202,19 +1185,19 @@ iOS MeshLink 1.0 只有在以下條件全部成立時才算完成：
 - 可從乾淨 checkout 產生 signed iOS archive。
 - 無 production critical stub、fake permission 或 insecure RNG。
 - iPhone 實機可配對、恢復、斷線、forget Meshtastic node。
-- native Meshtastic text 可雙向收發並保留 history。
+- Native broadcast text 經母程式 Gateway API 雙向收發、匯入 canonical history，且不要求 companion composer。
 - primary/secondary channel projection 正確且不洩漏 PSK。
 - Apple Gateway status/channel/message delta/command result 全部 durable。
 - route token 綁定 channel、caller、generation，TTL/revocation 正確。
-- App crash、force quit、重啟、命令 retry 不造成 duplicate LoRa send。
+- Exact accepted-ledger replay 不造成第二次 local admission；local-admission/ledger-commit crash gap 的 RF duplicate 風險已實機測量、文件化並有操作策略，不宣稱 exactly-once RF。
 - `accepted`、`sent`、`acknowledged`、`delivered` 的 UI/contract 語意不混淆。
 - parent/companion 版本交錯升級有測試。
-- panic wipe 清除 private DB、App Group projection/queue 與 Keychain key。
+- Private DB、App Group mailbox 與 Keychain key 的跨 App reset／account lifecycle 已有經測試且不依賴未實作 UI 的明確流程。
 - Android↔iOS RF/contract interoperability matrix 通過。
-- diagnostics 可支援現場排錯且不含 secrets。
+- 現有 health/log 可支援 release 排錯且不含 secrets；額外 exported diagnostic bundle 非 1.0 必要 UI。
 - GPL、third-party notices、source tag、privacy/usage descriptions 完成。
 - TestFlight staged rollout 與 rollback runbook 完成。
-- `NTsocial_release` 的真實 provider adapter 另以經審查 PR 合併；在此之前 release capability 不可宣稱 Meshtastic provider available。
+- `NTsocial_release` provider adapter source 已完成；release capability 仍須等 signed two-App、connected-radio、RF 與 background gates 後才能標示 available。
 
 ---
 
@@ -1225,7 +1208,7 @@ iOS MeshLink 1.0 只有在以下條件全部成立時才算完成：
 - IOS-001：ADR/授權/entitlement naming。
 - IOS-003：CI baseline。
 - IOS-010：secure platform primitives。
-- IOS-040：凍結 Gateway v2 domain/fixtures。
+- IOS-040：凍結 Gateway v1 domain/fixtures。
 - 建立 forbidden-stub inventory。
 
 ### 第 2 週
@@ -1261,16 +1244,21 @@ iOS MeshLink 1.0 只有在以下條件全部成立時才算完成：
 
 ---
 
-## 23. `NTsocial_release` 後續修改清單（本次未執行）
+## 23. `NTsocial_release` adapter 現況與後續 gate
 
-由於該專案被明確指定為 read-only，以下只做施工介面建議：
+另行授權的母程式工作樹已完成 App Group／Keychain source declarations、Swift Gateway adapter、runtime
+owner 接線、canonical import、restart-stable pending/multipart/chunk correlation、duplicate-source deterministic
+projection、same-epoch historical resolver、durable gap/quarantine recovery、authenticated overlay/native-text
+enqueue、27/27 focused／668/668 full tests與 green release build。母程式仍不 link GPL radio implementation，
+也不開 Meshtastic transport。
 
-1. 在 production signing configuration 加入相同 App Group entitlement。
-2. 加入最小 Keychain access group。
-3. 實作 `MeshtasticProvider`，讀 Gateway projection、寫 signed command。
-4. 將 provider health 接入現有 startup/runtime owner；移除僅供 fixture 的 production placeholder。
-5. release capability 只有在實機 RF、background、security gate 通過後才由 unavailable 改為 available。
-6. 將 backend status 細分：
+尚需完成：
+
+1. 以 production signing configuration 與 provisioning profile 證明兩個 App 取得相同 App Group entitlement。
+2. 以相同 Team/AppIdentifier prefix 證明最小 Keychain access group 可跨 App 讀寫同一 HMAC key。
+3. 以 signed device 驗證 Gateway projection、signed command、Darwin hint、missed-hint recovery、deep link、stop/start observer lifecycle 與 cursor commit。
+4. release capability 只有在實機 RF、background、security gate 通過後才由 unavailable 改為 available。
+5. 實機 backend status 應逐一驗證：
    - companion not installed
    - companion not opened/onboarded
    - permission denied
@@ -1278,10 +1266,10 @@ iOS MeshLink 1.0 只有在以下條件全部成立時才算完成：
    - Gateway locked/migration error
    - ready
    - best-effort background
-7. canonical social store 以 source message ID＋history epoch 做 dedupe。
-8. 保持 NTsocial 自有 BLE/Wi-Fi transport 與 Meshtastic provider 的責任分離。
-9. App panic wipe 必須協調 companion wipe；不能只刪母程式資料。
-10. 建立 parent/companion version compatibility table。
+6. 保持 NTsocial 自有 BLE/Wi-Fi transport 與 Meshtastic provider 的責任分離。
+7. App panic wipe 的跨 App 協調仍需另行設計／驗證；不得假設刪除母程式資料會清除 companion private state。
+8. 建立並驗證 parent/companion version compatibility table。
+9. Native-text composer 只有在明確產品需求下另行實作；現行 authenticated adapter API 已足供 integration/test，不為了 parity 擴大母程式 UI。
 
 ---
 
@@ -1292,7 +1280,7 @@ iOS MeshLink 1.0 只有在以下條件全部成立時才算完成：
 1. MeshLink 是唯一 Meshtastic radio owner。
 2. NTsocial 不取得 PSK、raw config、raw protobuf 或 MeshLink private DB。
 3. route token 是短期、caller/channel/generation-bound。
-4. `clientMessageId` retry 不可產生第二個 radio send。
+4. 已 accepted 的同 fingerprint `clientMessageId` replay 不可產生第二次 local radio admission；local admission 與 accepted-ledger commit 間的 crash gap 仍可能造成實體 RF duplicate，不得宣稱 exactly-once RF。
 5. `accepted` 不等於 remote delivered。
 6. Gateway notification 不是 source of truth。
 7. background callback 不保證存在；queue 必須 durable。
@@ -1302,7 +1290,7 @@ iOS MeshLink 1.0 只有在以下條件全部成立時才算完成：
 11. iOS 不依賴 Android MAC、Service、AIDL、ContentProvider、BroadcastReceiver 或 UID semantics。
 12. production 不可含 throw/no-op/fake-success platform stub。
 13. diagnostic/log 不可洩漏 secrets 或預設記錄全文。
-14. read-only 母程式只透過獨立 PR 修改。
+14. 母程式只透過另行授權、獨立審查的工作樹／PR 修改；不得將 proprietary logic 或 secrets 搬入 GPL companion。
 15. GPL source/notice 必須與實際 release artifact 可追溯。
 
 ---
@@ -1321,11 +1309,13 @@ iOS MeshLink 1.0 只有在以下條件全部成立時才算完成：
 - `MeshServiceOrchestrator`
 - `SharedRadioInterfaceService`
 - `DirectRadioControllerImpl`
-- `core/ble/src/iosMain/.../NoopStubs.kt`
-- iOS source-set/build configuration
-- 既有 Android/iOS gap analysis 與 Gateway tests
+- `core/ble/src/iosMain` Kable/CoreBluetooth actuals
+- `core/gateway/src/commonMain/.../apple`
+- `ios/runtime` 與 `iosApp`
+- `specs/004-ios-meshlink/`
+- Android/iOS Gateway tests 與 build evidence
 
-### 唯讀參考專案
+### 另行授權的母程式專案
 
 - SwiftPM package/module configuration
 - `NTSocialApp.swift`
@@ -1351,4 +1341,4 @@ iOS MeshLink 1.0 只有在以下條件全部成立時才算完成：
 - **以獨立 companion 維持 radio ownership、故障隔離與 GPL 邊界；**
 - **用 contract fixtures＋RF evidence 證明 Android/iOS 相容，而不是只靠「兩邊都能編譯」。**
 
-施工優先級應固定為：**真實 radio vertical slice → durable Gateway → parent integration → 背景／安全／RF hardening**。在 CoreBluetooth、持久化與 durable idempotency 尚未通過實機 gate 前，不應先投入大量 UI parity，以免形成可展示但不可可靠使用的 iOS 版本。
+目前 source vertical slice、durable Gateway、parent adapter 與 simulator host gate 已完成。後續優先級固定為：**signed dual-App entitlement／cross-process proof → 實機 BLE 與 connected-radio admission → RF／重啟／背景 hardening → signing／TestFlight／App Store gates**。在這些實機與 delivery gate 關閉前，不應先投入大量 UI parity，也不得宣稱 production／App Store ready。

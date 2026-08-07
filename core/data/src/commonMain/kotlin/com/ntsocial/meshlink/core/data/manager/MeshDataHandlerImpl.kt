@@ -26,7 +26,6 @@ package com.ntsocial.meshlink.core.data.manager
 
 import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
-import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.common.util.nowSeconds
 import com.ntsocial.meshlink.core.model.DataPacket
@@ -107,6 +106,7 @@ class MeshDataHandlerImpl(
     private val telemetryHandler: TelemetryPacketHandler,
     private val adminPacketHandler: AdminPacketHandler,
     private val ntsocialGatewayRepository: NtsocialGatewayRepository,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshDataHandler {
 
@@ -293,7 +293,7 @@ class MeshDataHandlerImpl(
         val r = Routing.ADAPTER.decodeOrNull(payload, Logger) ?: return
         val routingError = r.error_reason?.value ?: Routing.Error.NONE.value
         if (r.error_reason == Routing.Error.DUTY_CYCLE_LIMIT) {
-            scope.launch {
+            ingressWorkTracker.launch(scope) {
                 serviceRepository.setErrorMessage(getStringSuspend(Res.string.error_duty_cycle), Severity.Warn)
             }
         }
@@ -310,7 +310,7 @@ class MeshDataHandlerImpl(
 
     @Suppress("CyclomaticComplexMethod", "LongMethod")
     private fun handleAckNak(requestId: Int, fromId: String, routingError: Int, relayNode: Int?) {
-        scope.handledLaunch {
+        ingressWorkTracker.launch(scope) {
             val isAck = routingError == Routing.Error.NONE.value
             val p = packetRepository.value.getPacketByPacketId(requestId)
             val reaction = packetRepository.value.getReactionByPacketId(requestId)
@@ -363,7 +363,7 @@ class MeshDataHandlerImpl(
         // contactKey: unique contact key filter (channel)+(nodeId)
         val contactKey = "${dataPacket.channel}$contactId"
 
-        scope.handledLaunch {
+        ingressWorkTracker.launch(scope) {
             packetRepository.value.apply {
                 // Check for duplicates before inserting
                 val existingPackets = findPacketsWithId(dataPacket.id)
@@ -373,7 +373,7 @@ class MeshDataHandlerImpl(
                             "to=${dataPacket.to} contactKey=$contactKey" +
                             " (already have ${existingPackets.size} packet(s))"
                     }
-                    return@handledLaunch
+                    return@launch
                 }
 
                 // Check if message should be filtered
@@ -431,7 +431,7 @@ class MeshDataHandlerImpl(
         val nodeMuted = nodeManager.nodeDBbyID[dataPacket.from]?.isMuted == true
         val isSilent = conversationMuted || nodeMuted
         if (dataPacket.dataType == PortNum.ALERT_APP.value && !isSilent) {
-            scope.launch {
+            ingressWorkTracker.launch(scope) {
                 notificationManager.dispatch(
                     Notification(
                         title = getSenderName(dataPacket),
@@ -442,7 +442,7 @@ class MeshDataHandlerImpl(
                 )
             }
         } else if (updateNotification && !isSilent) {
-            scope.handledLaunch { updateNotification(contactKey, dataPacket, isSilent) }
+            ingressWorkTracker.launch(scope) { updateNotification(contactKey, dataPacket, isSilent) }
         }
     }
 
@@ -492,8 +492,8 @@ class MeshDataHandlerImpl(
     }
 
     @Suppress("LongMethod", "KotlinConstantConditions")
-    private fun rememberReaction(packet: MeshPacket) = scope.handledLaunch {
-        val decoded = packet.decoded ?: return@handledLaunch
+    private fun rememberReaction(packet: MeshPacket) = ingressWorkTracker.launch(scope) {
+        val decoded = packet.decoded ?: return@launch
         val emoji = decoded.payload.toByteArray().decodeToString()
         val fromId = nodeManager.toNodeID(packet.from)
 
@@ -527,7 +527,7 @@ class MeshDataHandlerImpl(
                 "Skipping duplicate reaction: packetId=${packet.id} replyId=${decoded.reply_id} " +
                     "from=$fromId emoji=$emoji (already have ${existingReactions.size} reaction(s))"
             }
-            return@handledLaunch
+            return@launch
         }
 
         packetRepository.value.insertReaction(reaction, nodeManager.myNodeNum.value ?: 0)

@@ -29,6 +29,7 @@ import androidx.lifecycle.coroutineScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.ntsocial.meshlink.core.data.datasource.NodeInfoReadDataSource
 import com.ntsocial.meshlink.core.data.datasource.NodeInfoWriteDataSource
+import com.ntsocial.meshlink.core.data.manager.RadioIngressWorkTracker
 import com.ntsocial.meshlink.core.database.entity.MetadataEntity
 import com.ntsocial.meshlink.core.database.entity.MyNodeEntity
 import com.ntsocial.meshlink.core.database.entity.NodeEntity
@@ -40,6 +41,7 @@ import com.ntsocial.meshlink.core.model.MyNodeInfo
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.NodeSortOption
 import com.ntsocial.meshlink.core.model.util.onlineTimeThreshold
+import com.ntsocial.meshlink.core.repository.CurrentNodeSnapshot
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +73,7 @@ class NodeRepositoryImpl(
     private val nodeInfoWriteDataSource: NodeInfoWriteDataSource,
     private val dispatchers: CoroutineDispatchers,
     private val localStatsDataSource: LocalStatsDataSource,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
 ) : NodeRepository {
     /** Hardware info about our local device (can be null if not connected). */
     override val myNodeInfo: StateFlow<MyNodeInfo?> =
@@ -102,7 +105,7 @@ class NodeRepositoryImpl(
 
     /** Update the cached local stats telemetry. */
     override fun updateLocalStats(stats: LocalStats) {
-        processLifecycle.coroutineScope.launch { localStatsDataSource.setLocalStats(stats) }
+        ingressWorkTracker.launch(processLifecycle.coroutineScope) { localStatsDataSource.setLocalStats(stats) }
     }
 
     /** A reactive map from nodeNum to [Node] objects, representing the entire mesh. */
@@ -113,6 +116,13 @@ class NodeRepositoryImpl(
             .flowOn(dispatchers.io)
             .conflate()
             .stateIn(processLifecycle.coroutineScope, SharingStarted.Eagerly, emptyMap())
+
+    override suspend fun readCurrentNodeSnapshot(): CurrentNodeSnapshot = withContext(dispatchers.io) {
+        val snapshot = nodeInfoReadDataSource.readCurrentSnapshot()
+        val nodes = snapshot.nodesByNumber.mapValues { (_, entity) -> entity.toModel() }
+        val info = snapshot.myNodeInfo?.toMyNodeInfo()
+        CurrentNodeSnapshot(nodesByNumber = nodes, myNodeInfo = info)
+    }
 
     init {
         // Backfill denormalized name columns for existing nodes on startup

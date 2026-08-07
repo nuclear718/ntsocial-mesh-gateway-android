@@ -179,6 +179,9 @@ private fun desktopPlatformStubsModule() = module {
             nodeManager = get(),
             radioInterfaceService = get(),
             locationManager = get(),
+            messageProcessor = get(),
+            packetHandler = get(),
+            sessionManager = get(),
         )
     }
     single<NativeNotificationSender> {

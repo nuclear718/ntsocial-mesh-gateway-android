@@ -25,29 +25,24 @@
 package com.ntsocial.meshlink.core.database
 
 import androidx.datastore.core.DataStore
-import androidx.datastore.core.DataStoreFactory
-import androidx.datastore.core.okio.OkioSerializer
-import androidx.datastore.core.okio.OkioStorage
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.room3.Room
 import androidx.room3.RoomDatabase
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.ntsocial.meshlink.core.database.MeshtasticDatabase.Companion.configureCommon
 import kotlinx.cinterop.ExperimentalForeignApi
-import okio.BufferedSink
-import okio.BufferedSource
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
-import platform.Foundation.NSDocumentDirectory
+import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSUserDomainMask
 
 /** Returns a [RoomDatabase.Builder] configured for iOS with the given [dbName]. */
 @OptIn(ExperimentalForeignApi::class)
 actual fun getDatabaseBuilder(dbName: String): RoomDatabase.Builder<MeshtasticDatabase> {
-    val dbFilePath = documentDirectory() + "/$dbName.db"
+    val dbFilePath = databaseDirectory() + "/$dbName.db"
     return Room.databaseBuilder<MeshtasticDatabase>(
         name = dbFilePath,
         factory = { MeshtasticDatabaseConstructor.initialize() },
@@ -63,12 +58,12 @@ actual fun getInMemoryDatabaseBuilder(): RoomDatabase.Builder<MeshtasticDatabase
         .setDriver(BundledSQLiteDriver())
 
 /** Returns the iOS directory where database files are stored. */
-actual fun getDatabaseDirectory(): Path = documentDirectory().toPath()
+actual fun getDatabaseDirectory(): Path = databaseDirectory().toPath()
 
 /** Deletes the database and its Room-associated files on iOS. */
 @OptIn(ExperimentalForeignApi::class)
 actual fun deleteDatabase(dbName: String) {
-    val dir = documentDirectory()
+    val dir = databaseDirectory()
     NSFileManager.defaultManager.removeItemAtPath(dir + "/$dbName.db", null)
     NSFileManager.defaultManager.removeItemAtPath(dir + "/$dbName.db-wal", null)
     NSFileManager.defaultManager.removeItemAtPath(dir + "/$dbName.db-shm", null)
@@ -77,44 +72,28 @@ actual fun deleteDatabase(dbName: String) {
 /** Returns the system FileSystem for iOS. */
 actual fun getFileSystem(): FileSystem = FileSystem.SYSTEM
 
-private object PreferencesSerializer : OkioSerializer<Preferences> {
-    override val defaultValue: Preferences
-        get() = emptyPreferences()
-
-    override suspend fun readFrom(source: BufferedSource): Preferences {
-        // iOS stub: return an empty Preferences instance instead of crashing.
-        return emptyPreferences()
-    }
-
-    override suspend fun writeTo(t: Preferences, sink: BufferedSink) {
-        // iOS stub: no-op to avoid crashing on write.
-    }
-}
-
-/** Creates an iOS DataStore for database preferences. */
+/** Creates a durable, app-private iOS DataStore for database-manager preferences. */
 @OptIn(ExperimentalForeignApi::class)
 actual fun createDatabaseDataStore(name: String): DataStore<Preferences> {
-    val dir = documentDirectory() + "/datastore"
+    val dir = applicationSupportDirectory() + "/datastore"
     NSFileManager.defaultManager.createDirectoryAtPath(dir, true, null, null)
-    return DataStoreFactory.create(
-        storage =
-        OkioStorage(
-            fileSystem = FileSystem.SYSTEM,
-            serializer = PreferencesSerializer,
-            producePath = { (dir + "/$name.preferences_pb").toPath() },
-        ),
-    )
+    return PreferenceDataStoreFactory.createWithPath { (dir + "/$name.preferences_pb").toPath() }
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun documentDirectory(): String {
-    val documentDirectory =
+private fun applicationSupportDirectory(): String {
+    val applicationSupportDirectory =
         NSFileManager.defaultManager.URLForDirectory(
-            directory = NSDocumentDirectory,
+            directory = NSApplicationSupportDirectory,
             inDomain = NSUserDomainMask,
             appropriateForURL = null,
-            create = false,
+            create = true,
             error = null,
         )
-    return requireNotNull(documentDirectory?.path)
+    return requireNotNull(applicationSupportDirectory?.path)
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun databaseDirectory(): String = (applicationSupportDirectory() + "/databases").also { directory ->
+    NSFileManager.defaultManager.createDirectoryAtPath(directory, true, null, null)
 }

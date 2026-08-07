@@ -80,6 +80,7 @@ class StoreForwardPacketHandlerImplTest {
                 serviceBroadcasts = serviceBroadcasts,
                 historyManager = historyManager,
                 dataHandler = lazy { dataHandler },
+                ingressWorkTracker = RadioIngressWorkTracker(),
                 scope = testScope,
             )
     }

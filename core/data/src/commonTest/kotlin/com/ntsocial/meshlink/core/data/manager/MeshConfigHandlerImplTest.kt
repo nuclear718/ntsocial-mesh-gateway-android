@@ -83,6 +83,7 @@ class MeshConfigHandlerImplTest {
             serviceRepository = serviceRepository,
             nodeManager = nodeManager,
             channelSetCollector = channelSetCollector,
+            ingressWorkTracker = RadioIngressWorkTracker(),
             scope = scope,
         )
     }

@@ -22,14 +22,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-import org.gradle.api.Plugin
-import org.gradle.api.Project
-import org.gradle.kotlin.dsl.apply
 import com.ntsocial.meshlink.buildlogic.configureDokkaAggregation
 import com.ntsocial.meshlink.buildlogic.configureGraphTasks
 import com.ntsocial.meshlink.buildlogic.configureKover
 import com.ntsocial.meshlink.buildlogic.configureKoverAggregation
 import com.ntsocial.meshlink.buildlogic.isDesktopOnly
+import org.gradle.api.Plugin
+import org.gradle.api.Project
+import org.gradle.kotlin.dsl.apply
 
 /**
  * Root convention plugin applied to the top-level project.
@@ -94,6 +94,8 @@ private val ALL_MODULES_FULL =
         ":core:datastore",
         ":core:di",
         ":core:domain",
+        ":core:gateway",
+        ":core:meshcore",
         ":core:model",
         ":core:navigation",
         ":core:network",
@@ -107,6 +109,7 @@ private val ALL_MODULES_FULL =
         ":core:testing",
         ":core:ui",
         ":feature:intro",
+        ":feature:meshcore",
         ":feature:messaging",
         ":feature:connections",
         ":feature:node",
@@ -114,6 +117,7 @@ private val ALL_MODULES_FULL =
         ":feature:firmware",
         ":feature:wifi-provision",
         ":feature:widget",
+        ":ios:runtime",
         ":desktop",
     )
 

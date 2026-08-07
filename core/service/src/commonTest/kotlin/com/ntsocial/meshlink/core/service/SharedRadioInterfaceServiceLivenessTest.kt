@@ -33,6 +33,8 @@ import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DeviceType
 import com.ntsocial.meshlink.core.network.repository.NetworkRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioPrefs
 import com.ntsocial.meshlink.core.repository.RadioTransport
 import com.ntsocial.meshlink.core.repository.RadioTransportFactory
 import com.ntsocial.meshlink.core.testing.FakeBluetoothRepository
@@ -45,11 +47,15 @@ import dev.mokkery.every
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -155,6 +161,33 @@ class SharedRadioInterfaceServiceLivenessTest {
         }
     }
 
+    private class CallbackHoldingTransport(val callback: RadioInterfaceService) : RadioTransport {
+        override fun handleSendToRadio(p: ByteArray) = Unit
+
+        override suspend fun close() = Unit
+    }
+
+    private class GatedSendRadioTransport(
+        private val sendStarted: CompletableDeferred<Unit>,
+        private val releaseSend: CompletableDeferred<Unit>,
+    ) : RadioTransport {
+        val sentData = mutableListOf<ByteArray>()
+        var gateNextSend = false
+
+        override fun handleSendToRadio(p: ByteArray) {
+            if (gateNextSend) {
+                gateNextSend = false
+                runBlocking {
+                    sendStarted.complete(Unit)
+                    releaseSend.await()
+                }
+            }
+            sentData += p
+        }
+
+        override suspend fun close() = Unit
+    }
+
     private fun createConnectedService(
         address: String,
         transportProvider: () -> RadioTransport = { FakeRadioTransport().also { createdTransports.add(it) } },
@@ -186,6 +219,187 @@ class SharedRadioInterfaceServiceLivenessTest {
     }
 
     @Test
+    fun `authoritative hydration ignores late initial null and never starts transport early`() =
+        runTest(testDispatcher) {
+            val projectedAddress = MutableStateFlow<String?>(null)
+            val hydratedPrefs =
+                object : RadioPrefs {
+                    override val devAddr = projectedAddress
+                    override val devName = MutableStateFlow<String?>(null)
+
+                    override suspend fun readPersistedDevAddr(): String = HYDRATED_ADDRESS
+
+                    override fun setDevAddr(address: String?) {
+                        projectedAddress.value = address
+                    }
+
+                    override fun setDevName(name: String?) = Unit
+                }
+            val transportAddresses = mutableListOf<String>()
+            every { networkRepository.networkAvailable } returns MutableStateFlow(true)
+            every { networkRepository.resolvedList } returns MutableSharedFlow()
+            every { analytics.isPlatformServicesAvailable } returns false
+            every { transportFactory.supportedDeviceTypes } returns listOf(DeviceType.BLE)
+            every { transportFactory.isMockTransport() } returns false
+            every { transportFactory.isAddressValid(any()) } returns true
+            every { transportFactory.createTransport(any(), any()) } calls
+                { call ->
+                    transportAddresses += call.arg<String>(0)
+                    FakeRadioTransport()
+                }
+            val service =
+                SharedRadioInterfaceService(
+                    dispatchers = dispatchers,
+                    bluetoothRepository = bluetoothRepository,
+                    networkRepository = networkRepository,
+                    processLifecycle = processLifecycleOwner.lifecycle,
+                    radioPrefs = hydratedPrefs,
+                    transportFactory = transportFactory,
+                    analytics = analytics,
+                )
+
+            assertEquals(HYDRATED_ADDRESS, service.awaitHydratedDeviceAddress())
+            assertEquals(HYDRATED_ADDRESS, service.getDeviceAddress())
+            assertTrue(transportAddresses.isEmpty())
+
+            projectedAddress.value = null
+            testDispatcher.scheduler.runCurrent()
+            assertEquals(HYDRATED_ADDRESS, service.getDeviceAddress())
+            assertTrue(transportAddresses.isEmpty())
+
+            service.connect()
+            testDispatcher.scheduler.runCurrent()
+            assertEquals(listOf(HYDRATED_ADDRESS), transportAddresses)
+            service.disconnect()
+        }
+
+    @Test
+    fun `retired transport callbacks cannot impersonate replacement session`() = runTest(testDispatcher) {
+        val transports = mutableMapOf<String, CallbackHoldingTransport>()
+        every { networkRepository.networkAvailable } returns MutableStateFlow(true)
+        every { networkRepository.resolvedList } returns MutableSharedFlow()
+        every { analytics.isPlatformServicesAvailable } returns false
+        every { transportFactory.supportedDeviceTypes } returns listOf(DeviceType.BLE)
+        every { transportFactory.isMockTransport() } returns false
+        every { transportFactory.isAddressValid(any()) } returns true
+        every { transportFactory.createTransport(any(), any()) } calls
+            { call ->
+                CallbackHoldingTransport(call.arg(1)).also { transports[call.arg(0)] = it }
+            }
+        radioPrefs.setDevAddr(RADIO_A)
+        val service =
+            SharedRadioInterfaceService(
+                dispatchers = dispatchers,
+                bluetoothRepository = bluetoothRepository,
+                networkRepository = networkRepository,
+                processLifecycle = processLifecycleOwner.lifecycle,
+                radioPrefs = radioPrefs,
+                transportFactory = transportFactory,
+                analytics = analytics,
+            )
+        service.connect()
+        testDispatcher.scheduler.runCurrent()
+        val retiredCallback = transports.getValue(RADIO_A).callback
+        retiredCallback.onConnect()
+
+        service.setDeviceAddress(RADIO_B)
+        // The public selection call must revoke A synchronously, before its async close/start coroutine runs.
+        val switchingSession = service.radioSessionState.value
+        retiredCallback.onConnect()
+        retiredCallback.handleFromRadio(byteArrayOf(1))
+        retiredCallback.onDisconnect(isPermanent = true)
+        assertEquals(switchingSession, service.radioSessionState.value)
+
+        advanceTimeBy(1_000L)
+        testDispatcher.scheduler.runCurrent()
+        val currentCallback = transports.getValue(RADIO_B).callback
+        val replacementBeforeConnect = service.radioSessionState.value
+        val received = async(start = CoroutineStart.UNDISPATCHED) { service.receivedData.first() }
+
+        retiredCallback.onConnect()
+        retiredCallback.handleFromRadio(byteArrayOf(1))
+        retiredCallback.onDisconnect(isPermanent = true)
+
+        assertEquals(replacementBeforeConnect, service.radioSessionState.value)
+        assertFalse(received.isCompleted)
+
+        currentCallback.onConnect()
+        currentCallback.handleFromRadio(byteArrayOf(2))
+        assertEquals(byteArrayOf(2).toList(), received.await().toList())
+        assertEquals(ConnectionState.Connected, service.connectionState.value)
+
+        val connectedSession = service.radioSessionState.value
+        retiredCallback.onDisconnect(isPermanent = true)
+        retiredCallback.onConnect()
+        assertEquals(connectedSession, service.radioSessionState.value)
+        assertEquals(ConnectionState.Connected, service.connectionState.value)
+        service.disconnect()
+    }
+
+    @Test
+    fun `callback validated before stop is serialized ahead of reset and cannot leak buffered bytes`() =
+        runTest(testDispatcher) {
+            val transports = mutableListOf<CallbackHoldingTransport>()
+            every { networkRepository.networkAvailable } returns MutableStateFlow(true)
+            every { networkRepository.resolvedList } returns MutableSharedFlow()
+            every { analytics.isPlatformServicesAvailable } returns false
+            every { transportFactory.supportedDeviceTypes } returns listOf(DeviceType.BLE)
+            every { transportFactory.isMockTransport() } returns false
+            every { transportFactory.isAddressValid(any()) } returns true
+            every { transportFactory.createTransport(any(), any()) } calls
+                { call ->
+                    CallbackHoldingTransport(call.arg(1)).also(transports::add)
+                }
+            radioPrefs.setDevAddr(RADIO_A)
+            val service =
+                SharedRadioInterfaceService(
+                    dispatchers = dispatchers,
+                    bluetoothRepository = bluetoothRepository,
+                    networkRepository = networkRepository,
+                    processLifecycle = processLifecycleOwner.lifecycle,
+                    radioPrefs = radioPrefs,
+                    transportFactory = transportFactory,
+                    analytics = analytics,
+                )
+            service.connect()
+            testDispatcher.scheduler.runCurrent()
+            val callback = transports.single().callback
+            callback.onConnect()
+            callback.onDisconnect(isPermanent = true)
+
+            val validated = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            service.generationCallbackValidatedHook = {
+                runBlocking {
+                    validated.complete(Unit)
+                    release.await()
+                }
+            }
+            val callbackJob = backgroundScope.launch(Dispatchers.Default) { callback.handleFromRadio(byteArrayOf(9)) }
+            validated.await()
+            val stopStarted = CompletableDeferred<Unit>()
+            val stopAndReset =
+                backgroundScope.async(Dispatchers.Default) {
+                    stopStarted.complete(Unit)
+                    service.disconnect()
+                    service.resetReceivedBuffer()
+                }
+            stopStarted.await()
+            assertFalse(stopAndReset.isCompleted)
+
+            release.complete(Unit)
+            callbackJob.join()
+            stopAndReset.await()
+            service.generationCallbackValidatedHook = null
+
+            val next = async(start = CoroutineStart.UNDISPATCHED) { service.receivedData.first() }
+            testDispatcher.scheduler.runCurrent()
+            assertFalse(next.isCompleted)
+            next.cancel()
+            assertEquals(ConnectionState.Disconnected, service.connectionState.value)
+        }
+
+    @Test
     fun `BLE liveness timeout closes old transport and creates fresh one`() = runTest(testDispatcher) {
         clock = 0L
         val service = createConnectedService("xAA:BB:CC:DD:EE:FF")
@@ -204,6 +418,12 @@ class SharedRadioInterfaceServiceLivenessTest {
             service.disconnect()
             advanceTimeBy(1_000L)
         }
+    }
+
+    private companion object {
+        const val HYDRATED_ADDRESS = "xAA:BB:CC:DD:EE:FF"
+        const val RADIO_A = "xAA:AA:AA:AA:AA:AA"
+        const val RADIO_B = "xBB:BB:BB:BB:BB:BB"
     }
 
     @Test
@@ -407,4 +627,165 @@ class SharedRadioInterfaceServiceLivenessTest {
                 advanceTimeBy(1_000L)
             }
         }
+
+    @Test
+    fun `selecting a new radio invalidates configured session before old transport teardown`() =
+        runTest(testDispatcher) {
+            val oldAddress = "xAA:BB:CC:DD:EE:FF"
+            val newAddress = "x11:22:33:44:55:66"
+            val service = createConnectedService(oldAddress)
+            try {
+                service.markCurrentSessionConfigured(service.radioSessionState.value.epoch)
+                val readySession = service.radioSessionState.value
+                assertTrue(readySession.isConfiguredReady)
+
+                assertTrue(service.setDeviceAddress(newAddress))
+
+                val switchingSession = service.radioSessionState.value
+                assertTrue(switchingSession.epoch > readySession.epoch)
+                assertEquals(newAddress, switchingSession.selectedDeviceAddress)
+                assertEquals(null, switchingSession.activeDeviceAddress)
+                assertFalse(switchingSession.configured)
+                assertFalse(switchingSession.isConfiguredReady)
+            } finally {
+                advanceTimeBy(1_000L)
+                service.disconnect()
+                advanceTimeBy(1_000L)
+            }
+        }
+
+    @Test
+    fun `exact raw send rejects retired epoch after same-address replacement is ready`() = runTest(testDispatcher) {
+        val service = createConnectedService(RADIO_A)
+        try {
+            assertTrue(service.markCurrentSessionConfigured(service.radioSessionState.value.epoch))
+            val retiredEpoch = service.radioSessionState.value.epoch
+
+            // Reconnect the same selected address through a full stop/start so the new transport is
+            // indistinguishable
+            // by address but owns a different session epoch and transport token.
+            service.disconnect()
+            service.connect()
+            advanceTimeBy(1_000L)
+            testDispatcher.scheduler.runCurrent()
+            service.onConnect()
+            assertTrue(service.markCurrentSessionConfigured(service.radioSessionState.value.epoch))
+            val replacementEpoch = service.radioSessionState.value.epoch
+            assertTrue(replacementEpoch > retiredEpoch)
+            val sendsBefore = createdTransports.map { it.sentData.size }
+
+            assertFalse(service.sendToRadioForSession(byteArrayOf(7), retiredEpoch))
+            testDispatcher.scheduler.runCurrent()
+            assertEquals(sendsBefore, createdTransports.map { it.sentData.size })
+
+            assertTrue(service.sendToRadioForSession(byteArrayOf(8), replacementEpoch))
+            testDispatcher.scheduler.runCurrent()
+            assertEquals(byteArrayOf(8).toList(), createdTransports.last().sentData.last().toList())
+        } finally {
+            service.disconnect()
+            advanceTimeBy(1_000L)
+        }
+    }
+
+    @Test
+    fun `exact raw dispatch is serialized before same transport object reconnects`() = runTest(testDispatcher) {
+        val sendStarted = CompletableDeferred<Unit>()
+        val releaseSend = CompletableDeferred<Unit>()
+        val transport = GatedSendRadioTransport(sendStarted, releaseSend)
+        val service = createConnectedService(RADIO_A) { transport }
+        try {
+            assertTrue(service.markCurrentSessionConfigured(service.radioSessionState.value.epoch))
+            val retiredEpoch = service.radioSessionState.value.epoch
+            val payload = byteArrayOf(42)
+            transport.gateNextSend = true
+
+            val exactSend =
+                backgroundScope.async(Dispatchers.Default) { service.sendToRadioForSession(payload, retiredEpoch) }
+            sendStarted.await()
+            val disconnectStarted = CompletableDeferred<Unit>()
+            val reconnect =
+                backgroundScope.async(Dispatchers.Default) {
+                    disconnectStarted.complete(Unit)
+                    service.disconnect()
+                    service.connect()
+                }
+            disconnectStarted.await()
+            assertFalse(reconnect.isCompleted)
+
+            releaseSend.complete(Unit)
+            assertTrue(exactSend.await())
+            reconnect.await()
+            testDispatcher.scheduler.runCurrent()
+            service.onConnect()
+            assertTrue(service.markCurrentSessionConfigured(service.radioSessionState.value.epoch))
+
+            assertTrue(service.radioSessionState.value.epoch > retiredEpoch)
+            assertEquals(payload.toList(), transport.sentData.first().toList())
+        } finally {
+            releaseSend.complete(Unit)
+            service.disconnect()
+            advanceTimeBy(1_000L)
+        }
+    }
+
+    @Test
+    fun `disconnect and reconnect callbacks rotate session and require configuration again`() =
+        runTest(testDispatcher) {
+            val service = createConnectedService("xAA:BB:CC:DD:EE:FF")
+            try {
+                service.markCurrentSessionConfigured(service.radioSessionState.value.epoch)
+                val readySession = service.radioSessionState.value
+                assertTrue(readySession.isConfiguredReady)
+
+                service.onDisconnect(isPermanent = false)
+                val sleepingSession = service.radioSessionState.value
+                assertTrue(sleepingSession.epoch > readySession.epoch)
+                assertEquals(ConnectionState.DeviceSleep, sleepingSession.transportConnectionState)
+                assertFalse(sleepingSession.configured)
+
+                service.onConnect()
+                val reconnectedSession = service.radioSessionState.value
+                assertTrue(reconnectedSession.epoch > sleepingSession.epoch)
+                assertEquals(ConnectionState.Connected, reconnectedSession.transportConnectionState)
+                assertFalse(reconnectedSession.isConfiguredReady)
+
+                service.markCurrentSessionConfigured(readySession.epoch)
+                assertFalse(service.radioSessionState.value.isConfiguredReady)
+
+                service.markCurrentSessionConfigured(service.radioSessionState.value.epoch)
+                assertTrue(service.radioSessionState.value.isConfiguredReady)
+            } finally {
+                service.disconnect()
+                advanceTimeBy(1_000L)
+            }
+        }
+
+    @Test
+    fun `Bluetooth off and on rotates session and requires fresh configuration`() = runTest(testDispatcher) {
+        val service = createConnectedService("xAA:BB:CC:DD:EE:FF")
+        try {
+            service.markCurrentSessionConfigured(service.radioSessionState.value.epoch)
+            val readySession = service.radioSessionState.value
+
+            bluetoothRepository.setBluetoothEnabled(false)
+            advanceTimeBy(1_000L)
+            val bluetoothOffSession = service.radioSessionState.value
+            assertTrue(bluetoothOffSession.epoch > readySession.epoch)
+            assertFalse(bluetoothOffSession.isConfiguredReady)
+
+            bluetoothRepository.setBluetoothEnabled(true)
+            testDispatcher.scheduler.runCurrent()
+            val restartingSession = service.radioSessionState.value
+            assertTrue(restartingSession.epoch > bluetoothOffSession.epoch)
+            assertEquals(ConnectionState.Connecting, restartingSession.transportConnectionState)
+            assertFalse(restartingSession.configured)
+
+            service.onConnect()
+            service.markCurrentSessionConfigured(service.radioSessionState.value.epoch)
+            assertTrue(service.radioSessionState.value.isConfiguredReady)
+        } finally {
+            service.disconnect()
+            advanceTimeBy(1_000L)
+        }
+    }
 }

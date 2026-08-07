@@ -436,6 +436,16 @@ interface PacketDao {
     )
     suspend fun getAllDataPackets(): List<DataPacket>
 
+    /** Same current-node outbox query with Room-only Gateway correlation metadata retained. */
+    @Query(
+        """
+    SELECT * FROM packet
+    WHERE (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
+    ORDER BY received_time ASC
+    """,
+    )
+    suspend fun getAllPacketRows(): List<Packet>
+
     @Query(
         """
     SELECT * FROM packet

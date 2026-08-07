@@ -31,6 +31,14 @@ interface DatabaseManager {
     /** Reactive stream of the current database cache limit. */
     val cacheLimit: StateFlow<Int>
 
+    /**
+     * Device address whose private Room database is currently active.
+     *
+     * This is deliberately separate from the selected radio preference: a transport must not be treated as ready while
+     * an asynchronous per-radio database switch is still in flight.
+     */
+    val currentAddress: StateFlow<String?>
+
     /** Returns the current database cache limit from storage. */
     fun getCurrentCacheLimit(): Int
 

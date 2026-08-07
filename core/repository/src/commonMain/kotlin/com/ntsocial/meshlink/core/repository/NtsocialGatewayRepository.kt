@@ -35,8 +35,23 @@ import org.meshtastic.proto.MeshPacket
 interface NtsocialGatewayRepository {
     val cachedEnvelopes: StateFlow<List<NtsocialCachedEnvelope>>
 
+    /** Monotonic process-local signal for fail-closed Gateway ingress activation changes. */
+    val inboundSessionRevision: StateFlow<Long>
+
     /** Latest canonical NTsocial-channel readiness result, populated after node DB readiness. */
     val defaultChannelStatus: StateFlow<NtsocialDefaultChannelStatus>
+
+    /**
+     * Publishes the immutable identity that may label inbound RF envelopes for one fully configured radio session.
+     * Returns false unless the exact selected/active/database/configuration session is still current.
+     */
+    suspend fun activateInboundSession(expectedRadioSessionEpoch: Long): Boolean = true
+
+    /** Immediately closes inbound Gateway admission at a transport/session lifecycle boundary. */
+    fun invalidateInboundSession() = Unit
+
+    /** Returns true only while the exact configured session still owns a committed inbound identity. */
+    fun isInboundSessionActive(expectedRadioSessionEpoch: Long): Boolean = true
 
     /**
      * Validates and caches an inbound NTsocial envelope. Returns true when the packet is a valid NTsocial envelope,
@@ -78,6 +93,7 @@ interface NtsocialGatewayRepository {
      */
     suspend fun persistAndQueueRawEnvelope(
         rawEnvelope: ByteString,
+        sourceChannelId: String? = null,
         to: String? = DataPacket.ID_BROADCAST,
         channelIndex: Int,
         hopLimit: Int = 0,

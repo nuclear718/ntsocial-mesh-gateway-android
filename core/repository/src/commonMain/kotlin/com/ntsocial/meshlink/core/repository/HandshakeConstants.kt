@@ -22,6 +22,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress("Kdoc")
+
 package com.ntsocial.meshlink.core.repository
 
 /**
@@ -38,4 +40,6 @@ object HandshakeConstants {
 
     /** Nonce sent in `want_config_id` to request node info only (Stage 2). */
     const val NODE_INFO_NONCE = 69421
+
+    /** One-shot full-config response used only to verify a channel mutation; it must never advance into Stage 2. */
 }

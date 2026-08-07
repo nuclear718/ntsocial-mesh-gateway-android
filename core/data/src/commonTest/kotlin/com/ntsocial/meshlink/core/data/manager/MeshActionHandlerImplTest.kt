@@ -42,6 +42,7 @@ import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.UiPrefs
 import dev.mokkery.MockMode
+import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
 import dev.mokkery.every
 import dev.mokkery.everySuspend
@@ -65,6 +66,7 @@ import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -193,6 +195,46 @@ class MeshActionHandlerImplTest {
         verifySuspend { databaseManager.switchActiveDatabase("new") }
         verify { notificationManager.cancelAll() }
         verify { nodeManager.loadCachedNodeDB() }
+    }
+
+    @Test
+    fun handleUpdateLastAddressAndAwait_returnsOnlyAfterPerRadioStateIsReady() = runTest(testDispatcher) {
+        handler = createHandler(backgroundScope)
+        val selectedAddress = MutableStateFlow<String?>("old")
+        val activeDatabaseAddress = MutableStateFlow<String?>("old")
+        val events = mutableListOf<String>()
+        every { meshPrefs.deviceAddress } returns selectedAddress
+        every { databaseManager.currentAddress } returns activeDatabaseAddress
+        every { meshPrefs.setDeviceAddress(any()) } calls
+            { call ->
+                events += "preference"
+                selectedAddress.value = call.arg(0)
+            }
+        every { nodeManager.clear() } calls { events += "clear-nodes" }
+        everySuspend { messageProcessor.clearEarlyPacketsAndAwait() } calls { events += "clear-buffer" }
+        everySuspend { databaseManager.switchActiveDatabase(any()) } calls
+            { call ->
+                events += "switch-database"
+                activeDatabaseAddress.value = call.arg(0)
+            }
+        every { notificationManager.cancelAll() } calls { events += "cancel-notifications" }
+        everySuspend { nodeManager.loadCachedNodeDBAndAwait() } calls { events += "load-cache" }
+
+        val completed = handler.handleUpdateLastAddressAndAwait("new")
+
+        assertTrue(completed)
+        assertEquals("new", activeDatabaseAddress.value)
+        assertEquals(
+            listOf(
+                "clear-nodes",
+                "clear-buffer",
+                "switch-database",
+                "cancel-notifications",
+                "load-cache",
+                "preference",
+            ),
+            events,
+        )
     }
 
     // ---- onServiceAction: null myNodeNum early-return ----

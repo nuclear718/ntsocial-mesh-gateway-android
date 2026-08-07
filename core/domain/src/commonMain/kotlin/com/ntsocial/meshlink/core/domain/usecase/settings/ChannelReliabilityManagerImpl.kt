@@ -22,6 +22,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress("CyclomaticComplexMethod", "ReturnCount")
+
 package com.ntsocial.meshlink.core.domain.usecase.settings
 
 import co.touchlab.kermit.Logger
@@ -33,6 +35,7 @@ import com.ntsocial.meshlink.core.model.buildAuthoritativeChannelWrites
 import com.ntsocial.meshlink.core.model.buildMissingSecondaryWrites
 import com.ntsocial.meshlink.core.model.classifyChannelSnapshotDrift
 import com.ntsocial.meshlink.core.model.normalizeReliableChannelSettings
+import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelProtectionSnapshot
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
@@ -41,10 +44,13 @@ import com.ntsocial.meshlink.core.repository.ChannelSnapshotRepository
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MeshConfigFlowManager
 import com.ntsocial.meshlink.core.repository.NodeRepository
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -68,7 +74,7 @@ import kotlin.time.Duration.Companion.seconds
 
 /** Reliable, readback-verified local channel writer and conservative snapshot repair owner. */
 @Single(binds = [ChannelReliabilityManager::class])
-@Suppress("LongParameterList")
+@Suppress("ComplexCondition", "LongParameterList", "TooManyFunctions")
 class ChannelReliabilityManagerImpl(
     private val commandSender: CommandSender,
     private val serviceRepository: ServiceRepository,
@@ -78,6 +84,9 @@ class ChannelReliabilityManagerImpl(
     private val ensureRemoteAdminSession: EnsureRemoteAdminSessionUseCase,
     private val meshConfigFlowManager: Lazy<MeshConfigFlowManager>,
     private val operationLock: ChannelOperationLock,
+    private val mutationLock: ChannelMutationLock,
+    private val radioInterfaceService: RadioInterfaceService,
+    private val ntsocialGatewayRepository: NtsocialGatewayRepository,
     @Named("ServiceScope") serviceScope: CoroutineScope,
 ) : ChannelReliabilityManager {
     private val _isProtected = MutableStateFlow(false)
@@ -94,7 +103,7 @@ class ChannelReliabilityManagerImpl(
             .launchIn(serviceScope)
     }
 
-    override suspend fun applyAndVerify(channelSet: ChannelSet): ChannelReliabilityResult = operationLock.withLock {
+    override suspend fun applyAndVerify(channelSet: ChannelSet): ChannelReliabilityResult = mutationLock.withLock { _ ->
         val context =
             currentRadioContext()
                 ?: return@withLock unavailableContextResult(serviceRepository.connectionState.value)
@@ -106,29 +115,54 @@ class ChannelReliabilityManagerImpl(
         }
         val desired = ChannelSet(settings = settings, lora_config = desiredLora)
         val currentSnapshot = channelSnapshotRepository.get(context.identity)
+        if (!isCurrentRadioContext(context)) return@withLock ChannelReliabilityResult.SESSION_UNAVAILABLE
+        val sessionResult = ensureRemoteAdminSession(context.nodeNum, context.radioSessionEpoch)
+        if (!sessionResult.isAvailable() || !isCurrentRadioContext(context)) {
+            return@withLock ChannelReliabilityResult.SESSION_UNAVAILABLE
+        }
 
         val result = applyTransaction(context, desired)
-        if (result == ChannelReliabilityResult.VERIFIED && !isCurrentRadioContext(context)) {
+        if (result != ChannelReliabilityResult.VERIFIED) return@withLock result
+
+        val stableReadback = captureStableReadback(context)
+        if (stableReadback == null || !stableReadback.channelSet.matches(desired)) {
             return@withLock ChannelReliabilityResult.READBACK_FAILED
         }
-        if (result == ChannelReliabilityResult.VERIFIED && currentSnapshot != null) {
-            channelSnapshotRepository.save(
-                context.identity,
-                ChannelProtectionSnapshot(maxChannels = context.maxChannels, channelSet = desired),
-            )
+        if (currentSnapshot != null) {
+            val persisted =
+                persistProtectionSnapshot(
+                    context = context,
+                    readbackGeneration = stableReadback.generation,
+                    previous = currentSnapshot,
+                    replacement = ChannelProtectionSnapshot(
+                        maxChannels = context.maxChannels,
+                        channelSet = desired,
+                    ),
+                )
+            if (!persisted) return@withLock ChannelReliabilityResult.READBACK_FAILED
             _isProtected.value = true
         }
-        result
+        if (
+            !isCurrentRadioContext(context) ||
+            radioConfigRepository.channelReadbackGeneration.value != stableReadback.generation
+        ) {
+            return@withLock ChannelReliabilityResult.READBACK_FAILED
+        }
+        if (!activateInboundSession(context)) {
+            Logger.w { "Gateway ingress remains closed after verified channel apply because activation was stale" }
+        }
+        ChannelReliabilityResult.VERIFIED
     }
 
-    override suspend fun protectCurrentChannelSet(): ChannelReliabilityResult = operationLock.withLock {
+    override suspend fun protectCurrentChannelSet(): ChannelReliabilityResult = mutationLock.withLock { _ ->
         val context =
             currentRadioContext()
                 ?: return@withLock unavailableContextResult(serviceRepository.connectionState.value)
-        if (radioConfigRepository.channelReadbackGeneration.value <= 0L) {
-            return@withLock ChannelReliabilityResult.READBACK_FAILED
-        }
-        val observed = radioConfigRepository.channelSetFlow.first().normalizedReadback()
+        val previous = channelSnapshotRepository.get(context.identity)
+        if (!isCurrentRadioContext(context)) return@withLock ChannelReliabilityResult.READBACK_FAILED
+        val stableReadback =
+            captureStableReadback(context) ?: return@withLock ChannelReliabilityResult.READBACK_FAILED
+        val observed = stableReadback.channelSet
         if (
             observed.settings.isEmpty() ||
             observed.settings.first() == ChannelSettings() ||
@@ -136,15 +170,19 @@ class ChannelReliabilityManagerImpl(
         ) {
             return@withLock ChannelReliabilityResult.INVALID_CHANNEL_SET
         }
-        channelSnapshotRepository.save(
-            context.identity,
-            ChannelProtectionSnapshot(maxChannels = context.maxChannels, channelSet = observed),
-        )
+        val persisted =
+            persistProtectionSnapshot(
+                context = context,
+                readbackGeneration = stableReadback.generation,
+                previous = previous,
+                replacement = ChannelProtectionSnapshot(maxChannels = context.maxChannels, channelSet = observed),
+            )
+        if (!persisted) return@withLock ChannelReliabilityResult.READBACK_FAILED
         _isProtected.value = true
         ChannelReliabilityResult.PROTECTED
     }
 
-    override suspend fun disableProtection(): ChannelReliabilityResult = operationLock.withLock {
+    override suspend fun disableProtection(): ChannelReliabilityResult = mutationLock.withLock { _ ->
         val context =
             currentRadioContext()
                 ?: return@withLock unavailableContextResult(serviceRepository.connectionState.value)
@@ -153,75 +191,137 @@ class ChannelReliabilityManagerImpl(
         ChannelReliabilityResult.PROTECTION_DISABLED
     }
 
-    override suspend fun reconcileProtectedChannelSet(): ChannelReliabilityResult = operationLock.withLock {
+    override suspend fun reconcileProtectedChannelSet(): ChannelReliabilityResult = reconcileProtectedChannelSet(null)
+
+    override suspend fun reconcileProtectedChannelSetForSession(
+        expectedRadioSessionEpoch: Long,
+    ): ChannelReliabilityResult = reconcileProtectedChannelSet(expectedRadioSessionEpoch, mutationLease = null)
+
+    override suspend fun reconcileProtectedChannelSetForSession(
+        expectedRadioSessionEpoch: Long,
+        mutationLease: ChannelMutationLock.Lease,
+    ): ChannelReliabilityResult = reconcileProtectedChannelSet(expectedRadioSessionEpoch, mutationLease)
+
+    private suspend fun reconcileProtectedChannelSet(
+        expectedRadioSessionEpoch: Long?,
+        mutationLease: ChannelMutationLock.Lease? = null,
+    ): ChannelReliabilityResult = mutationLock.withLease(mutationLease) { _ ->
         val context =
             currentRadioContext()
-                ?: return@withLock unavailableContextResult(serviceRepository.connectionState.value)
-        val generation = radioConfigRepository.channelReadbackGeneration.value
-        if (generation <= 0L) return@withLock ChannelReliabilityResult.READBACK_FAILED
-        val attemptKey = context.identity to generation
-        if (lastReconciledGeneration == attemptKey) {
-            return@withLock ChannelReliabilityResult.NO_REPAIR_NEEDED
+                ?: return@withLease unavailableContextResult(serviceRepository.connectionState.value)
+        // The configured-session check and context capture are intentionally one operation. Otherwise session E
+        // can pass a preliminary check, reconnect, and then accidentally run the E-owned repair against the newly
+        // captured session F (including the same physical address).
+        if (expectedRadioSessionEpoch != null && context.radioSessionEpoch != expectedRadioSessionEpoch) {
+            return@withLease ChannelReliabilityResult.SESSION_UNAVAILABLE
         }
-        lastReconciledGeneration = attemptKey
-
         val snapshot =
             channelSnapshotRepository.get(context.identity)
-                ?: return@withLock ChannelReliabilityResult.NO_SNAPSHOT.also { _isProtected.value = false }
+                ?: return@withLease ChannelReliabilityResult.NO_SNAPSHOT.also { _isProtected.value = false }
+        if (!isCurrentRadioContext(context)) return@withLease ChannelReliabilityResult.SESSION_UNAVAILABLE
+        val stableReadback =
+            captureStableReadback(context) ?: return@withLease ChannelReliabilityResult.READBACK_FAILED
+        val attemptKey = context.identity to stableReadback.generation
+        if (lastReconciledGeneration == attemptKey) {
+            return@withLease ChannelReliabilityResult.NO_REPAIR_NEEDED
+        }
+        lastReconciledGeneration = attemptKey
         _isProtected.value = true
-        val current = radioConfigRepository.channelSetFlow.first().normalizedReadback()
-        when (
-            classifyChannelSnapshotDrift(
-                snapshotChannelSet = snapshot.channelSet,
-                snapshotMaxChannels = snapshot.maxChannels,
-                currentChannelSet = current,
-                currentMaxChannels = context.maxChannels,
-            )
+        val current = stableReadback.channelSet
+        val result =
+            when (
+                classifyChannelSnapshotDrift(
+                    snapshotChannelSet = snapshot.channelSet,
+                    snapshotMaxChannels = snapshot.maxChannels,
+                    currentChannelSet = current,
+                    currentMaxChannels = context.maxChannels,
+                )
+            ) {
+                ChannelSnapshotDrift.EXACT -> ChannelReliabilityResult.NO_REPAIR_NEEDED
+                ChannelSnapshotDrift.CONFLICT -> ChannelReliabilityResult.CONFLICT
+                ChannelSnapshotDrift.MISSING_SECONDARY_ONLY -> repairMissingSecondaries(context, snapshot, current)
+            }
+        if (
+            expectedRadioSessionEpoch == null &&
+            result == ChannelReliabilityResult.REPAIRED &&
+            isCurrentRadioContext(context) &&
+            !activateInboundSession(context)
         ) {
-            ChannelSnapshotDrift.EXACT -> ChannelReliabilityResult.NO_REPAIR_NEEDED
-            ChannelSnapshotDrift.CONFLICT -> ChannelReliabilityResult.CONFLICT
-            ChannelSnapshotDrift.MISSING_SECONDARY_ONLY -> repairMissingSecondaries(context, snapshot, current)
+            Logger.w { "Gateway ingress remains closed after verified channel repair because activation was stale" }
+        }
+        result
+    }
+
+    private suspend fun captureStableReadback(context: RadioContext): StableReadback? {
+        val generation = radioConfigRepository.channelReadbackGeneration.value
+        if (generation <= 0L || !isCurrentRadioContext(context)) return null
+        val channelSet = radioConfigRepository.channelSetFlow.first().normalizedReadback()
+        return StableReadback(generation = generation, channelSet = channelSet).takeIf {
+            isCurrentRadioContext(context) && radioConfigRepository.channelReadbackGeneration.value == generation
         }
     }
 
-    private suspend fun applyTransaction(context: RadioContext, desired: ChannelSet): ChannelReliabilityResult {
-        val sessionResult = ensureRemoteAdminSession(context.nodeNum)
-        return if (!sessionResult.isAvailable()) {
-            ChannelReliabilityResult.SESSION_UNAVAILABLE
+    private suspend fun persistProtectionSnapshot(
+        context: RadioContext,
+        readbackGeneration: Long,
+        previous: ChannelProtectionSnapshot?,
+        replacement: ChannelProtectionSnapshot,
+    ): Boolean {
+        if (
+            !isCurrentRadioContext(context) ||
+            radioConfigRepository.channelReadbackGeneration.value != readbackGeneration
+        ) {
+            return false
+        }
+        channelSnapshotRepository.save(context.identity, replacement)
+        if (
+            isCurrentRadioContext(context) &&
+            radioConfigRepository.channelReadbackGeneration.value == readbackGeneration
+        ) {
+            return true
+        }
+
+        // Environment-driven reconnects do not acquire ChannelOperationLock. Roll back a write that straddled such a
+        // boundary so the retired session can neither replace nor create the user's protected snapshot.
+        if (previous == null) {
+            channelSnapshotRepository.clear(context.identity)
         } else {
-            val beforeGeneration = radioConfigRepository.channelReadbackGeneration.value
-            val commands = buildAuthoritativeChannelWrites(desired.settings, context.maxChannels)
-            val committed =
-                runEditTransaction(context) {
-                    for (channel in commands) {
-                        if (!sendVerifiedAdmin(context) { AdminMessage(set_channel = channel) }) {
-                            return@runEditTransaction false
-                        }
+            channelSnapshotRepository.save(context.identity, previous)
+        }
+        return false
+    }
+
+    private suspend fun applyTransaction(context: RadioContext, desired: ChannelSet): ChannelReliabilityResult {
+        val commands = buildAuthoritativeChannelWrites(desired.settings, context.maxChannels)
+        // Firmware can apply begin/channel/config writes before local readback advances the snapshot generation.
+        // Close Gateway ingress at the last possible point before the first mutation admission.
+        if (!closeIngressForMutation(context)) return ChannelReliabilityResult.RADIO_REJECTED
+        val committed =
+            runEditTransaction(context) {
+                for (channel in commands) {
+                    if (!sendVerifiedAdmin(context) { AdminMessage(set_channel = channel) }) {
+                        return@runEditTransaction false
                     }
-                    val currentLora = radioConfigRepository.localConfigFlow.first().lora
-                    if (desired.lora_config != null && desired.lora_config != currentLora) {
-                        if (
-                            !sendVerifiedAdmin(context) {
-                                AdminMessage(set_config = Config(lora = desired.lora_config))
-                            }
-                        ) {
-                            return@runEditTransaction false
-                        }
-                    }
-                    true
                 }
-            if (!committed) {
-                ChannelReliabilityResult.RADIO_REJECTED
+                val currentLora = radioConfigRepository.localConfigFlow.first().lora
+                if (desired.lora_config != null && desired.lora_config != currentLora) {
+                    if (!sendVerifiedAdmin(context) { AdminMessage(set_config = Config(lora = desired.lora_config)) }) {
+                        return@runEditTransaction false
+                    }
+                }
+                true
+            }
+        return if (!committed) {
+            ChannelReliabilityResult.RADIO_REJECTED
+        } else {
+            val readback = requestFreshReadback(context)
+            if (readback != null && isCurrentRadioContext(context) && readback.matches(desired)) {
+                ChannelReliabilityResult.VERIFIED
             } else {
-                val readback = requestFreshReadback(context, beforeGeneration)
-                if (readback != null && isCurrentRadioContext(context) && readback.matches(desired)) {
-                    ChannelReliabilityResult.VERIFIED
-                } else {
-                    if (readback != null) {
-                        Logger.w { "Channel transaction readback did not match the requested channel set" }
-                    }
-                    ChannelReliabilityResult.READBACK_FAILED
+                if (readback != null) {
+                    Logger.w { "Channel transaction readback did not match the requested channel set" }
                 }
+                ChannelReliabilityResult.READBACK_FAILED
             }
         }
     }
@@ -231,15 +331,17 @@ class ChannelReliabilityManagerImpl(
         snapshot: ChannelProtectionSnapshot,
         current: ChannelSet,
     ): ChannelReliabilityResult {
-        val sessionResult = ensureRemoteAdminSession(context.nodeNum)
-        return if (!sessionResult.isAvailable()) {
+        val sessionResult = ensureRemoteAdminSession(context.nodeNum, context.radioSessionEpoch)
+        return if (!sessionResult.isAvailable() || !isCurrentRadioContext(context)) {
             ChannelReliabilityResult.SESSION_UNAVAILABLE
         } else {
             val writes = buildMissingSecondaryWrites(snapshot.channelSet.settings, current.settings)
             if (writes.isEmpty()) {
                 ChannelReliabilityResult.NO_REPAIR_NEEDED
             } else {
-                val beforeGeneration = radioConfigRepository.channelReadbackGeneration.value
+                // As with manual apply, no ingress identity may survive across the first firmware mutation and the
+                // exact fresh readback that proves its final channel set.
+                if (!closeIngressForMutation(context)) return ChannelReliabilityResult.RADIO_REJECTED
                 val committed =
                     runEditTransaction(context) {
                         for (channel in writes) {
@@ -252,7 +354,7 @@ class ChannelReliabilityManagerImpl(
                 if (!committed) {
                     ChannelReliabilityResult.RADIO_REJECTED
                 } else {
-                    val readback = requestFreshReadback(context, beforeGeneration)
+                    val readback = requestFreshReadback(context)
                     val drift =
                         readback?.let {
                             classifyChannelSnapshotDrift(
@@ -305,62 +407,117 @@ class ChannelReliabilityManagerImpl(
     }
 
     private suspend fun sendVerifiedAdmin(context: RadioContext, message: () -> AdminMessage): Boolean =
-        coroutineScope {
-            if (!isCurrentRadioContext(context)) return@coroutineScope false
-            val destNum = context.nodeNum
-            val requestId = commandSender.generatePacketId()
-            val routingResult =
-                async(start = CoroutineStart.UNDISPATCHED) {
-                    withTimeoutOrNull(ROUTING_TIMEOUT) {
-                        serviceRepository.meshPacketFlow
-                            .filter { packet ->
-                                val data = packet.decoded
-                                data?.portnum == PortNum.ROUTING_APP &&
-                                    data.request_id == requestId &&
-                                    packet.from == destNum
-                            }
-                            .first()
-                            .let { packet ->
-                                runCatching { Routing.ADAPTER.decode(packet.decoded!!.payload) }
-                                    .getOrNull()
-                                    ?.error_reason == Routing.Error.NONE
-                            }
-                    } ?: false
-                }
-            try {
+        operationLock.withLock {
+            coroutineScope {
                 if (!isCurrentRadioContext(context)) return@coroutineScope false
-                val queued = commandSender.sendAdminAwait(destNum = destNum, requestId = requestId, initFn = message)
-                queued && routingResult.await()
-            } finally {
-                routingResult.cancel()
+                val destNum = context.nodeNum
+                val requestId = commandSender.generatePacketId()
+                val routingResult =
+                    async(start = CoroutineStart.UNDISPATCHED) {
+                        withTimeoutOrNull(ROUTING_TIMEOUT) {
+                            serviceRepository.meshPacketFlow
+                                .filter { packet ->
+                                    val data = packet.decoded
+                                    data?.portnum == PortNum.ROUTING_APP &&
+                                        data.request_id == requestId &&
+                                        packet.from == destNum
+                                }
+                                .first()
+                                .let { packet ->
+                                    runCatching { Routing.ADAPTER.decode(packet.decoded!!.payload) }
+                                        .getOrNull()
+                                        ?.error_reason == Routing.Error.NONE
+                                }
+                        } ?: false
+                    }
+                try {
+                    if (!isCurrentRadioContext(context)) return@coroutineScope false
+                    val queued =
+                        commandSender.sendAdminAwaitForSession(
+                            expectedRadioSessionEpoch = context.radioSessionEpoch,
+                            destNum = destNum,
+                            requestId = requestId,
+                            initFn = message,
+                        )
+                    if (!queued || !isCurrentRadioContext(context)) return@coroutineScope false
+                    val routed = routingResult.await()
+                    routed && isCurrentRadioContext(context)
+                } finally {
+                    routingResult.cancel()
+                }
             }
         }
 
-    private suspend fun requestFreshReadback(context: RadioContext, afterGeneration: Long): ChannelSet? =
-        coroutineScope {
-            if (!isCurrentRadioContext(context)) return@coroutineScope null
-            val waiter =
-                async(start = CoroutineStart.UNDISPATCHED) {
-                    withTimeoutOrNull(READBACK_TIMEOUT) {
-                        radioConfigRepository.channelReadbackGeneration.filter { it > afterGeneration }.first()
-                        radioConfigRepository.channelSetFlow.first().normalizedReadback()
+    private suspend fun requestFreshReadback(context: RadioContext): ChannelSet? = coroutineScope {
+        val admission: Pair<Long?, Deferred<ChannelSet?>?> =
+            operationLock.withLock {
+                if (!isCurrentRadioContext(context)) return@withLock null to null
+                val manager = meshConfigFlowManager.value
+                val requestToken = manager.beginChannelReadbackForSession(context.radioSessionEpoch)
+                if (requestToken == null || !isCurrentRadioContext(context)) {
+                    if (requestToken != null) {
+                        manager.cancelChannelReadbackForSession(context.radioSessionEpoch, requestToken)
                     }
+                    return@withLock null to null
                 }
-            if (!isCurrentRadioContext(context)) {
-                waiter.cancel()
-                return@coroutineScope null
+                val waiter =
+                    async(start = CoroutineStart.UNDISPATCHED) {
+                        withTimeoutOrNull(READBACK_TIMEOUT) {
+                            manager.channelReadbackCompletion
+                                .filter { completion ->
+                                    completion?.requestToken == requestToken &&
+                                        completion.radioSessionEpoch == context.radioSessionEpoch
+                                }
+                                .first()
+                                ?.channelSet
+                                ?.normalizedReadback()
+                        }
+                    }
+                requestToken to waiter
             }
-            meshConfigFlowManager.value.triggerWantConfig()
-            waiter.await()?.takeIf { isCurrentRadioContext(context) }
+        val requestToken = admission.first ?: return@coroutineScope null
+        val result = admission.second?.await()?.takeIf { isCurrentRadioContext(context) }
+        if (result == null) {
+            meshConfigFlowManager.value.cancelChannelReadbackForSession(context.radioSessionEpoch, requestToken)
         }
+        result
+    }
+
+    private suspend fun activateInboundSession(context: RadioContext): Boolean = operationLock.withLock {
+        isCurrentRadioContext(context) &&
+            ntsocialGatewayRepository.activateInboundSession(context.radioSessionEpoch)
+    }
+
+    private suspend fun closeIngressForMutation(context: RadioContext): Boolean = operationLock.withLock {
+        if (!isCurrentRadioContext(context)) return@withLock false
+        ntsocialGatewayRepository.invalidateInboundSession()
+        true
+    }
 
     private fun currentRadioContext(): RadioContext? {
         val connected = serviceRepository.connectionState.value == ConnectionState.Connected
+        val capturedSession = radioInterfaceService.radioSessionState.value
+        val selectedAddress = capturedSession.selectedDeviceAddress
         val info = nodeRepository.myNodeInfo.value
         val identity = info?.stableDeviceIdentity()
         val maxChannels = info?.maxChannels?.takeIf { it > 0 }
-        return if (connected && info != null && identity != null && maxChannels != null) {
-            RadioContext(nodeNum = info.myNodeNum, identity = identity, maxChannels = maxChannels)
+        val sessionStillCurrent = radioInterfaceService.radioSessionState.value == capturedSession
+        return if (
+            connected &&
+            sessionStillCurrent &&
+            capturedSession.isConfiguredReady &&
+            selectedAddress != null &&
+            info != null &&
+            identity != null &&
+            maxChannels != null
+        ) {
+            RadioContext(
+                nodeNum = info.myNodeNum,
+                identity = identity,
+                maxChannels = maxChannels,
+                radioSessionEpoch = capturedSession.epoch,
+                radioAddress = selectedAddress,
+            )
         } else {
             null
         }
@@ -368,7 +525,15 @@ class ChannelReliabilityManagerImpl(
 
     private fun isCurrentRadioContext(expected: RadioContext): Boolean = currentRadioContext() == expected
 
-    private data class RadioContext(val nodeNum: Int, val identity: String, val maxChannels: Int)
+    private data class RadioContext(
+        val nodeNum: Int,
+        val identity: String,
+        val maxChannels: Int,
+        val radioSessionEpoch: Long,
+        val radioAddress: String,
+    )
+
+    private data class StableReadback(val generation: Long, val channelSet: ChannelSet)
 
     private companion object {
         val ROUTING_TIMEOUT = 15.seconds

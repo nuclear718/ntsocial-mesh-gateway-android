@@ -29,10 +29,19 @@ import com.ntsocial.meshlink.core.database.entity.NodeEntity
 import com.ntsocial.meshlink.core.database.entity.NodeWithRelations
 import kotlinx.coroutines.flow.Flow
 
+/** Nodes and local-radio metadata read from one captured database instance. */
+data class CurrentNodeDataSnapshot(val nodesByNumber: Map<Int, NodeWithRelations>, val myNodeInfo: MyNodeEntity?)
+
 interface NodeInfoReadDataSource {
     fun myNodeInfoFlow(): Flow<MyNodeEntity?>
 
     fun nodeDBbyNumFlow(): Flow<Map<Int, NodeWithRelations>>
+
+    /**
+     * Reads the database that is active when this call begins without consulting the derived [Flow] projections.
+     * Implementations must read both values from the same captured database instance.
+     */
+    suspend fun readCurrentSnapshot(): CurrentNodeDataSnapshot
 
     fun getNodesFlow(
         sort: String,

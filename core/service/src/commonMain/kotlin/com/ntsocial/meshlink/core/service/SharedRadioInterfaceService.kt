@@ -41,9 +41,12 @@ import com.ntsocial.meshlink.core.network.repository.NetworkRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.RadioPrefs
+import com.ntsocial.meshlink.core.repository.RadioSessionState
 import com.ntsocial.meshlink.core.repository.RadioTransport
 import com.ntsocial.meshlink.core.repository.RadioTransportFactory
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +64,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -106,6 +110,18 @@ class SharedRadioInterfaceService(
     private val _currentDeviceAddressFlow = MutableStateFlow<String?>(radioPrefs.devAddr.value)
     override val currentDeviceAddressFlow: StateFlow<String?> = _currentDeviceAddressFlow.asStateFlow()
 
+    private val _radioSessionState =
+        MutableStateFlow(
+            RadioSessionState(
+                epoch = 1,
+                selectedDeviceAddress = radioPrefs.devAddr.value,
+                activeDeviceAddress = null,
+                transportConnectionState = ConnectionState.Disconnected,
+                configured = false,
+            ),
+        )
+    override val radioSessionState: StateFlow<RadioSessionState> = _radioSessionState.asStateFlow()
+
     // Unbounded Channel preserves strict FIFO delivery of incoming radio bytes, which the
     // firmware handshake depends on (initial config packet ordering). A SharedFlow with
     // `launch { emit() }` per packet reorders under concurrent dispatch and breaks config load.
@@ -148,6 +164,19 @@ class SharedRadioInterfaceService(
     /** Prevents concurrent liveness-induced transport restarts from stacking. */
     private val isRestarting = atomic(false)
 
+    /** Token owned by the one transport whose callbacks may currently mutate service state. */
+    private val activeTransportGeneration = atomic(0L)
+
+    /**
+     * Makes transport-token validation and the corresponding synchronous callback side effect one atomic boundary. The
+     * lock is deliberately never held while closing a transport or delaying a polite disconnect.
+     */
+    private val transportCallbackLock = SynchronizedObject()
+
+    @Volatile
+    @Suppress("MemberVisibilityCanBePrivate")
+    internal var generationCallbackValidatedHook: (() -> Unit)? = null
+
     private val listenersInitialized = atomic(false)
     private var heartbeatJob: Job? = null
     private var lastHeartbeatMillis = 0L
@@ -184,26 +213,50 @@ class SharedRadioInterfaceService(
     private val initLock = Mutex()
     private val transportMutex = Mutex()
 
+    /**
+     * Invalidates every capability bound to the previous physical/configuration session before asynchronous teardown or
+     * startup work begins. MutableStateFlow's atomic update keeps [RadioSessionState.epoch] monotonic across callback
+     * and UI threads.
+     */
+    private fun beginRadioSession(
+        selectedDeviceAddress: String? = _radioSessionState.value.selectedDeviceAddress,
+        activeDeviceAddress: String? = _radioSessionState.value.activeDeviceAddress,
+        transportConnectionState: ConnectionState,
+    ) {
+        _radioSessionState.update { current ->
+            RadioSessionState(
+                epoch = current.epoch + 1,
+                selectedDeviceAddress = selectedDeviceAddress,
+                activeDeviceAddress = activeDeviceAddress,
+                transportConnectionState = transportConnectionState,
+                configured = false,
+            )
+        }
+    }
+
+    @Suppress("ReturnCount")
+    override fun markCurrentSessionConfigured(expectedEpoch: Long): Boolean {
+        while (true) {
+            val current = _radioSessionState.value
+            if (
+                current.epoch != expectedEpoch ||
+                current.selectedDeviceAddress == null ||
+                current.selectedDeviceAddress != current.activeDeviceAddress ||
+                current.transportConnectionState != ConnectionState.Connected
+            ) {
+                return false
+            }
+            if (current.configured) return true
+            if (_radioSessionState.compareAndSet(current, current.copy(configured = true))) return true
+        }
+    }
+
     private fun initStateListeners() {
         if (listenersInitialized.value) return
         processLifecycle.coroutineScope.launch {
             initLock.withLock {
                 if (listenersInitialized.value) return@withLock
                 listenersInitialized.value = true
-
-                radioPrefs.devAddr
-                    .onEach { addr ->
-                        transportMutex.withLock {
-                            if (_currentDeviceAddressFlow.value != addr) {
-                                _currentDeviceAddressFlow.value = addr
-                                if (connectionRequested) {
-                                    startTransportLocked()
-                                }
-                            }
-                        }
-                    }
-                    .catch { Logger.e(it) { "devAddr flow crashed" } }
-                    .launchIn(processLifecycle.coroutineScope)
 
                 bluetoothRepository.state
                     .onEach { state ->
@@ -238,13 +291,46 @@ class SharedRadioInterfaceService(
         processLifecycle.coroutineScope.launch {
             transportMutex.withLock {
                 connectionRequested = true
+                if (radioTransport == null) {
+                    beginRadioSession(
+                        selectedDeviceAddress = getBondedDeviceAddress(),
+                        activeDeviceAddress = null,
+                        transportConnectionState = ConnectionState.Connecting,
+                    )
+                }
                 startTransportLocked()
             }
         }
         initStateListeners()
     }
 
+    override suspend fun awaitHydratedDeviceAddress(): String? {
+        val persisted = sanitizeDeviceAddress(radioPrefs.readPersistedDevAddr())
+        transportMutex.withLock {
+            check(!connectionRequested && radioTransport == null) {
+                "Radio selection hydration must complete before connect"
+            }
+            if (_currentDeviceAddressFlow.value != persisted) {
+                beginRadioSession(
+                    selectedDeviceAddress = persisted,
+                    activeDeviceAddress = null,
+                    transportConnectionState = ConnectionState.Disconnected,
+                )
+                _currentDeviceAddressFlow.value = persisted
+            }
+        }
+        return persisted
+    }
+
     override suspend fun disconnect() {
+        synchronized(transportCallbackLock) {
+            activeTransportGeneration.incrementAndGet()
+            beginRadioSession(
+                selectedDeviceAddress = _currentDeviceAddressFlow.value,
+                activeDeviceAddress = null,
+                transportConnectionState = ConnectionState.Disconnected,
+            )
+        }
         transportMutex.withLock {
             connectionRequested = false
             ignoreExceptionSuspend { stopTransportLocked() }
@@ -268,7 +354,7 @@ class SharedRadioInterfaceService(
     }
 
     override fun setDeviceAddress(deviceAddr: String?): Boolean {
-        val sanitized = if (deviceAddr == "n" || deviceAddr.isNullOrBlank()) null else deviceAddr
+        val sanitized = sanitizeDeviceAddress(deviceAddr)
 
         if (getBondedDeviceAddress() == sanitized && isStarted && _connectionState.value == ConnectionState.Connected) {
             Logger.w { "Ignoring setBondedDevice ${sanitized?.anonymize}, already using that device" }
@@ -278,6 +364,16 @@ class SharedRadioInterfaceService(
         analytics.track("mesh_bond")
 
         Logger.d { "Setting bonded device to ${sanitized?.anonymize}" }
+        synchronized(transportCallbackLock) {
+            // Close the old callback capability synchronously with the public selection change. The async transport
+            // teardown below must not leave a window where the retired radio can impersonate the new selection.
+            activeTransportGeneration.incrementAndGet()
+            beginRadioSession(
+                selectedDeviceAddress = sanitized,
+                activeDeviceAddress = null,
+                transportConnectionState = ConnectionState.Disconnected,
+            )
+        }
         radioPrefs.setDevAddr(sanitized)
         _currentDeviceAddressFlow.value = sanitized
 
@@ -292,6 +388,9 @@ class SharedRadioInterfaceService(
         }
         return true
     }
+
+    private fun sanitizeDeviceAddress(deviceAddr: String?): String? =
+        deviceAddr?.takeUnless { it == "n" || it.isBlank() }
 
     /** Must be called under [transportMutex]. */
     private fun startTransportLocked() {
@@ -308,9 +407,19 @@ class SharedRadioInterfaceService(
         }
 
         Logger.i { "Starting radio transport for ${address.anonymize}" }
+        val transportGeneration =
+            synchronized(transportCallbackLock) {
+                beginRadioSession(
+                    selectedDeviceAddress = address,
+                    activeDeviceAddress = address,
+                    transportConnectionState = ConnectionState.Connecting,
+                )
+                activeTransportGeneration.incrementAndGet()
+            }
         isStarted = true
         runningTransportId = address.firstOrNull()?.let { InterfaceId.forIdChar(it) }
-        radioTransport = transportFactory.createTransport(address, this)
+        radioTransport =
+            transportFactory.createTransport(address, GenerationBoundRadioInterfaceService(transportGeneration))
         startHeartbeat()
     }
 
@@ -322,7 +431,21 @@ class SharedRadioInterfaceService(
      *   to.
      */
     private suspend fun stopTransportLocked(notifyPermanent: Boolean = true, sendPoliteDisconnect: Boolean = true) {
-        val currentTransport = radioTransport
+        // Invalidate first: close()/platform callbacks are allowed to arrive late and must not impersonate a
+        // replacement transport that happens to share this service instance.
+        val currentTransport =
+            synchronized(transportCallbackLock) {
+                activeTransportGeneration.incrementAndGet()
+                radioTransport.also { transport ->
+                    if (transport != null) {
+                        beginRadioSession(
+                            selectedDeviceAddress = _currentDeviceAddressFlow.value,
+                            activeDeviceAddress = null,
+                            transportConnectionState = ConnectionState.Disconnected,
+                        )
+                    }
+                }
+            }
         Logger.i { "Stopping transport $currentTransport" }
         // Best-effort polite goodbye: tell the firmware we're disconnecting on purpose so it can
         // tear down its side of the link cleanly instead of relying on timeouts / hardware events.
@@ -352,7 +475,7 @@ class SharedRadioInterfaceService(
         _serviceScope = CoroutineScope(dispatchers.io + SupervisorJob())
 
         if (notifyPermanent && currentTransport != null) {
-            onDisconnect(isPermanent = true)
+            handleCurrentTransportDisconnect(isPermanent = true, errorMessage = null)
         }
     }
 
@@ -452,14 +575,42 @@ class SharedRadioInterfaceService(
                     Logger.w { "sendToRadio: no active radio transport, dropping ${bytes.size} bytes" }
                     return
                 }
+        enqueueTransportSend(currentTransport, bytes)
+    }
+
+    override fun sendToRadioForSession(bytes: ByteArray, expectedRadioSessionEpoch: Long): Boolean =
+        synchronized(transportCallbackLock) {
+            val session = _radioSessionState.value
+            if (isStopping || session.epoch != expectedRadioSessionEpoch || !session.isConfiguredReady) {
+                return@synchronized false
+            }
+            val currentTransport = radioTransport ?: return@synchronized false
+            // Selection/stop rotates the session and transport token under this same lock. Therefore this send either
+            // dispatches synchronously into E before retirement or observes F and rejects. Deferring this call to
+            // _serviceScope would be unsafe for transports whose object survives an environmental reconnect: the old
+            // job could otherwise execute only after that object had rebound itself to F.
+            runCatching {
+                currentTransport.handleSendToRadio(bytes)
+                _meshActivity.tryEmit(MeshActivity.Send)
+            }
+                .onFailure { error -> Logger.e(error) { "Exact-session radio send failed" } }
+                .isSuccess
+        }
+
+    private fun enqueueTransportSend(transport: RadioTransport, bytes: ByteArray) {
         _serviceScope.handledLaunch {
-            currentTransport.handleSendToRadio(bytes)
+            transport.handleSendToRadio(bytes)
             _meshActivity.tryEmit(MeshActivity.Send)
         }
     }
 
     @Suppress("TooGenericExceptionCaught")
     override fun handleFromRadio(bytes: ByteArray) {
+        synchronized(transportCallbackLock) { handleCurrentTransportData(bytes) }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun handleCurrentTransportData(bytes: ByteArray) {
         try {
             lastDataReceivedMillis = now()
             // trySend synchronously onto the unbounded Channel so packet order matches arrival
@@ -471,8 +622,8 @@ class SharedRadioInterfaceService(
                 Logger.e(result.exceptionOrNull()) { "Failed to enqueue ${bytes.size} received bytes; dropping packet" }
             }
             _meshActivity.tryEmit(MeshActivity.Receive)
-        } catch (t: Throwable) {
-            Logger.e(t) { "handleFromRadio failed while emitting data" }
+        } catch (error: Exception) {
+            Logger.e(error) { "handleFromRadio failed while emitting data" }
         }
     }
 
@@ -485,11 +636,22 @@ class SharedRadioInterfaceService(
     }
 
     override fun onConnect() {
+        synchronized(transportCallbackLock) { handleCurrentTransportConnect() }
+    }
+
+    private fun handleCurrentTransportConnect() {
         // MutableStateFlow.value is thread-safe (backed by atomics) — assign directly rather than
         // launching a coroutine. The async launch pattern introduced a window where a concurrent
         // onDisconnect launch could execute AFTER an onConnect launch, leaving the service stuck
         // in Connected while the transport was actually disconnected.
         lastDataReceivedMillis = now()
+        if (_radioSessionState.value.transportConnectionState != ConnectionState.Connected) {
+            beginRadioSession(
+                selectedDeviceAddress = _currentDeviceAddressFlow.value,
+                activeDeviceAddress = _radioSessionState.value.activeDeviceAddress,
+                transportConnectionState = ConnectionState.Connected,
+            )
+        }
         if (_connectionState.value != ConnectionState.Connected) {
             Logger.d { "Broadcasting connection state change to Connected" }
             _connectionState.value = ConnectionState.Connected
@@ -497,13 +659,61 @@ class SharedRadioInterfaceService(
     }
 
     override fun onDisconnect(isPermanent: Boolean, errorMessage: String?) {
+        synchronized(transportCallbackLock) { handleCurrentTransportDisconnect(isPermanent, errorMessage) }
+    }
+
+    private fun handleCurrentTransportDisconnect(isPermanent: Boolean, errorMessage: String?) {
         if (errorMessage != null) {
             processLifecycle.coroutineScope.launch(dispatchers.default) { _connectionError.emit(errorMessage) }
         }
         val newTargetState = if (isPermanent) ConnectionState.Disconnected else ConnectionState.DeviceSleep
+        if (_radioSessionState.value.transportConnectionState != newTargetState) {
+            beginRadioSession(
+                selectedDeviceAddress = _currentDeviceAddressFlow.value,
+                activeDeviceAddress = _radioSessionState.value.activeDeviceAddress,
+                transportConnectionState = newTargetState,
+            )
+        }
         if (_connectionState.value != newTargetState) {
             Logger.d { "Broadcasting connection state change to $newTargetState" }
             _connectionState.value = newTargetState
+        }
+    }
+
+    /** Callback facade captured by exactly one transport generation. */
+    private inner class GenerationBoundRadioInterfaceService(private val transportGeneration: Long) :
+        RadioInterfaceService by this@SharedRadioInterfaceService {
+        override fun onConnect() {
+            synchronized(transportCallbackLock) {
+                if (transportGeneration == activeTransportGeneration.value) {
+                    generationCallbackValidatedHook?.invoke()
+                    handleCurrentTransportConnect()
+                } else {
+                    Logger.d { "Dropping retired transport onConnect callback" }
+                }
+            }
+        }
+
+        override fun onDisconnect(isPermanent: Boolean, errorMessage: String?) {
+            synchronized(transportCallbackLock) {
+                if (transportGeneration == activeTransportGeneration.value) {
+                    generationCallbackValidatedHook?.invoke()
+                    handleCurrentTransportDisconnect(isPermanent, errorMessage)
+                } else {
+                    Logger.d { "Dropping retired transport onDisconnect callback" }
+                }
+            }
+        }
+
+        override fun handleFromRadio(bytes: ByteArray) {
+            synchronized(transportCallbackLock) {
+                if (transportGeneration == activeTransportGeneration.value) {
+                    generationCallbackValidatedHook?.invoke()
+                    handleCurrentTransportData(bytes)
+                } else {
+                    Logger.d { "Dropping ${bytes.size} bytes from retired transport" }
+                }
+            }
         }
     }
 }

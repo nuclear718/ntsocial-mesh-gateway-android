@@ -47,11 +47,22 @@ interface MeshConnectionManager {
     /** Initiates the configuration synchronization stage. */
     fun startConfigOnly()
 
+    /**
+     * Requests a one-shot config readback only from the exact configured session. This reliability path deliberately
+     * does not arm the ordinary handshake stall/reconnect guard.
+     */
+    fun startConfigOnlyForSession(expectedRadioSessionEpoch: Long): Boolean = false
+
     /** Initiates the node information synchronization stage. */
     fun startNodeInfoOnly()
 
-    /** Called when the node database is ready and fully populated. */
-    fun onNodeDbReady()
+    /**
+     * Called when the node database for [radioSessionEpoch] is ready and fully populated.
+     *
+     * Returns false when that captured radio session is stale; callers must not publish Connected or perform any
+     * remaining completion side effect in that case.
+     */
+    suspend fun onNodeDbReady(radioSessionEpoch: Long): Boolean
 
     /** Updates the telemetry information for the local node. */
     fun updateTelemetry(t: Telemetry)

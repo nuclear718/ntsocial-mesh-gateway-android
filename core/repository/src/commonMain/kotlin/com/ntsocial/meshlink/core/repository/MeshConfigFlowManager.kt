@@ -22,8 +22,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress("ClassSignature")
+
 package com.ntsocial.meshlink.core.repository
 
+import kotlinx.coroutines.flow.StateFlow
+import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FileInfo
 import org.meshtastic.proto.MyNodeInfo
@@ -31,6 +35,9 @@ import org.meshtastic.proto.NodeInfo
 
 /** Interface for managing the configuration flow, including local node info and metadata. */
 interface MeshConfigFlowManager {
+    /** A config snapshot completed by the dedicated exact-session readback nonce. */
+    val channelReadbackCompletion: StateFlow<ChannelReadbackCompletion?>
+
     /** Handles received local node information. */
     fun handleMyInfo(myInfo: MyNodeInfo)
 
@@ -56,4 +63,19 @@ interface MeshConfigFlowManager {
 
     /** Triggers a request for the full device configuration. */
     fun triggerWantConfig()
+
+    /** Triggers a one-shot config readback only for the exact configured radio session. */
+    fun triggerWantConfigForSession(expectedRadioSessionEpoch: Long): Boolean = false
+
+    /**
+     * Reserves and admits one exact-session readback request, returning its local correlation token. Implementations
+     * must publish [channelReadbackCompletion] only after the dedicated readback nonce completes.
+     */
+    fun beginChannelReadbackForSession(expectedRadioSessionEpoch: Long): Long? =
+        if (triggerWantConfigForSession(expectedRadioSessionEpoch)) 0L else null
+
+    /** Releases an exact readback reservation after its owner times out or is cancelled. */
+    fun cancelChannelReadbackForSession(expectedRadioSessionEpoch: Long, requestToken: Long) = Unit
 }
+
+data class ChannelReadbackCompletion(val requestToken: Long, val radioSessionEpoch: Long, val channelSet: ChannelSet)

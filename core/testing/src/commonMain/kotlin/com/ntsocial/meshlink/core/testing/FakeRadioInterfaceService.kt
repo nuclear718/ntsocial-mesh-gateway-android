@@ -29,6 +29,7 @@ import com.ntsocial.meshlink.core.model.DeviceType
 import com.ntsocial.meshlink.core.model.InterfaceId
 import com.ntsocial.meshlink.core.model.MeshActivity
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioSessionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.channels.Channel
@@ -59,6 +60,18 @@ class FakeRadioInterfaceService(override val serviceScope: CoroutineScope = Main
     private val _currentDeviceAddressFlow = MutableStateFlow<String?>(null)
     override val currentDeviceAddressFlow: StateFlow<String?> = _currentDeviceAddressFlow
 
+    private val _radioSessionState =
+        MutableStateFlow(
+            RadioSessionState(
+                epoch = 1,
+                selectedDeviceAddress = null,
+                activeDeviceAddress = null,
+                transportConnectionState = ConnectionState.Disconnected,
+                configured = false,
+            ),
+        )
+    override val radioSessionState: StateFlow<RadioSessionState> = _radioSessionState
+
     // Use an unbounded Channel to mirror SharedRadioInterfaceService semantics. A MutableSharedFlow would
     // hide the stop/start backlog bug that motivated the resetReceivedBuffer() API.
     private val _receivedData = Channel<ByteArray>(Channel.UNLIMITED)
@@ -79,29 +92,66 @@ class FakeRadioInterfaceService(override val serviceScope: CoroutineScope = Main
         sentToRadio.add(bytes)
     }
 
+    override fun sendToRadioForSession(bytes: ByteArray, expectedRadioSessionEpoch: Long): Boolean {
+        val session = radioSessionState.value
+        return if (session.epoch == expectedRadioSessionEpoch && session.isConfiguredReady) {
+            sendToRadio(bytes)
+            true
+        } else {
+            false
+        }
+    }
+
     override fun connect() {
         connectCalled = true
+        nextSession(activeDeviceAddress = getDeviceAddress(), connectionState = ConnectionState.Connecting)
     }
 
     override suspend fun disconnect() {
         connectCalled = false
+        nextSession(activeDeviceAddress = null, connectionState = ConnectionState.Disconnected)
     }
 
     override fun getDeviceAddress(): String? = _currentDeviceAddressFlow.value
 
     override fun setDeviceAddress(deviceAddr: String?): Boolean {
         _currentDeviceAddressFlow.value = deviceAddr
+        nextSession(
+            selectedDeviceAddress = deviceAddr,
+            activeDeviceAddress = null,
+            connectionState = ConnectionState.Disconnected,
+        )
         return true
+    }
+
+    override fun markCurrentSessionConfigured(expectedEpoch: Long): Boolean {
+        val current = _radioSessionState.value
+        return if (
+            current.epoch == expectedEpoch &&
+            current.selectedDeviceAddress != null &&
+            current.selectedDeviceAddress == current.activeDeviceAddress &&
+            current.transportConnectionState == ConnectionState.Connected
+        ) {
+            _radioSessionState.value = current.copy(configured = true)
+            true
+        } else {
+            false
+        }
     }
 
     override fun toInterfaceAddress(interfaceId: InterfaceId, rest: String): String = "$interfaceId:$rest"
 
     override fun onConnect() {
         _connectionState.value = ConnectionState.Connected
+        nextSession(activeDeviceAddress = getDeviceAddress(), connectionState = ConnectionState.Connected)
     }
 
     override fun onDisconnect(isPermanent: Boolean, errorMessage: String?) {
         _connectionState.value = ConnectionState.Disconnected
+        nextSession(
+            activeDeviceAddress = _radioSessionState.value.activeDeviceAddress,
+            connectionState = if (isPermanent) ConnectionState.Disconnected else ConnectionState.DeviceSleep,
+        )
     }
 
     override fun handleFromRadio(bytes: ByteArray) {
@@ -121,5 +171,21 @@ class FakeRadioInterfaceService(override val serviceScope: CoroutineScope = Main
 
     fun setConnectionState(state: ConnectionState) {
         _connectionState.value = state
+    }
+
+    private fun nextSession(
+        selectedDeviceAddress: String? = _currentDeviceAddressFlow.value,
+        activeDeviceAddress: String?,
+        connectionState: ConnectionState,
+    ) {
+        val current = _radioSessionState.value
+        _radioSessionState.value =
+            RadioSessionState(
+                epoch = current.epoch + 1,
+                selectedDeviceAddress = selectedDeviceAddress,
+                activeDeviceAddress = activeDeviceAddress,
+                transportConnectionState = connectionState,
+                configured = false,
+            )
     }
 }

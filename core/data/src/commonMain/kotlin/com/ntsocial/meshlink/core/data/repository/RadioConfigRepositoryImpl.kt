@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
@@ -53,6 +55,7 @@ import org.meshtastic.proto.ModuleConfig
  * [LocalModuleConfig].
  */
 @Single
+@Suppress("TooManyFunctions")
 open class RadioConfigRepositoryImpl(
     private val nodeDB: NodeRepository,
     private val channelSetDataSource: ChannelSetDataSource,
@@ -65,8 +68,11 @@ open class RadioConfigRepositoryImpl(
 
     private val _channelReadbackGeneration = MutableStateFlow(0L)
     override val channelReadbackGeneration: StateFlow<Long> = _channelReadbackGeneration.asStateFlow()
+    private val _channelSnapshotGeneration = MutableStateFlow(0L)
+    override val channelSnapshotGeneration: StateFlow<Long> = _channelSnapshotGeneration.asStateFlow()
+    private val channelSnapshotMutex = Mutex()
 
-    override suspend fun replaceChannelSet(channelSet: ChannelSet, completeReadback: Boolean) {
+    override suspend fun replaceChannelSet(channelSet: ChannelSet, completeReadback: Boolean) = mutateChannelSnapshot {
         if (completeReadback) {
             channelSetDataSource.replaceChannelSet(channelSet)
             _channelReadbackGeneration.update { it + 1 }
@@ -82,7 +88,18 @@ open class RadioConfigRepositoryImpl(
      * @param channel The [Channel] provided.
      * @return the index of the admin channel after the update (if not found, returns 0).
      */
-    override suspend fun updateChannelSettings(channel: Channel) = channelSetDataSource.updateChannelSettings(channel)
+    override suspend fun updateChannelSettings(channel: Channel) = mutateChannelSnapshot {
+        channelSetDataSource.updateChannelSettings(channel)
+    }
+
+    private suspend fun <T> mutateChannelSnapshot(block: suspend () -> T): T = channelSnapshotMutex.withLock {
+        _channelSnapshotGeneration.update { it + 1 }
+        try {
+            block()
+        } finally {
+            _channelSnapshotGeneration.update { it + 1 }
+        }
+    }
 
     /** Flow representing the [LocalConfig] data store. */
     override val localConfigFlow: Flow<LocalConfig> = localConfigDataSource.localConfigFlow
@@ -99,7 +116,7 @@ open class RadioConfigRepositoryImpl(
      */
     override suspend fun setLocalConfig(config: Config) {
         localConfigDataSource.setLocalConfig(config)
-        config.lora?.let { channelSetDataSource.setLoraConfig(it) }
+        config.lora?.let { lora -> mutateChannelSnapshot { channelSetDataSource.setLoraConfig(lora) } }
     }
 
     override suspend fun setLocalConfigFromHandshake(config: Config) {

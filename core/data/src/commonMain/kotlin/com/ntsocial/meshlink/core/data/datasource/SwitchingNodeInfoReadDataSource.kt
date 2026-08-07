@@ -29,6 +29,7 @@ import com.ntsocial.meshlink.core.database.entity.MyNodeEntity
 import com.ntsocial.meshlink.core.database.entity.NodeEntity
 import com.ntsocial.meshlink.core.database.entity.NodeWithRelations
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import org.koin.core.annotation.Single
 
@@ -40,6 +41,18 @@ class SwitchingNodeInfoReadDataSource(private val dbManager: DatabaseProvider) :
 
     override fun nodeDBbyNumFlow(): Flow<Map<Int, NodeWithRelations>> =
         dbManager.currentDb.flatMapLatest { db -> db.nodeInfoDao().nodeDBbyNum() }
+
+    override suspend fun readCurrentSnapshot(): CurrentNodeDataSnapshot = requireNotNull(
+        dbManager.withDb { db ->
+            val dao = db.nodeInfoDao()
+            CurrentNodeDataSnapshot(
+                nodesByNumber = dao.nodeDBbyNum().first(),
+                myNodeInfo = dao.getMyNodeInfo().first(),
+            )
+        },
+    ) {
+        "Active radio database is unavailable"
+    }
 
     override fun getNodesFlow(
         sort: String,

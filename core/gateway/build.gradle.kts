@@ -22,9 +22,26 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.model.util
 
-/** No-op stubs for core:model on iOS. */
-actual fun getShortDateTime(time: Long): String = ""
+plugins { alias(libs.plugins.meshlink.kmp.library) }
 
-actual fun platformRandomBytes(size: Int): ByteArray = ByteArray(size)
+kotlin {
+    android {
+        namespace = "com.ntsocial.meshlink.core.gateway"
+        androidResources.enable = false
+        withHostTest {}
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            api(projects.core.model)
+            implementation(libs.androidx.sqlite.bundled)
+            implementation(libs.kotlinx.coroutines.core)
+            api(libs.okio)
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
+        }
+    }
+}

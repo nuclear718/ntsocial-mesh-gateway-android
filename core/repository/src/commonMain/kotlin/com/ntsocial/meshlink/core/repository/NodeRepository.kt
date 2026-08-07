@@ -33,6 +33,9 @@ import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.LocalStats
 import org.meshtastic.proto.User
 
+/** One direct snapshot from the database that is active when the read begins. */
+data class CurrentNodeSnapshot(val nodesByNumber: Map<Int, Node>, val myNodeInfo: MyNodeInfo?)
+
 /**
  * Repository interface for managing node-related data.
  *
@@ -61,6 +64,10 @@ interface NodeRepository {
 
     /** A reactive map of all known nodes in the mesh, keyed by their 32-bit node number. */
     val nodeDBbyNum: StateFlow<Map<Int, Node>>
+
+    /** Reads the currently active datasource directly, bypassing eager StateFlow replay from the previous database. */
+    suspend fun readCurrentNodeSnapshot(): CurrentNodeSnapshot =
+        CurrentNodeSnapshot(nodesByNumber = nodeDBbyNum.value, myNodeInfo = myNodeInfo.value)
 
     /** Flow emitting the count of nodes currently considered "online" (heard from recently). */
     val onlineNodeCount: Flow<Int>

@@ -22,6 +22,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress("ClassSignature")
+
 package com.ntsocial.meshlink.core.repository
 
 import androidx.paging.PagingData
@@ -35,6 +37,7 @@ import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import org.meshtastic.proto.ChannelSettings
 
 /**
@@ -84,6 +87,14 @@ interface PacketRepository {
     /** Returns all packets currently queued for transmission. */
     suspend fun getQueuedPackets(): List<DataPacket>
 
+    /** Queued packet plus the durable Gateway channel identity that must still own its numeric slot at dispatch. */
+    suspend fun getDurableQueuedPackets(): List<DurableQueuedPacket> =
+        getQueuedPackets().map { packet -> DurableQueuedPacket(packet, expectedSourceChannelId = null) }
+
+    /** Reads one packet with its durable dispatch identity for restart-safe idempotency checks. */
+    suspend fun getDurablePacketByPacketId(packetId: Int): DurableQueuedPacket? =
+        getPacketByPacketId(packetId)?.let { DurableQueuedPacket(it, expectedSourceChannelId = null) }
+
     /**
      * Highest durable native-text sequence. An empty [legacyBroadcastContactKeys] list counts only rows with a captured
      * stable Gateway identity; non-empty keys additionally expose the internal best-effort legacy compatibility view.
@@ -95,6 +106,17 @@ interface PacketRepository {
      * [legacyBroadcastContactKeys] list so its high-water matches the stable-only insertion cursor.
      */
     fun getGatewayHistoryState(legacyBroadcastContactKeys: List<String>): Flow<NtsocialGatewayHistoryState>
+
+    /**
+     * Reads one history-domain snapshot directly from the currently active per-radio data source.
+     *
+     * Production implementations must not satisfy this from an eagerly shared/derived flow, because that flow may still
+     * replay the previous database immediately after a radio switch. The default exists for lightweight test doubles;
+     * the Room implementation captures one raw database instance for both epoch and high-water reads.
+     */
+    suspend fun readCurrentGatewayHistoryState(
+        legacyBroadcastContactKeys: List<String> = emptyList(),
+    ): NtsocialGatewayHistoryState = getGatewayHistoryState(legacyBroadcastContactKeys).first()
 
     /** Returns a bounded page including captured rows and best-effort legacy rows on [legacyBroadcastContactKeys]. */
     suspend fun getGatewayMessageChanges(
@@ -128,6 +150,7 @@ interface PacketRepository {
         filtered: Boolean = false,
         gatewayIdentity: NtsocialGatewayMessageIdentity? = null,
         originClientMessageId: String? = null,
+        expectedGatewaySourceChannelId: String? = null,
     )
 
     /**
@@ -270,3 +293,5 @@ interface PacketRepository {
         getNode: suspend (String?) -> Node,
     ): Flow<List<Message>>
 }
+
+data class DurableQueuedPacket(val packet: DataPacket, val expectedSourceChannelId: String?)

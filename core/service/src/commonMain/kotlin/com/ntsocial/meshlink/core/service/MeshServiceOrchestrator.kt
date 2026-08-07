@@ -124,8 +124,10 @@ class MeshServiceOrchestrator(
             // the database here. Without this, DatabaseManager._currentDb stays null and all
             // Room writes via withDb() are silently dropped — causing ourNodeInfo to remain null
             // after the handshake completes.
-            databaseManager.switchActiveDatabase(radioInterfaceService.getDeviceAddress())
-            Logger.i { "Per-device database initialized, connecting radio" }
+            val selectedAddress = radioInterfaceService.awaitHydratedDeviceAddress()
+            databaseManager.switchActiveDatabase(selectedAddress)
+            nodeManager.loadCachedNodeDBAndAwait()
+            Logger.i { "Per-device database and node cache initialized, connecting radio" }
             radioInterfaceService.connect()
         }
 
@@ -143,8 +145,6 @@ class MeshServiceOrchestrator(
         serviceRepository.serviceAction
             .onEach { action -> newScope.handledLaunch { router.actionHandler.onServiceAction(action) } }
             .launchIn(newScope)
-
-        nodeManager.loadCachedNodeDB()
     }
 
     /**

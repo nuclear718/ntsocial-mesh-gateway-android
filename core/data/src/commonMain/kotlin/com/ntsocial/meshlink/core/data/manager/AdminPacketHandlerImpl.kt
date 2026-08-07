@@ -75,7 +75,7 @@ class AdminPacketHandlerImpl(
             if (fromNum == myNodeNum) {
                 configFlowManager.value.handleLocalMetadata(it)
             } else {
-                nodeManager.insertMetadata(fromNum, it)
+                nodeManager.insertMetadataFromRadio(fromNum, it)
             }
         }
     }

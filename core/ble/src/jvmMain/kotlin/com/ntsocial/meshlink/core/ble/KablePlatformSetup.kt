@@ -28,6 +28,8 @@ import com.juul.kable.Peripheral
 import com.juul.kable.PeripheralBuilder
 import com.juul.kable.toIdentifier
 
+internal actual fun initializePlatformBle() = Unit
+
 internal actual fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean) {
     // Desktop Kable uses direct connections without needing autoConnect.
 }
@@ -37,7 +39,7 @@ internal actual fun createPeripheral(address: String, builderAction: PeripheralB
 
 // JVM/desktop Kable does not expose an MTU StateFlow; return a reasonable default (512)
 // so callers can size their writes without falling back to an overly conservative minimum.
-internal actual fun Peripheral.negotiatedMaxWriteLength(): Int? = DEFAULT_JVM_MTU
+internal actual suspend fun Peripheral.negotiatedMaxWriteLength(writeType: BleWriteType): Int? = DEFAULT_JVM_MTU
 
 internal actual fun Peripheral.requestHighConnectionPriority(): Boolean = false
 

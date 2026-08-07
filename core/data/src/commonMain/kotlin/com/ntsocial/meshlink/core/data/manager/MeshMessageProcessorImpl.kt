@@ -64,6 +64,7 @@ class MeshMessageProcessorImpl(
     private val meshLogRepository: Lazy<MeshLogRepository>,
     private val router: Lazy<MeshRouter>,
     private val fromRadioDispatcher: FromRadioPacketHandler,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshMessageProcessor {
 
@@ -83,7 +84,20 @@ class MeshMessageProcessorImpl(
     private val maxEarlyPacketBuffer = 10240
 
     override fun clearEarlyPackets() {
-        scope.launch { earlyMutex.withLock { earlyReceivedPackets.clear() } }
+        scope.handledLaunch { clearEarlyPacketsAndAwait() }
+    }
+
+    override suspend fun quiesceIngress() {
+        ingressWorkTracker.pauseAndAwaitRetiredWork()
+        clearEarlyPacketsAndAwait()
+    }
+
+    override fun resumeIngress() {
+        ingressWorkTracker.resume()
+    }
+
+    override suspend fun clearEarlyPacketsAndAwait() {
+        earlyMutex.withLock { earlyReceivedPackets.clear() }
     }
 
     init {
@@ -97,19 +111,24 @@ class MeshMessageProcessorImpl(
     }
 
     override fun handleFromRadio(bytes: ByteArray, myNodeNum: Int?) {
-        runCatching { FromRadio.ADAPTER.decode(bytes) }
-            .onSuccess { proto -> processFromRadio(proto, myNodeNum) }
-            .onFailure { primaryException ->
-                runCatching {
-                    val logRecord = LogRecord.ADAPTER.decode(bytes)
-                    processFromRadio(FromRadio(log_record = logRecord), myNodeNum)
-                }
-                    .onFailure { _ ->
-                        Logger.e(primaryException) {
-                            "Failed to parse radio packet (len=${bytes.size}). Not a valid FromRadio or LogRecord."
-                        }
+        if (ingressWorkTracker.enterHandler() == null) return
+        try {
+            runCatching { FromRadio.ADAPTER.decode(bytes) }
+                .onSuccess { proto -> processFromRadio(proto, myNodeNum) }
+                .onFailure { primaryException ->
+                    runCatching {
+                        val logRecord = LogRecord.ADAPTER.decode(bytes)
+                        processFromRadio(FromRadio(log_record = logRecord), myNodeNum)
                     }
-            }
+                        .onFailure { _ ->
+                            Logger.e(primaryException) {
+                                "Failed to parse radio packet (len=${bytes.size}). Not a valid FromRadio or LogRecord."
+                            }
+                        }
+                }
+        } finally {
+            ingressWorkTracker.exitHandler()
+        }
     }
 
     private fun processFromRadio(proto: FromRadio, myNodeNum: Int?) {
@@ -167,7 +186,7 @@ class MeshMessageProcessorImpl(
         if (nodeManager.isNodeDbReady.value) {
             processReceivedMeshPacket(preparedPacket, myNodeNum)
         } else {
-            scope.launch {
+            ingressWorkTracker.launch(scope) {
                 earlyMutex.withLock {
                     val queueSize = earlyReceivedPackets.size
                     if (queueSize >= maxEarlyPacketBuffer) {
@@ -181,7 +200,7 @@ class MeshMessageProcessorImpl(
     }
 
     private fun flushEarlyReceivedPackets(reason: String) {
-        scope.launch {
+        ingressWorkTracker.launch(scope) {
             val packets =
                 earlyMutex.withLock {
                     if (earlyReceivedPackets.isEmpty()) return@withLock emptyList<MeshPacket>()
@@ -212,22 +231,22 @@ class MeshMessageProcessorImpl(
             )
         val logJob = insertMeshLog(log)
 
-        scope.launch {
+        ingressWorkTracker.launch(scope) {
             mapsMutex.withLock {
                 logInsertJobByPacketId[packet.id] = logJob
                 logUuidByPacketId[packet.id] = log.uuid
             }
         }
 
-        scope.handledLaunch { serviceRepository.emitMeshPacket(packet) }
+        ingressWorkTracker.launch(scope) { serviceRepository.emitMeshPacket(packet) }
 
         myNodeNum?.let { myNum ->
             val from = packet.from
             val isOtherNode = myNum != from
-            nodeManager.updateNode(myNum, withBroadcast = isOtherNode) { node: Node ->
+            nodeManager.updateNodeFromRadio(myNum, withBroadcast = isOtherNode) { node: Node ->
                 node.copy(lastHeard = nowSeconds.toInt())
             }
-            nodeManager.updateNode(from, withBroadcast = false, channel = packet.channel) { node: Node ->
+            nodeManager.updateNodeFromRadio(from, withBroadcast = false, channel = packet.channel) { node: Node ->
                 val viaMqtt = packet.via_mqtt == true
                 val isDirect = packet.hop_start == packet.hop_limit
 
@@ -264,7 +283,7 @@ class MeshMessageProcessorImpl(
             try {
                 router.value.dataHandler.handleReceivedData(packet, myNum, log.uuid, logJob)
             } finally {
-                scope.launch {
+                ingressWorkTracker.launch(scope) {
                     mapsMutex.withLock {
                         logUuidByPacketId.remove(packet.id)
                         logInsertJobByPacketId.remove(packet.id)
@@ -291,10 +310,13 @@ class MeshMessageProcessorImpl(
         lastLocalNodeRefreshMs = now
 
         val myNum = nodeManager.myNodeNum.value ?: return
-        nodeManager.updateNode(myNum, withBroadcast = false) { node: Node -> node.copy(lastHeard = nowSeconds.toInt()) }
+        nodeManager.updateNodeFromRadio(myNum, withBroadcast = false) { node: Node ->
+            node.copy(lastHeard = nowSeconds.toInt())
+        }
     }
 
-    private fun insertMeshLog(log: MeshLog): Job = scope.handledLaunch { meshLogRepository.value.insert(log) }
+    private fun insertMeshLog(log: MeshLog): Job =
+        ingressWorkTracker.launch(scope) { meshLogRepository.value.insert(log) }
 
     companion object {
         /**

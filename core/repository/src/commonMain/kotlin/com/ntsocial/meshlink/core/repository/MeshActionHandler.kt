@@ -124,4 +124,16 @@ interface MeshActionHandler {
 
     /** Updates the last used device address. */
     fun handleUpdateLastAddress(deviceAddr: String?)
+
+    /**
+     * Updates the last used address and waits until the matching per-radio database/cache transition is complete.
+     *
+     * Returns false only when a newer selection superseded this request before it could finish. Platform hosts that
+     * require an exact database/transport boundary (notably iOS Apple Gateway) must use this path before starting the
+     * replacement transport.
+     */
+    suspend fun handleUpdateLastAddressAndAwait(deviceAddr: String?): Boolean {
+        handleUpdateLastAddress(deviceAddr)
+        return true
+    }
 }

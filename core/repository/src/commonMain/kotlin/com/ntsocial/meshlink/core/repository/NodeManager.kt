@@ -74,6 +74,11 @@ interface NodeManager : NodeIdLookup {
     /** Loads the cached node database from the repository. */
     fun loadCachedNodeDB()
 
+    /** Loads and maps the active per-radio cache before returning. Selection-critical callers must use this barrier. */
+    suspend fun loadCachedNodeDBAndAwait() {
+        loadCachedNodeDB()
+    }
+
     /** Clears the in-memory node database. */
     fun clear()
 
@@ -107,6 +112,10 @@ interface NodeManager : NodeIdLookup {
     /** Updates a node using a transformation function. */
     fun updateNode(nodeNum: Int, withBroadcast: Boolean = true, channel: Int = 0, transform: (Node) -> Node)
 
+    /** Updates a node from the current radio ingress generation. */
+    fun updateNodeFromRadio(nodeNum: Int, withBroadcast: Boolean = true, channel: Int = 0, transform: (Node) -> Node) =
+        updateNode(nodeNum, withBroadcast, channel, transform)
+
     /** Removes a node from the in-memory database by its number. */
     fun removeByNodenum(nodeNum: Int)
 
@@ -115,4 +124,7 @@ interface NodeManager : NodeIdLookup {
 
     /** Inserts hardware metadata for a node. */
     fun insertMetadata(nodeNum: Int, metadata: DeviceMetadata)
+
+    /** Inserts hardware metadata owned by the current radio ingress generation. */
+    fun insertMetadataFromRadio(nodeNum: Int, metadata: DeviceMetadata) = insertMetadata(nodeNum, metadata)
 }

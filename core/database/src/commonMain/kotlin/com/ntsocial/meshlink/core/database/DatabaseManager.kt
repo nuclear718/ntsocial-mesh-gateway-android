@@ -111,7 +111,7 @@ open class DatabaseManager(
             .stateIn(managerScope, SharingStarted.Eagerly, getOrOpenDatabase(DatabaseConstants.DEFAULT_DB_NAME))
 
     private val _currentAddress = MutableStateFlow<String?>(null)
-    val currentAddress: StateFlow<String?> = _currentAddress
+    override val currentAddress: StateFlow<String?> = _currentAddress
 
     /** Initialize the active database for [address]. */
     suspend fun init(address: String?) {

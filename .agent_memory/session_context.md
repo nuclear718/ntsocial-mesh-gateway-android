@@ -1,4 +1,121 @@
-# Agent Session Context - Meshtastic Android
+# Agent Session Context - NTsocial MeshLink Android, Windows & iOS
+
+## 2026-08-07 - iOS third-track source implementation and simulator verification
+- Added iOS as the repository's third product track on branch `codex/feat/ios-meshlink`, from base
+  HEAD `988d3327e45772e73dd2147ee7fffe4a26d370a6`. The implementation remains uncommitted at this
+  handoff; do not present it as a published tag, signed artifact, TestFlight build, or App Store release.
+- Added `core/gateway` Apple Gateway v1: strict versioned/length-delimited command authentication,
+  HMAC-SHA256 verification, nonce replay defense, 32-byte Base64URL/120-second caller-source-slot-
+  generation-capability routes, opaque generation rotation, deterministic packet IDs, a private restart-stable
+  256-record-per-caller ledger, reclaimable App Group mailbox claims, append-only results, bounded
+  128-row complete-`NM` overlay ingress, and paged stable-only native broadcast-text changes. Port 256
+  is outbound; legacy 497 remains receive-only. `ACCEPTED_LOCAL` is written only after durable Room/
+  retry admission and accepted-ledger commit and never means RF or remote delivery. Additive schema-v1
+  `overlay_epoch_state` stores each epoch's monotonic high-water outside bounded ingress retention,
+  backfills from retained rows for an early v1 database, and clears only on explicit reset. An exact
+  accepted-ledger record is authenticated and replayed before process-local route resolution after a
+  ledger-commit/result-publication crash; it republishes the original packet ID without a second radio
+  admission, while changed content conflicts. Failure of the final accepted-ledger commit after radio
+  admission remains a retryable `PENDING_PROVIDER_WAKE`/`QUEUE_FAILED`, not proof of no scheduling.
+- Added atomic shared `RadioSessionState`. Gateway readiness and inbound projection require selected radio equal
+  to active radio, one monotonic session epoch with config completed for that exact epoch, the selected radio's
+  active Room database, positive complete-channel readback generation, a non-mutating final snapshot generation,
+  Bluetooth permission/enabled, connected transport/App state, history epoch, and complete channel fingerprint.
+  Route issue and durable admission use the same guard; radio selection/channel admission share
+  `ChannelOperationLock`. An inbound-session revision can trigger a drain even when the other readiness fields are
+  unchanged. A `READY` transition drains pending work, and retryable commands use one coalesced
+  500/1,000/2,000-ms job with at most three attempts. Exhausting the 64-command per-pass budget schedules a
+  delayed continuation so command 65 is neither starved nor processed in a busy loop.
+- Hardened radio replacement across shared code. A generation-bound callback facade and one synchronous validation/
+  side-effect lock revoke retired transport connect/disconnect/data callbacks before teardown. Selection pauses and
+  awaits old radio ingress plus registered child writes, drains and awaits the retired outbound queue/status/log
+  generation, switches the per-radio database, loads that database's node cache from a direct authoritative snapshot,
+  and only then resumes and starts the replacement transport. Stale work cannot write into or complete the replacement
+  database/session. Expected epoch survives admin/readback request, queue admission and dequeue through the synchronous
+  transport-send linearization point, including same-address reconnect with a reused transport object.
+- Manual/QR apply, protected-channel reconcile, and built-in provisioning share one mutation contract: validate the
+  exact session and admin owner, invalidate Gateway ingress, perform exact-session firmware mutations, obtain a
+  correlated fresh readback, then activate only the verified final identity. Fresh readback reuses firmware's `69420`
+  config-only sentinel and a host-exclusive owner/token that may start only after prior FULL Stage 2 and without another
+  owner; its dedicated completion flow cannot be satisfied by a stale FULL response, parallel handshake, old session,
+  or generic readback generation. Mutation serialization does not hold the short operation lock while waiting for the
+  producer commit. Rejection, mismatch, timeout, or session replacement remains fail closed.
+- Durable Gateway rows retain their accepted source-channel identity. Actual iOS drain revalidates the active exact
+  session/ingress and slot-derived PSK/LoRa source identity, then keeps the operation boundary through exact-session
+  queue admission and matching firmware QueueStatus. A slot/PSK change before dispatch fails closed rather than sending
+  to the new channel occupying that numeric slot.
+- Added the iOS runtime and host: static `MeshLinkKit`, SwiftUI/Xcode wrapper, real Koin composition,
+  shared repositories/Room/`DirectRadioControllerImpl`/`MeshServiceOrchestrator`, Room-backed durable
+  queue replay, Kable/CoreBluetooth availability and peripheral reconstruction/restoration setup,
+  negotiated write length, Security.framework random bytes, file-backed DataStore, App Group SQLite,
+  shared-Keychain 32-byte HMAC bootstrap, payload-free Darwin hints, source Privacy Manifest, App Icon
+  asset catalog, and `ntsocial-meshlink://process`. The focused UI covers host/App Group/Bluetooth/background/parent
+  readiness plus scan/select/connect/disconnect/forget; routes, native-text diagnostics, results,
+  Gateway reset/panic wipe, maps, and broad settings are deferred to avoid duplicating the parent.
+- Source identifiers are companion `com.ntsocial.meshlink.ios`, framework
+  `com.ntsocial.meshlink.ios.framework`, parent caller `com.ntsocial.ios`, App Group
+  `group.com.ntsocial.meshlink.gateway`, and Keychain suffix `com.ntsocial.meshlink.gateway`.
+  These are source declarations only; no signed dual-App entitlement/provisioning proof exists.
+- Current-source focused evidence is 135/135: domain 16/16, data 104/104, and `:ios:runtime:jvmTest` 15/15
+  (session/database guard 4, bounded retry scheduler 3, command-drain budget 3, durable dispatch identity 2,
+  inbound-projection signal 1, shell/deep-link 2). `:core:gateway:jvmTest` separately passed 36 tests. Deterministic
+  coverage includes same-address/same-transport reconnect, exact admin/readback/raw send, firmware-69420 host
+  owner/token correlation, readback producer progress, premature activation, ambiguous mutation results, and
+  accepted-before-drain source replacement. The final bounded audit found no reproducible P0/P1 in these boundaries.
+  Current Spotless, five changed modules' Detekt, Gateway/runtime iosArm64 and iosSimulatorArm64 compilation,
+  iOS runtime simulator-test compilation, static framework link, and diff hygiene passed. With JDK 21, en-US
+  `JAVA_TOOL_OPTIONS`, and one worker, current-source root
+  `assembleDebug test allTests kmpSmokeCompile --continue --console=plain` completed `BUILD SUCCESSFUL` in 2m:
+  1,406 actionable tasks (333 executed, 1 from cache, 1,072 up-to-date). Native iOS test link/run tasks remained
+  `SKIPPED` by convention. Root `detekt --continue` is nonzero only for five pre-existing findings:
+  `JvmDesktopBluetoothPairingService.kt` line 154 `TooGenericExceptionCaught` and lines 143/188 `ThrowsCount`,
+  `NtsocialGatewayIdentity.kt` line 168 `MagicNumber`, and `BleRadioTransport.kt` line 246 `ThrowsCount`.
+  Changed modules and Spotless are green. The separately authorized
+  `NTsocial_release` Swift adapter includes separate current-catalog/same-epoch historical source resolution and
+  authenticated `enqueueNativeBroadcastText` while its composer remains deferred. A first-send
+  `pendingLocalAcceptance` is durably recorded as exact message/attempt/transport `.queued` plus `.admission` and
+  remains pending until a same-attempt terminal result; later `ACCEPTED_LOCAL` acknowledges and advances once.
+  Parent-private restart correlation preserves the final social-header message ID, attempt, multipart kind/index/count,
+  transfer ID, and logical channel instead of reconstructing them from a chunk wrapper. Slot-indexed duplicate source
+  identities remain available for outbound routing; canonical/history projection collapses them deterministically
+  (PRIMARY first, then lowest slot) and rejects conflicting security semantics. Retention gaps, malformed envelopes,
+  and lost/expired multipart transfers write a durable gap/quarantine/abandoned-transfer terminal record before a
+  bounded cursor advance; deterministic poison may be skipped only after that record, while transient store/projection
+  failure never advances the cursor and already-evicted rows are not claimed recoverable.
+  `swift test --package-path ios --filter AppleGatewayAdapterTests` passed 27/27 focused tests and the complete
+  SwiftPM suite passed 668/668, including the preceding restart/pending/multipart/duplicate/gap contracts plus shared
+  HMAC/identity vectors, exact Keychain service/account, additive overlay-epoch migration, native-text enqueue, and
+  commit-before-cursor behavior. The parent release build is green; this remains source/build evidence, not signed
+  two-App interoperability proof.
+- A final pre-host audit exposed a Koin construction cycle between `NtsocialGatewayRepositoryImpl` and
+  `IosDurableMessageQueue` that caused a launch-time stack overflow. The current source removes the queue-to-repository
+  dependency in favor of cycle-free `GatewayIngressSessionGate.activeSessionEpoch`; post-fix runtime 15/15,
+  runtime Detekt, Simulator compilation, and framework link pass. From fresh Derived Data
+  `/tmp/ntsocial-ios-final-fixed.2fROK9`, the signing-disabled Simulator Debug `xcodebuild clean build -quiet`
+  exited 0 with zero output. The bundle installed and cold-launched on `Codex iPhone 17`
+  (`E3249756-57AF-4D9C-AA2B-3332E9309529`) as PID 67524 and returned the same live PID after two seconds.
+  A fresh signing-disabled generic-iphoneos Release clean build from
+  `/tmp/ntsocial-ios-final-device.YaTk5N` also exited 0 with zero output; its bundle reports 1.0.0/build 1 and
+  contains `Assets.car` plus root `PrivacyInfo.xcprivacy`. These are unsigned source-build/simulator results,
+  not signed archive, provisioning, entitlement, physical-device install, BLE/restoration, connected-radio, RF,
+  TestFlight, or App Store evidence.
+- Native iOS tests remain disabled in the repository convention, so `iosSimulatorArm64Test` can
+  report success while link/run tasks are skipped; current native evidence is compilation only. The prior
+  Skiko ICU 18.5-versus-17.0 warning is closed by a build-phase script that fail-closes unless the member
+  has the expected data-only layout, then relinks its LC_BUILD_VERSION to iOS 17 and atomically rebuilds
+  the static archive. This closes the observed simulator linker warning, not the signed archive gate.
+- The only known open source P2 is bounded liveness after an exact readback has been admitted, its caller times out or
+  cancels, and firmware never emits a late response: the host owner remains fail closed for that same epoch, so a
+  reconnect/new epoch is required to restore exact readback/identity activation. This is not wrong-channel dispatch,
+  cross-session mutation, or data disclosure; ingress remains closed and durable dispatch identity is revalidated.
+- Still required: matching Apple Developer identifiers/profiles and signed App Group/Keychain/
+  Darwin/deep-link two-App proof; physical-device Bluetooth permission/scan/handshake/restoration;
+  connected-radio durable admission; LoRa airtime, second-radio reception, parent canonical import,
+  retry/restart and Android/iOS interoperability; native test execution; signing/archive/final
+  Privacy Manifest and linked-API review/licensing/TestFlight/App Store gates. Never claim permanent
+  background execution. The user's verbal
+  Play-listing statement for Android was not repository-verified and does not override the existing
+  Android Play build/submission evidence in `AGENTS.md`.
 
 ## 2026-08-06 - Android channel persistence and phone-GPS reliability implementation
 - Implemented one serialized verified local-channel apply path from base `4151d6227`: ensure the

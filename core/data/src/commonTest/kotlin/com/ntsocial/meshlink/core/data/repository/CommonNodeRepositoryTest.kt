@@ -29,6 +29,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import com.ntsocial.meshlink.core.data.datasource.NodeInfoReadDataSource
 import com.ntsocial.meshlink.core.data.datasource.NodeInfoWriteDataSource
+import com.ntsocial.meshlink.core.data.manager.RadioIngressWorkTracker
 import com.ntsocial.meshlink.core.database.entity.MyNodeEntity
 import com.ntsocial.meshlink.core.database.entity.NodeWithRelations
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
@@ -85,6 +86,7 @@ abstract class CommonNodeRepositoryTest {
                 writeDataSource,
                 dispatchers,
                 localStatsDataSource,
+                RadioIngressWorkTracker(),
             )
     }
 

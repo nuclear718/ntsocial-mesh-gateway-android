@@ -29,16 +29,23 @@ import com.ntsocial.meshlink.core.repository.MeshDataHandler
 import com.ntsocial.meshlink.core.repository.MeshLogRepository
 import com.ntsocial.meshlink.core.repository.MeshRouter
 import com.ntsocial.meshlink.core.repository.NodeManager
+import com.ntsocial.meshlink.core.repository.NodeRepository
+import com.ntsocial.meshlink.core.repository.NotificationManager
+import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import dev.mokkery.MockMode
+import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
 import dev.mokkery.every
+import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.verify
 import dev.mokkery.verifySuspend
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -51,6 +58,8 @@ import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MeshMessageProcessorImplTest {
@@ -76,12 +85,17 @@ class MeshMessageProcessorImplTest {
         every { router.dataHandler } returns dataHandler
     }
 
-    private fun createProcessor(scope: CoroutineScope): MeshMessageProcessorImpl = MeshMessageProcessorImpl(
-        nodeManager = nodeManager,
+    private fun createProcessor(
+        scope: CoroutineScope,
+        ingressWorkTracker: RadioIngressWorkTracker = RadioIngressWorkTracker(),
+        selectedNodeManager: NodeManager = nodeManager,
+    ): MeshMessageProcessorImpl = MeshMessageProcessorImpl(
+        nodeManager = selectedNodeManager,
         serviceRepository = serviceRepository,
         meshLogRepository = lazy { meshLogRepository },
         router = lazy { router },
         fromRadioDispatcher = fromRadioDispatcher,
+        ingressWorkTracker = ingressWorkTracker,
         scope = scope,
     )
 
@@ -259,7 +273,7 @@ class MeshMessageProcessorImplTest {
         advanceUntilIdle()
 
         // Should have called updateNode for myNodeNum (lastHeard update)
-        verify { nodeManager.updateNode(myNodeNum, withBroadcast = true, any(), any()) }
+        verify { nodeManager.updateNodeFromRadio(myNodeNum, withBroadcast = true, any(), any()) }
     }
 
     @Test
@@ -281,7 +295,7 @@ class MeshMessageProcessorImplTest {
         advanceUntilIdle()
 
         // Should have called updateNode for the sender
-        verify { nodeManager.updateNode(senderNode, withBroadcast = false, any(), any()) }
+        verify { nodeManager.updateNodeFromRadio(senderNode, withBroadcast = false, any(), any()) }
     }
 
     // ---------- handleReceivedMeshPacket: null decoded ----------
@@ -360,5 +374,54 @@ class MeshMessageProcessorImplTest {
         advanceUntilIdle()
 
         verifySuspend { meshLogRepository.insert(any()) }
+    }
+
+    @Test
+    fun `quiesce waits for delayed NodeManager persistence before database switch`() = runTest(testDispatcher) {
+        val tracker = RadioIngressWorkTracker()
+        val nodeRepository = mock<NodeRepository>(MockMode.autofill)
+        val writesStarted = CompletableDeferred<Unit>()
+        val releaseWrites = CompletableDeferred<Unit>()
+        var databaseSwitched = false
+        everySuspend { nodeRepository.upsert(any()) } calls
+            {
+                writesStarted.complete(Unit)
+                releaseWrites.await()
+                assertFalse(databaseSwitched)
+            }
+        val actualNodeManager =
+            NodeManagerImpl(
+                nodeRepository = nodeRepository,
+                serviceBroadcasts = mock<ServiceBroadcasts>(MockMode.autofill),
+                notificationManager = mock<NotificationManager>(MockMode.autofill),
+                ingressWorkTracker = tracker,
+                scope = backgroundScope,
+            )
+        actualNodeManager.setMyNodeNum(myNodeNum)
+        actualNodeManager.setNodeDbReady(true)
+        val actualProcessor = createProcessor(backgroundScope, tracker, actualNodeManager)
+        val packet =
+            MeshPacket(
+                id = 99,
+                from = 999,
+                decoded = Data(portnum = PortNum.TEXT_MESSAGE_APP, payload = ByteString.EMPTY),
+                rx_time = 1700000000,
+            )
+
+        actualProcessor.handleFromRadio(FromRadio.ADAPTER.encode(FromRadio(packet = packet)), myNodeNum)
+        writesStarted.await()
+        val switch = async {
+            actualProcessor.quiesceIngress()
+            databaseSwitched = true
+        }
+        advanceUntilIdle()
+
+        assertFalse(switch.isCompleted)
+        assertFalse(databaseSwitched)
+
+        releaseWrites.complete(Unit)
+        switch.await()
+
+        assertTrue(databaseSwitched)
     }
 }

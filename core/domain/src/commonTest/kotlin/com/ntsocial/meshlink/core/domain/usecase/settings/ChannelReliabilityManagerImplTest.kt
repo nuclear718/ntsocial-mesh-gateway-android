@@ -29,13 +29,18 @@ import com.ntsocial.meshlink.core.domain.usecase.session.EnsureSessionResult
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Position
+import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelProtectionSnapshot
+import com.ntsocial.meshlink.core.repository.ChannelReadbackCompletion
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.ChannelSnapshotRepository
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MeshConfigFlowManager
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioSessionState
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.testing.FakeNodeRepository
 import com.ntsocial.meshlink.core.testing.TestDataFactory
@@ -46,7 +51,9 @@ import dev.mokkery.every
 import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -65,6 +72,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ChannelReliabilityManagerImplTest {
@@ -135,6 +143,23 @@ class ChannelReliabilityManagerImplTest {
         assertEquals(ChannelReliabilityResult.VERIFIED, result)
         assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
         assertEquals(1, fixture.readbackRequests)
+        assertEquals(
+            listOf("invalidate", "command", "command", "command", "command", "activate"),
+            fixture.gatewayLifecycle,
+        )
+    }
+
+    @Test
+    fun `ambiguous manual apply closes gateway before begin and never reactivates`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.nextReadback = fixture.channelSet(fixture.primary, fixture.changedSecondary)
+
+        val result = fixture.manager.applyAndVerify(fixture.protectedSet)
+
+        assertEquals(ChannelReliabilityResult.READBACK_FAILED, result)
+        assertEquals("invalidate", fixture.gatewayLifecycle.first())
+        assertTrue("command" in fixture.gatewayLifecycle)
+        assertTrue("activate" !in fixture.gatewayLifecycle)
     }
 
     @Test
@@ -164,6 +189,34 @@ class ChannelReliabilityManagerImplTest {
     }
 
     @Test
+    fun `same-address reconnect during writes cannot mutate the replacement session`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.commandSender.afterMessageSent = { message ->
+            if (message.set_channel?.index == 0) fixture.reconnectSameRadio()
+        }
+
+        val result = fixture.manager.applyAndVerify(fixture.protectedSet)
+
+        assertEquals(ChannelReliabilityResult.RADIO_REJECTED, result)
+        assertEquals(listOf("begin", "channel:0"), fixture.commandSender.events())
+        assertEquals(0, fixture.readbackRequests)
+    }
+
+    @Test
+    fun `same-address reconnect after precheck rejects command at session-bound admission`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.commandSender.beforeSessionAdmission = { message ->
+            if (message.set_channel?.index == 0) fixture.reconnectSameRadio()
+        }
+
+        val result = fixture.manager.applyAndVerify(fixture.protectedSet)
+
+        assertEquals(ChannelReliabilityResult.RADIO_REJECTED, result)
+        assertEquals(listOf("begin"), fixture.commandSender.events())
+        assertEquals(0, fixture.readbackRequests)
+    }
+
+    @Test
     fun `radio switch after fresh readback cannot return verified`() = runTest {
         val fixture = Fixture(backgroundScope)
         fixture.nextReadback = fixture.protectedSet
@@ -175,6 +228,19 @@ class ChannelReliabilityManagerImplTest {
         assertNotEquals(ChannelReliabilityResult.VERIFIED, result)
         assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
         assertEquals(1, fixture.readbackRequests)
+    }
+
+    @Test
+    fun `same-address reconnect before readback admission cannot request replacement radio`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.nextReadback = fixture.protectedSet
+        fixture.beforeReadbackAdmission = fixture::reconnectSameRadio
+
+        val result = fixture.manager.applyAndVerify(fixture.protectedSet)
+
+        assertEquals(ChannelReliabilityResult.READBACK_FAILED, result)
+        assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
+        assertEquals(0, fixture.readbackRequests)
     }
 
     @Test
@@ -193,6 +259,47 @@ class ChannelReliabilityManagerImplTest {
         assertEquals(listOf("begin", "channel:1", "commit"), fixture.commandSender.events())
         assertEquals(fixture.secondary, assertNotNull(fixture.commandSender.messages[1].set_channel).settings)
         assertEquals(1, fixture.readbackRequests)
+        assertEquals(listOf("invalidate", "command", "command", "command", "activate"), fixture.gatewayLifecycle)
+    }
+
+    @Test
+    fun `protected apply that reconnects during snapshot save restores previous snapshot`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val previous =
+            ChannelProtectionSnapshot(
+                maxChannels = fixture.maxChannels,
+                channelSet = fixture.channelSet(fixture.primary, fixture.changedSecondary),
+            )
+        fixture.snapshotRepository.save(fixture.identity, previous)
+        fixture.nextReadback = fixture.protectedSet
+        val saveStarted = CompletableDeferred<Unit>()
+        val releaseSave = CompletableDeferred<Unit>()
+        fixture.snapshotRepository.gateNextSave(saveStarted, releaseSave)
+
+        val result = async { fixture.manager.applyAndVerify(fixture.protectedSet) }
+        saveStarted.await()
+        fixture.reconnectSameRadio()
+        releaseSave.complete(Unit)
+
+        assertEquals(ChannelReliabilityResult.READBACK_FAILED, result.await())
+        assertEquals(previous, fixture.snapshotRepository.get(fixture.identity))
+        assertTrue("activate" !in fixture.gatewayLifecycle)
+    }
+
+    @Test
+    fun `protect that reconnects during snapshot save removes stale new snapshot`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val saveStarted = CompletableDeferred<Unit>()
+        val releaseSave = CompletableDeferred<Unit>()
+        fixture.snapshotRepository.gateNextSave(saveStarted, releaseSave)
+
+        val result = async { fixture.manager.protectCurrentChannelSet() }
+        saveStarted.await()
+        fixture.reconnectSameRadio()
+        releaseSave.complete(Unit)
+
+        assertEquals(ChannelReliabilityResult.READBACK_FAILED, result.await())
+        assertNull(fixture.snapshotRepository.get(fixture.identity))
     }
 
     @Test
@@ -224,18 +331,25 @@ class ChannelReliabilityManagerImplTest {
         val meshPackets = MutableSharedFlow<MeshPacket>(extraBufferCapacity = 16)
         val channelSetFlow = MutableStateFlow(protectedSet)
         val readbackGeneration = MutableStateFlow(1L)
+        val readbackCompletion = MutableStateFlow<ChannelReadbackCompletion?>(null)
         val localConfigFlow = MutableStateFlow(LocalConfig(lora = lora))
-        val commandSender = RecordingCommandSender(meshPackets)
+        val radioSessionState = MutableStateFlow(readySession(epoch = 1, address = RADIO_A))
+        val gatewayLifecycle = mutableListOf<String>()
+        val commandSender = RecordingCommandSender(meshPackets) { gatewayLifecycle += "command" }
         val snapshotRepository = InMemoryChannelSnapshotRepository()
         var nextReadback: ChannelSet? = null
+        var beforeReadbackAdmission: (() -> Unit)? = null
         var afterReadbackRequested: (() -> Unit)? = null
         var readbackRequests = 0
+        private var nextReadbackToken = 0L
 
         private val serviceRepository = mock<ServiceRepository>(MockMode.autofill)
         private val radioConfigRepository = mock<RadioConfigRepository>(MockMode.autofill)
         private val nodeRepository = FakeNodeRepository()
         private val ensureSession = mock<EnsureRemoteAdminSessionUseCase>(MockMode.autofill)
         private val configFlowManager = mock<MeshConfigFlowManager>(MockMode.autofill)
+        private val radioInterfaceService = mock<RadioInterfaceService>(MockMode.autofill)
+        private val ntsocialGatewayRepository = mock<NtsocialGatewayRepository>(MockMode.autofill)
 
         val manager: ChannelReliabilityManagerImpl
 
@@ -245,15 +359,34 @@ class ChannelReliabilityManagerImplTest {
             every { radioConfigRepository.channelSetFlow } returns channelSetFlow
             every { radioConfigRepository.channelReadbackGeneration } returns readbackGeneration
             every { radioConfigRepository.localConfigFlow } returns localConfigFlow
-            everySuspend { ensureSession(any()) } returns EnsureSessionResult.AlreadyActive
-            every { configFlowManager.triggerWantConfig() } calls
+            every { radioInterfaceService.radioSessionState } returns radioSessionState
+            every { ntsocialGatewayRepository.invalidateInboundSession() } calls { gatewayLifecycle += "invalidate" }
+            everySuspend { ntsocialGatewayRepository.activateInboundSession(any()) } calls
                 {
-                    readbackRequests++
-                    nextReadback?.let { readback ->
-                        channelSetFlow.value = readback
-                        readbackGeneration.value += 1
+                    gatewayLifecycle += "activate"
+                    true
+                }
+            commandSender.currentRadioSessionEpoch = { radioSessionState.value.epoch }
+            everySuspend { ensureSession(any()) } returns EnsureSessionResult.AlreadyActive
+            everySuspend { ensureSession(any(), any()) } returns EnsureSessionResult.AlreadyActive
+            every { configFlowManager.channelReadbackCompletion } returns readbackCompletion
+            every { configFlowManager.beginChannelReadbackForSession(any()) } calls
+                { call ->
+                    beforeReadbackAdmission?.invoke()
+                    if (radioSessionState.value.epoch != call.arg<Long>(0)) {
+                        null
+                    } else {
+                        readbackRequests++
+                        val token = ++nextReadbackToken
+                        nextReadback?.let { readback ->
+                            channelSetFlow.value = readback
+                            readbackGeneration.value += 1
+                            readbackCompletion.value =
+                                ChannelReadbackCompletion(token, radioSessionState.value.epoch, readback)
+                        }
+                        afterReadbackRequested?.invoke()
+                        token
                     }
-                    afterReadbackRequested?.invoke()
                 }
             nodeRepository.setMyNodeInfo(
                 TestDataFactory.createMyNodeInfo(myNodeNum = NODE_NUM)
@@ -269,6 +402,9 @@ class ChannelReliabilityManagerImplTest {
                     ensureRemoteAdminSession = ensureSession,
                     meshConfigFlowManager = lazy { configFlowManager },
                     operationLock = ChannelOperationLock(),
+                    mutationLock = ChannelMutationLock(),
+                    radioInterfaceService = radioInterfaceService,
+                    ntsocialGatewayRepository = ntsocialGatewayRepository,
                     serviceScope = scope,
                 )
         }
@@ -277,14 +413,36 @@ class ChannelReliabilityManagerImplTest {
             ChannelSet(settings = settings.toList(), lora_config = lora)
 
         fun switchRadio() {
+            radioSessionState.value = readySession(epoch = radioSessionState.value.epoch + 1, address = RADIO_B)
             nodeRepository.setMyNodeInfo(
                 TestDataFactory.createMyNodeInfo(myNodeNum = NODE_NUM + 1)
                     .copy(maxChannels = maxChannels, deviceId = "8899AABBCCDDEEFF"),
             )
         }
 
+        fun reconnectSameRadio() {
+            radioSessionState.value =
+                readySession(
+                    epoch = radioSessionState.value.epoch + 1,
+                    address = radioSessionState.value.selectedDeviceAddress!!,
+                )
+        }
+
         private fun channel(name: String, psk: String): ChannelSettings =
             ChannelSettings(name = name, psk = psk.decodeHex())
+
+        private fun readySession(epoch: Long, address: String): RadioSessionState = RadioSessionState(
+            epoch = epoch,
+            selectedDeviceAddress = address,
+            activeDeviceAddress = address,
+            transportConnectionState = ConnectionState.Connected,
+            configured = true,
+        )
+
+        private companion object {
+            const val RADIO_A = "radio-a"
+            const val RADIO_B = "radio-b"
+        }
     }
 
     private data class AdminOutcome(
@@ -293,10 +451,15 @@ class ChannelReliabilityManagerImplTest {
         val unrelatedRoutingError: Routing.Error? = null,
     )
 
-    private class RecordingCommandSender(private val meshPackets: MutableSharedFlow<MeshPacket>) : CommandSender {
+    private class RecordingCommandSender(
+        private val meshPackets: MutableSharedFlow<MeshPacket>,
+        private val onMessageSent: () -> Unit,
+    ) : CommandSender {
         val messages = mutableListOf<AdminMessage>()
         val outcomes = ArrayDeque<AdminOutcome>()
         var afterMessageSent: ((AdminMessage) -> Unit)? = null
+        var beforeSessionAdmission: ((AdminMessage) -> Unit)? = null
+        var currentRadioSessionEpoch: () -> Long = { 0L }
         private var nextPacketId = 1
 
         override fun getCurrentPacketId(): Long = nextPacketId.toLong()
@@ -326,7 +489,21 @@ class ChannelReliabilityManagerImplTest {
                 meshPackets.emit(routingPacket(from = destNum, requestId = requestId, error = outcome.routingError))
             }
             afterMessageSent?.invoke(messages.last())
+            onMessageSent()
             return outcome.queued
+        }
+
+        override suspend fun sendAdminAwaitForSession(
+            expectedRadioSessionEpoch: Long,
+            destNum: Int,
+            requestId: Int,
+            wantResponse: Boolean,
+            initFn: () -> AdminMessage,
+        ): Boolean {
+            val message = initFn()
+            beforeSessionAdmission?.invoke(message)
+            if (currentRadioSessionEpoch() != expectedRadioSessionEpoch) return false
+            return sendAdminAwait(destNum, requestId, wantResponse) { message }
         }
 
         private fun routingPacket(from: Int, requestId: Int, error: Routing.Error): MeshPacket = MeshPacket(
@@ -366,16 +543,29 @@ class ChannelReliabilityManagerImplTest {
 
     private class InMemoryChannelSnapshotRepository : ChannelSnapshotRepository {
         private val snapshots = mutableMapOf<String, ChannelProtectionSnapshot>()
+        private var nextSaveStarted: CompletableDeferred<Unit>? = null
+        private var nextSaveRelease: CompletableDeferred<Unit>? = null
 
         override suspend fun get(stableDeviceIdentity: String): ChannelProtectionSnapshot? =
             snapshots[stableDeviceIdentity]
 
         override suspend fun save(stableDeviceIdentity: String, snapshot: ChannelProtectionSnapshot) {
+            val started = nextSaveStarted
+            val release = nextSaveRelease
+            nextSaveStarted = null
+            nextSaveRelease = null
+            started?.complete(Unit)
+            release?.await()
             snapshots[stableDeviceIdentity] = snapshot
         }
 
         override suspend fun clear(stableDeviceIdentity: String) {
             snapshots.remove(stableDeviceIdentity)
+        }
+
+        fun gateNextSave(started: CompletableDeferred<Unit>, release: CompletableDeferred<Unit>) {
+            nextSaveStarted = started
+            nextSaveRelease = release
         }
     }
 

@@ -24,15 +24,15 @@
  */
 import androidx.room3.gradle.RoomExtension
 import com.google.devtools.ksp.gradle.KspExtension
+import com.ntsocial.meshlink.buildlogic.isDesktopOnly
+import com.ntsocial.meshlink.buildlogic.library
+import com.ntsocial.meshlink.buildlogic.libs
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.kotlin.dsl.apply
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
-import com.ntsocial.meshlink.buildlogic.isDesktopOnly
-import com.ntsocial.meshlink.buildlogic.library
-import com.ntsocial.meshlink.buildlogic.libs
 
 class AndroidRoomConventionPlugin : Plugin<Project> {
 
@@ -59,7 +59,11 @@ class AndroidRoomConventionPlugin : Plugin<Project> {
                     sourceSets.getByName("commonMain").dependencies { implementation(roomRuntime) }
                 }
                 if (!isDesktopOnly) {
-                    dependencies { add("kspAndroid", roomCompiler) }
+                    dependencies {
+                        add("kspAndroid", roomCompiler)
+                        add("kspIosArm64", roomCompiler)
+                        add("kspIosSimulatorArm64", roomCompiler)
+                    }
                 }
                 dependencies { add("kspJvm", roomCompiler) }
             }

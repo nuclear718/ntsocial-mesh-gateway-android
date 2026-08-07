@@ -25,7 +25,6 @@
 package com.ntsocial.meshlink.core.data.manager
 
 import co.touchlab.kermit.Logger
-import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.repository.MeshConfigHandler
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
@@ -50,6 +49,7 @@ class MeshConfigHandlerImpl(
     private val serviceRepository: ServiceRepository,
     private val nodeManager: NodeManager,
     private val channelSetCollector: HandshakeChannelSetCollector,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshConfigHandler {
 
@@ -68,19 +68,20 @@ class MeshConfigHandlerImpl(
         Logger.d { "Device config received: ${config.summarize()}" }
         when (channelSetCollector.captureConfig(config)) {
             HandshakeCaptureResult.COLLECTED ->
-                scope.handledLaunch { radioConfigRepository.setLocalConfigFromHandshake(config) }
+                ingressWorkTracker.launch(scope) { radioConfigRepository.setLocalConfigFromHandshake(config) }
 
             HandshakeCaptureResult.FINALIZING ->
                 Logger.w { "Ignoring device config received after Stage 1 finalization started" }
 
-            HandshakeCaptureResult.INACTIVE -> scope.handledLaunch { radioConfigRepository.setLocalConfig(config) }
+            HandshakeCaptureResult.INACTIVE ->
+                ingressWorkTracker.launch(scope) { radioConfigRepository.setLocalConfig(config) }
         }
         serviceRepository.setConnectionProgress("Device config received")
     }
 
     override fun handleModuleConfig(config: ModuleConfig) {
         Logger.d { "Module config received: ${config.summarize()}" }
-        scope.handledLaunch { radioConfigRepository.setLocalModuleConfig(config) }
+        ingressWorkTracker.launch(scope) { radioConfigRepository.setLocalModuleConfig(config) }
         serviceRepository.setConnectionProgress("Module config received")
 
         config.statusmessage?.let { sm ->
@@ -96,7 +97,7 @@ class MeshConfigHandlerImpl(
                 Logger.w { "Ignoring channel index=${channel.index} received after Stage 1 finalization started" }
 
             HandshakeCaptureResult.INACTIVE ->
-                scope.handledLaunch { radioConfigRepository.updateChannelSettings(channel) }
+                ingressWorkTracker.launch(scope) { radioConfigRepository.updateChannelSettings(channel) }
         }
 
         // Update status message if we have node info, otherwise use a generic one
@@ -111,7 +112,7 @@ class MeshConfigHandlerImpl(
 
     override fun handleDeviceUIConfig(config: DeviceUIConfig) {
         Logger.d { "DeviceUI config received" }
-        scope.handledLaunch { radioConfigRepository.setDeviceUIConfig(config) }
+        ingressWorkTracker.launch(scope) { radioConfigRepository.setDeviceUIConfig(config) }
     }
 }
 

@@ -42,6 +42,10 @@ data class NtsocialCachedEnvelope(
     val channelIndex: Int,
     val portNum: Int,
     val cachedAtMillis: Long,
+    /** Stable channel identity captured when the envelope entered the bounded cache; never recomputed on export. */
+    val sourceChannelId: String? = null,
+    /** Durable per-radio history domain captured at insertion, when available. */
+    val historyEpoch: String? = null,
 ) {
     val cacheKey: String = envelope.headerMsgIdHex
 }

@@ -25,7 +25,6 @@
 package com.ntsocial.meshlink.core.data.manager
 
 import co.touchlab.kermit.Logger
-import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.util.SfppHasher
@@ -54,6 +53,7 @@ class StoreForwardPacketHandlerImpl(
     private val serviceBroadcasts: ServiceBroadcasts,
     private val historyManager: HistoryManager,
     private val dataHandler: Lazy<MeshDataHandler>,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : StoreForwardPacketHandler {
 
@@ -123,7 +123,7 @@ class StoreForwardPacketHandlerImpl(
             "SFPP updateStatus: packetId=${sfpp.encapsulated_id} from=${sfpp.encapsulated_from} " +
                 "to=${sfpp.encapsulated_to} myNodeNum=${nodeManager.myNodeNum.value} status=$status"
         }
-        scope.handledLaunch {
+        ingressWorkTracker.launch(scope) {
             packetRepository.value.updateSFPPStatus(
                 packetId = sfpp.encapsulated_id,
                 from = sfpp.encapsulated_from,
@@ -138,7 +138,7 @@ class StoreForwardPacketHandlerImpl(
     }
 
     private fun handleCanonAnnounce(sfpp: StoreForwardPlusPlus) {
-        scope.handledLaunch {
+        ingressWorkTracker.launch(scope) {
             sfpp.message_hash.let {
                 packetRepository.value.updateSFPPStatusByHash(
                     hash = it.toByteArray(),

@@ -48,6 +48,16 @@ interface CommandSender {
     /** Sends a data packet to the mesh. */
     fun sendData(p: DataPacket)
 
+    /**
+     * Sends one durable Gateway packet through the exact configured session and waits for matching firmware
+     * QueueStatus. The caller holds the channel-operation boundary from source-identity validation through return.
+     */
+    suspend fun sendDataAwaitForGatewaySession(
+        p: DataPacket,
+        expectedRadioSessionEpoch: Long,
+        expectedSourceChannelId: String,
+    ): GatewayPacketDispatchResult = GatewayPacketDispatchResult.TRANSIENT_FAILURE
+
     /** Sends an admin message to a specific node. */
     fun sendAdmin(
         destNum: Int,
@@ -71,6 +81,15 @@ interface CommandSender {
         initFn: () -> AdminMessage,
     ): Boolean
 
+    /** Sends an admin packet only if its exact configured radio session still owns outbound admission. */
+    suspend fun sendAdminAwaitForSession(
+        expectedRadioSessionEpoch: Long,
+        destNum: Int,
+        requestId: Int = generatePacketId(),
+        wantResponse: Boolean = false,
+        initFn: () -> AdminMessage,
+    ): Boolean = false
+
     /** Sends our current position to the mesh. */
     fun sendPosition(pos: org.meshtastic.proto.Position, destNum: Int? = null, wantResponse: Boolean = false)
 
@@ -88,6 +107,14 @@ interface CommandSender {
 
     /** Requests telemetry from a specific node. */
     fun requestTelemetry(requestId: Int, destNum: Int, typeValue: Int)
+
+    /** Requests telemetry only if the exact configured radio session still owns outbound admission. */
+    suspend fun requestTelemetryForSession(
+        expectedRadioSessionEpoch: Long,
+        requestId: Int,
+        destNum: Int,
+        typeValue: Int,
+    ): Boolean = false
 
     /** Requests neighbor info from a specific node. */
     fun requestNeighborInfo(requestId: Int, destNum: Int)

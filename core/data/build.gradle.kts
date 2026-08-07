@@ -75,6 +75,7 @@ kotlin {
         }
 
         commonTest.dependencies {
+            implementation(projects.core.domain)
             implementation(projects.core.testing)
             implementation(libs.kotlinx.coroutines.test)
         }

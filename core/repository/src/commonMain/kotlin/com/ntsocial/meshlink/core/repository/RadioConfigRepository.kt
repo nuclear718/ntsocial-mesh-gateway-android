@@ -49,6 +49,13 @@ interface RadioConfigRepository {
     val channelReadbackGeneration: StateFlow<Long>
 
     /**
+     * Monotonic channel snapshot revision. Even values identify a committed snapshot; odd values mean a mutation is in
+     * flight. Consumers that label external ingress must fail closed on odd values and bind identity to one exact even
+     * revision.
+     */
+    val channelSnapshotGeneration: StateFlow<Long>
+
+    /**
      * Replaces the saved channel set.
      *
      * Ordinary callers replace only [ChannelSet.settings] and preserve the cached LoRa configuration. A completed

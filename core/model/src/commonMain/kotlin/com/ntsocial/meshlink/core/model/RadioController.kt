@@ -347,4 +347,9 @@ interface RadioController {
      * @param address The new device identifier.
      */
     fun setDeviceAddress(address: String)
+
+    /** Changes the device only after any platform-owned per-radio persistence transition has completed. */
+    suspend fun setDeviceAddressAndAwait(address: String) {
+        setDeviceAddress(address)
+    }
 }

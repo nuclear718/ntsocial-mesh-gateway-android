@@ -76,13 +76,16 @@ class RadioConfigRepositoryImplTest {
         val channelSet = ChannelSet(settings = listOf(ChannelSettings(name = "primary")))
 
         repository.replaceChannelSet(channelSet)
+        assertEquals(2L, repository.channelSnapshotGeneration.value)
         repository.updateChannelSettings(Channel(index = 0, settings = channelSet.settings.single()))
+        assertEquals(4L, repository.channelSnapshotGeneration.value)
         assertEquals(0L, repository.channelReadbackGeneration.value)
 
         repository.replaceChannelSet(channelSet, completeReadback = true)
 
         assertEquals(channelSet, channelSetStore.data.first())
         assertEquals(1L, repository.channelReadbackGeneration.value)
+        assertEquals(6L, repository.channelSnapshotGeneration.value)
     }
 
     @Test

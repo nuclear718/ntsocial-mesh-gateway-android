@@ -49,7 +49,10 @@ import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.UiPrefs
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.koin.core.annotation.Named
@@ -79,6 +82,9 @@ class MeshActionHandlerImpl(
     private val radioConfigRepository: RadioConfigRepository,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshActionHandler {
+
+    private val deviceSwitchMutex = Mutex()
+    private val deviceSwitchGeneration = atomic(0L)
 
     companion object {
         private const val DEFAULT_REBOOT_DELAY = 5
@@ -400,13 +406,65 @@ class MeshActionHandlerImpl(
         if (deviceAddr != currentAddr) {
             Logger.i { "Device address changed, switching database and clearing node DB" }
             meshPrefs.setDeviceAddress(deviceAddr)
+            val generation = deviceSwitchGeneration.incrementAndGet()
             scope.handledLaunch {
-                nodeManager.clear()
-                messageProcessor.value.clearEarlyPackets()
-                databaseManager.switchActiveDatabase(deviceAddr)
-                notificationManager.cancelAll()
-                nodeManager.loadCachedNodeDB()
+                completeDeviceSwitch(
+                    deviceAddr = deviceAddr,
+                    generation = generation,
+                    awaitCacheLoad = false,
+                    publishSelectionAfterSwitch = false,
+                )
             }
         }
+    }
+
+    override suspend fun handleUpdateLastAddressAndAwait(deviceAddr: String?): Boolean {
+        val preferenceChanged = deviceAddr != meshPrefs.deviceAddress.value
+        if (preferenceChanged) {
+            Logger.i { "Device address changed, awaiting database and node-cache switch" }
+        }
+        if (!preferenceChanged && databaseManager.currentAddress.value == deviceAddr) return true
+
+        val generation = deviceSwitchGeneration.incrementAndGet()
+        return completeDeviceSwitch(
+            deviceAddr = deviceAddr,
+            generation = generation,
+            awaitCacheLoad = true,
+            publishSelectionAfterSwitch = preferenceChanged,
+        )
+    }
+
+    private suspend fun completeDeviceSwitch(
+        deviceAddr: String?,
+        generation: Long,
+        awaitCacheLoad: Boolean,
+        publishSelectionAfterSwitch: Boolean,
+    ): Boolean = deviceSwitchMutex.withLock {
+        if (deviceSwitchGeneration.value != generation) return@withLock false
+        nodeManager.clear()
+        if (deviceSwitchGeneration.value != generation) return@withLock false
+        if (awaitCacheLoad) {
+            messageProcessor.value.clearEarlyPacketsAndAwait()
+        } else {
+            messageProcessor.value.clearEarlyPackets()
+        }
+        if (deviceSwitchGeneration.value != generation) return@withLock false
+        databaseManager.switchActiveDatabase(deviceAddr)
+        if (deviceSwitchGeneration.value != generation) return@withLock false
+        notificationManager.cancelAll()
+        if (awaitCacheLoad) {
+            nodeManager.loadCachedNodeDBAndAwait()
+        } else {
+            nodeManager.loadCachedNodeDB()
+        }
+        if (deviceSwitchGeneration.value != generation) return@withLock false
+        // The awaited Apple path publishes the selection only after all per-radio state is ready. Publishing this
+        // preference earlier would let SharedRadioInterfaceService's existing preference observer start the
+        // replacement transport before the database switch had completed.
+        if (publishSelectionAfterSwitch) meshPrefs.setDeviceAddress(deviceAddr)
+        // switchActiveDatabase is the completion barrier. Avoid a second reactive read here so legacy/mock
+        // implementations keep their existing behavior; the iOS readiness boundary independently compares the
+        // published active database identity with the selected radio.
+        deviceSwitchGeneration.value == generation
     }
 }

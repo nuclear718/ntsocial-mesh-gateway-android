@@ -44,8 +44,10 @@ import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import com.ntsocial.meshlink.core.model.util.getShortDateTime
+import com.ntsocial.meshlink.core.repository.DurableQueuedPacket
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -131,6 +133,26 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         dbManager.currentDb.value.packetDao().getAllDataPackets().filter { it.status == MessageStatus.QUEUED }
     }
 
+    override suspend fun getDurableQueuedPackets(): List<DurableQueuedPacket> = withContext(dispatchers.io) {
+        dbManager.currentDb.value
+            .packetDao()
+            .getAllPacketRows()
+            .asSequence()
+            .filter { row -> row.data.status == MessageStatus.QUEUED }
+            .map { row ->
+                DurableQueuedPacket(packet = row.data, expectedSourceChannelId = row.gatewaySourceChannelId)
+            }
+            .toList()
+    }
+
+    override suspend fun getDurablePacketByPacketId(packetId: Int): DurableQueuedPacket? = withContext(dispatchers.io) {
+        dbManager.currentDb.value
+            .packetDao()
+            .findPacketsWithId(packetId)
+            .firstOrNull { row -> row.data.id == packetId }
+            ?.let { row -> DurableQueuedPacket(row.data, row.gatewaySourceChannelId) }
+    }
+
     override fun getGatewayMessageChangeSeq(legacyBroadcastContactKeys: List<String>): Flow<Long> =
         dbManager.currentDb.flatMapLatest { db ->
             db.packetDao().getGatewayMessageChangeSeq(legacyBroadcastContactKeys)
@@ -140,16 +162,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         dbManager.currentDb.flatMapLatest { db ->
             flow {
                 val dao = db.packetDao()
-                val epoch =
-                    dao.getGatewayMetadata(GATEWAY_HISTORY_EPOCH_KEY)
-                        ?: Uuid.random()
-                            .toString()
-                            .also { proposed ->
-                                dao.insertGatewayMetadata(
-                                    GatewayMetadata(key = GATEWAY_HISTORY_EPOCH_KEY, value = proposed),
-                                )
-                            }
-                            .let { dao.getGatewayMetadata(GATEWAY_HISTORY_EPOCH_KEY) ?: it }
+                val epoch = readOrCreateGatewayHistoryEpoch(dao)
                 emitAll(
                     dao.getGatewayMessageChangeSeq(legacyBroadcastContactKeys).map { changeSeq ->
                         NtsocialGatewayHistoryState(historyEpoch = epoch, messageChangeSeq = changeSeq)
@@ -157,6 +170,30 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 )
             }
         }
+
+    override suspend fun readCurrentGatewayHistoryState(
+        legacyBroadcastContactKeys: List<String>,
+    ): NtsocialGatewayHistoryState = requireNotNull(
+        dbManager.withDb { db ->
+            val dao = db.packetDao()
+            NtsocialGatewayHistoryState(
+                historyEpoch = readOrCreateGatewayHistoryEpoch(dao),
+                messageChangeSeq = dao.getGatewayMessageChangeSeq(legacyBroadcastContactKeys).first(),
+            )
+        },
+    ) {
+        "Active radio database is unavailable"
+    }
+
+    private suspend fun readOrCreateGatewayHistoryEpoch(
+        dao: com.ntsocial.meshlink.core.database.dao.PacketDao,
+    ): String = dao.getGatewayMetadata(GATEWAY_HISTORY_EPOCH_KEY)
+        ?: Uuid.random()
+            .toString()
+            .also { proposed ->
+                dao.insertGatewayMetadata(GatewayMetadata(key = GATEWAY_HISTORY_EPOCH_KEY, value = proposed))
+            }
+            .let { dao.getGatewayMetadata(GATEWAY_HISTORY_EPOCH_KEY) ?: it }
 
     override suspend fun getGatewayMessageChanges(
         after: Long,
@@ -214,6 +251,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         filtered: Boolean,
         gatewayIdentity: NtsocialGatewayMessageIdentity?,
         originClientMessageId: String?,
+        expectedGatewaySourceChannelId: String?,
     ) {
         val packetToSave =
             RoomPacket(
@@ -230,7 +268,7 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
                 hopsAway = packet.hopsAway,
                 filtered = filtered,
                 messageText = packet.text.orEmpty(),
-                gatewaySourceChannelId = gatewayIdentity?.sourceChannelId,
+                gatewaySourceChannelId = expectedGatewaySourceChannelId ?: gatewayIdentity?.sourceChannelId,
                 gatewaySourceMessageId = gatewayIdentity?.sourceMessageId,
                 originClientMessageId = originClientMessageId,
             )

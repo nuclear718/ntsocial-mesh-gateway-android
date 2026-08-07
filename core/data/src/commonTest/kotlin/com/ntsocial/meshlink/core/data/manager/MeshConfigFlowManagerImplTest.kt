@@ -24,6 +24,8 @@
  */
 package com.ntsocial.meshlink.core.data.manager
 
+import com.ntsocial.meshlink.core.model.ConnectionState
+import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.HandshakeConstants
 import com.ntsocial.meshlink.core.repository.MeshConnectionManager
@@ -35,10 +37,12 @@ import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.ServiceRepository
+import com.ntsocial.meshlink.core.testing.FakeRadioInterfaceService
 import dev.mokkery.MockMode
 import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
 import dev.mokkery.every
+import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.verify
@@ -63,6 +67,9 @@ import org.meshtastic.proto.NodeInfo
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import org.meshtastic.proto.MyNodeInfo as ProtoMyNodeInfo
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -70,6 +77,7 @@ class MeshConfigFlowManagerImplTest {
 
     private val nodeManager = mock<NodeManager>(MockMode.autofill)
     private val connectionManager = mock<MeshConnectionManager>(MockMode.autofill)
+    private lateinit var radioInterfaceService: FakeRadioInterfaceService
     private val nodeRepository = mock<NodeRepository>(MockMode.autofill)
     private val radioConfigRepository = mock<RadioConfigRepository>(MockMode.autofill)
     private val serviceRepository = mock<ServiceRepository>(MockMode.autofill)
@@ -86,6 +94,7 @@ class MeshConfigFlowManagerImplTest {
     private lateinit var channelSetCollector: HandshakeChannelSetCollector
 
     private val myNodeNum = 12345
+    private val radioA = "xAA:BB:CC:DD:EE:FF"
 
     private val protoMyNodeInfo =
         ProtoMyNodeInfo(
@@ -100,18 +109,23 @@ class MeshConfigFlowManagerImplTest {
 
     @BeforeTest
     fun setUp() {
+        radioInterfaceService = FakeRadioInterfaceService(testScope)
+        radioInterfaceService.setDeviceAddress(radioA)
+        radioInterfaceService.onConnect()
         every { commandSender.getCurrentPacketId() } returns 100
         every { packetHandler.sendToRadio(any<org.meshtastic.proto.ToRadio>()) } returns Unit
         every { nodeManager.nodeDBbyNodeNum } returns emptyMap()
         every { nodeManager.myNodeNum } returns MutableStateFlow(null)
         every { notificationPrefs.nodeEventsAutoDisabledForEvent } returns MutableStateFlow(false)
         every { notificationPrefs.nodeEventsEnabled } returns MutableStateFlow(true)
+        everySuspend { connectionManager.onNodeDbReady(any()) } returns true
 
         channelSetCollector = HandshakeChannelSetCollector(radioConfigRepository)
         manager =
             MeshConfigFlowManagerImpl(
                 nodeManager = nodeManager,
                 connectionManager = lazy { connectionManager },
+                radioInterfaceService = radioInterfaceService,
                 nodeRepository = nodeRepository,
                 radioConfigRepository = radioConfigRepository,
                 serviceRepository = serviceRepository,
@@ -121,6 +135,7 @@ class MeshConfigFlowManagerImplTest {
                 heartbeatSender = DataLayerHeartbeatSender(packetHandler),
                 notificationPrefs = notificationPrefs,
                 channelSetCollector = channelSetCollector,
+                channelOperationLock = ChannelOperationLock(),
                 scope = testScope,
             )
     }
@@ -349,6 +364,7 @@ class MeshConfigFlowManagerImplTest {
 
     @Test
     fun `Stage 2 complete processes nodes and sets Connected state`() = testScope.runTest {
+        val sessionEpoch = radioInterfaceService.radioSessionState.value.epoch
         val testNode = com.ntsocial.meshlink.core.testing.TestDataFactory.createTestNode(num = 100)
         every { nodeManager.nodeDBbyNodeNum } returns mapOf(100 to testNode)
 
@@ -368,7 +384,7 @@ class MeshConfigFlowManagerImplTest {
         verify { nodeManager.setNodeDbReady(true) }
         verify { nodeManager.setAllowNodeDbWrites(true) }
         verify { serviceBroadcasts.broadcastConnection() }
-        verify { connectionManager.onNodeDbReady() }
+        verifySuspend { connectionManager.onNodeDbReady(sessionEpoch) }
     }
 
     @Test
@@ -380,6 +396,7 @@ class MeshConfigFlowManagerImplTest {
 
     @Test
     fun `Stage 2 complete with no nodes still transitions to Connected`() = testScope.runTest {
+        val sessionEpoch = radioInterfaceService.radioSessionState.value.epoch
         manager.handleMyInfo(protoMyNodeInfo)
         advanceUntilIdle()
         manager.handleLocalMetadata(metadata)
@@ -392,7 +409,31 @@ class MeshConfigFlowManagerImplTest {
         advanceUntilIdle()
 
         verify { nodeManager.setNodeDbReady(true) }
-        verify { connectionManager.onNodeDbReady() }
+        verifySuspend { connectionManager.onNodeDbReady(sessionEpoch) }
+    }
+
+    @Test
+    fun `stale handshake completion cannot mutate or publish the replacement radio`() = testScope.runTest {
+        val capturedEpoch = radioInterfaceService.radioSessionState.value.epoch
+        manager.handleMyInfo(protoMyNodeInfo)
+        advanceUntilIdle()
+        manager.handleLocalMetadata(metadata)
+        manager.handleConfigComplete(HandshakeConstants.CONFIG_NONCE)
+        advanceUntilIdle()
+
+        radioInterfaceService.setDeviceAddress("x11:22:33:44:55:66")
+        assertNotEquals(capturedEpoch, radioInterfaceService.radioSessionState.value.epoch)
+
+        manager.handleConfigComplete(HandshakeConstants.NODE_INFO_NONCE)
+        advanceUntilIdle()
+
+        verifySuspend(mode = VerifyMode.not) { connectionManager.onNodeDbReady(any()) }
+        verify(mode = VerifyMode.not) { nodeManager.installNodeInfo(any(), any()) }
+        verifySuspend(mode = VerifyMode.not) { nodeRepository.installConfig(any(), any()) }
+        verify(mode = VerifyMode.not) { nodeManager.setNodeDbReady(true) }
+        verify(mode = VerifyMode.not) { nodeManager.setAllowNodeDbWrites(true) }
+        verify(mode = VerifyMode.not) { serviceRepository.setConnectionState(ConnectionState.Connected) }
+        verify(mode = VerifyMode.not) { serviceBroadcasts.broadcastConnection() }
     }
 
     // ---------- Unknown config_complete_id ----------
@@ -430,10 +471,73 @@ class MeshConfigFlowManagerImplTest {
         verify { connectionManager.startConfigOnly() }
     }
 
+    @Test
+    fun `channel readback can only reserve an exact completed configured session`() = testScope.runTest {
+        val epoch = radioInterfaceService.radioSessionState.value.epoch
+        radioInterfaceService.markCurrentSessionConfigured(epoch)
+        every { connectionManager.startConfigOnlyForSession(epoch) } returns true
+
+        assertNull(manager.beginChannelReadbackForSession(epoch))
+        manager.handleMyInfo(protoMyNodeInfo)
+        assertNull(manager.beginChannelReadbackForSession(epoch))
+
+        manager.handleConfigComplete(HandshakeConstants.CONFIG_NONCE)
+        advanceUntilIdle()
+        assertNull(manager.beginChannelReadbackForSession(epoch))
+
+        manager.handleConfigComplete(HandshakeConstants.NODE_INFO_NONCE)
+        advanceUntilIdle()
+        assertNotNull(manager.beginChannelReadbackForSession(epoch))
+        verify(mode = VerifyMode.exactly(1)) { connectionManager.startConfigOnlyForSession(epoch) }
+    }
+
+    @Test
+    fun `cancelled readback owns its late response without clearing full caches or starting Stage 2`() =
+        testScope.runTest {
+            val epoch = completeConfiguredHandshake()
+            every { connectionManager.startConfigOnlyForSession(epoch) } returns true
+            val token = assertNotNull(manager.beginChannelReadbackForSession(epoch))
+
+            manager.cancelChannelReadbackForSession(epoch, token)
+            manager.handleMyInfo(protoMyNodeInfo)
+            manager.handleConfigComplete(HandshakeConstants.CONFIG_NONCE)
+            advanceUntilIdle()
+
+            assertNull(manager.channelReadbackCompletion.value)
+            verify(mode = VerifyMode.exactly(1)) { connectionManager.onRadioConfigLoaded() }
+            verify(mode = VerifyMode.exactly(1)) { connectionManager.startNodeInfoOnly() }
+            verifySuspend(mode = VerifyMode.exactly(1)) { radioConfigRepository.clearLocalConfig() }
+            assertNotNull(manager.beginChannelReadbackForSession(epoch))
+        }
+
+    @Test
+    fun `abandoned readback blocks reuse until a replacement radio epoch completes a full handshake`() =
+        testScope.runTest {
+            val oldEpoch = completeConfiguredHandshake()
+            every { connectionManager.startConfigOnlyForSession(any()) } returns true
+            val token = assertNotNull(manager.beginChannelReadbackForSession(oldEpoch))
+            manager.cancelChannelReadbackForSession(oldEpoch, token)
+
+            assertNull(manager.beginChannelReadbackForSession(oldEpoch))
+
+            radioInterfaceService.setDeviceAddress("x11:22:33:44:55:66")
+            radioInterfaceService.onConnect()
+            val replacementEpoch = radioInterfaceService.radioSessionState.value.epoch
+            manager.handleMyInfo(protoMyNodeInfo.copy(my_node_num = 54321))
+            manager.handleConfigComplete(HandshakeConstants.CONFIG_NONCE)
+            advanceUntilIdle()
+            manager.handleConfigComplete(HandshakeConstants.NODE_INFO_NONCE)
+            advanceUntilIdle()
+            radioInterfaceService.markCurrentSessionConfigured(replacementEpoch)
+
+            assertNotNull(manager.beginChannelReadbackForSession(replacementEpoch))
+        }
+
     // ---------- Full handshake flow ----------
 
     @Test
     fun `Full handshake from Idle to Complete`() = testScope.runTest {
+        val sessionEpoch = radioInterfaceService.radioSessionState.value.epoch
         val testNode = com.ntsocial.meshlink.core.testing.TestDataFactory.createTestNode(num = 100)
         every { nodeManager.nodeDBbyNodeNum } returns mapOf(100 to testNode)
 
@@ -460,7 +564,7 @@ class MeshConfigFlowManagerImplTest {
         advanceUntilIdle()
 
         verify { nodeManager.setNodeDbReady(true) }
-        verify { connectionManager.onNodeDbReady() }
+        verifySuspend { connectionManager.onNodeDbReady(sessionEpoch) }
 
         // After complete, newNodeCount should be 0 (state is Complete)
         assertEquals(0, manager.newNodeCount)
@@ -529,5 +633,17 @@ class MeshConfigFlowManagerImplTest {
 
         verify(mode = VerifyMode.not) { notificationPrefs.setNodeEventsEnabled(any()) }
         verify(mode = VerifyMode.not) { notificationPrefs.setNodeEventsAutoDisabledForEvent(any()) }
+    }
+
+    private suspend fun TestScope.completeConfiguredHandshake(): Long {
+        val epoch = radioInterfaceService.radioSessionState.value.epoch
+        manager.handleMyInfo(protoMyNodeInfo)
+        advanceUntilIdle()
+        manager.handleConfigComplete(HandshakeConstants.CONFIG_NONCE)
+        advanceUntilIdle()
+        manager.handleConfigComplete(HandshakeConstants.NODE_INFO_NONCE)
+        advanceUntilIdle()
+        radioInterfaceService.markCurrentSessionConfigured(epoch)
+        return epoch
     }
 }

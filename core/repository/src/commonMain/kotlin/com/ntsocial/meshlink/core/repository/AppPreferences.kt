@@ -179,6 +179,9 @@ interface MapConsentPrefs {
 interface RadioPrefs {
     val devAddr: StateFlow<String?>
 
+    /** Reads the authoritative persisted selection without relying on the eager StateFlow's initial value. */
+    suspend fun readPersistedDevAddr(): String? = devAddr.value
+
     /** The persisted user-visible name of the connected device (e.g. "Meshtastic_1234"). */
     val devName: StateFlow<String?>
 

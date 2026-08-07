@@ -22,12 +22,26 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+@file:Suppress(
+    "BinaryExpressionWrapping",
+    "ClassSignature",
+    "CyclomaticComplexMethod",
+    "FunctionSignature",
+    "LongMethod",
+    "LoopWithTooManyJumpStatements",
+    "MaxLineLength",
+    "MultiLineIfElse",
+    "ReturnCount",
+)
+
 package com.ntsocial.meshlink.core.data.manager
 
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DeviceVersion
+import com.ntsocial.meshlink.core.repository.ChannelOperationLock
+import com.ntsocial.meshlink.core.repository.ChannelReadbackCompletion
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.HandshakeConstants
 import com.ntsocial.meshlink.core.repository.MeshConfigFlowManager
@@ -37,11 +51,16 @@ import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.NotificationPrefs
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.koin.core.annotation.Named
@@ -155,6 +174,14 @@ class HandshakeChannelSetCollector(private val radioConfigRepository: RadioConfi
         }
     }
 
+    internal fun cancel(generation: Long) {
+        while (true) {
+            val current = pending.value ?: return
+            if (current.generation != generation) return
+            if (pending.compareAndSet(current, null)) return
+        }
+    }
+
     private fun PendingHandshake.toChannelSet(): ChannelSet {
         val lastEnabledIndex =
             channels.entries
@@ -185,6 +212,7 @@ class HandshakeChannelSetCollector(private val radioConfigRepository: RadioConfi
 class MeshConfigFlowManagerImpl(
     private val nodeManager: NodeManager,
     private val connectionManager: Lazy<MeshConnectionManager>,
+    private val radioInterfaceService: RadioInterfaceService,
     private val nodeRepository: NodeRepository,
     private val radioConfigRepository: RadioConfigRepository,
     private val serviceRepository: ServiceRepository,
@@ -194,12 +222,26 @@ class MeshConfigFlowManagerImpl(
     private val heartbeatSender: DataLayerHeartbeatSender,
     private val notificationPrefs: NotificationPrefs,
     private val channelSetCollector: HandshakeChannelSetCollector,
+    private val channelOperationLock: ChannelOperationLock,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshConfigFlowManager {
     private val wantConfigDelay = 100L
 
     /** Monotonically increasing generation so async clears from a stale handshake are discarded. */
     private val handshakeGeneration = atomic(0L)
+
+    private data class PendingReadback(val epoch: Long, val requestToken: Long, val abandoned: Boolean = false)
+
+    private val pendingReadback = atomic<PendingReadback?>(null)
+    private val nextReadbackRequestToken = atomic(0L)
+    private val _channelReadbackCompletion = MutableStateFlow<ChannelReadbackCompletion?>(null)
+    override val channelReadbackCompletion: StateFlow<ChannelReadbackCompletion?> =
+        _channelReadbackCompletion.asStateFlow()
+
+    private enum class HandshakePurpose {
+        FULL,
+        CHANNEL_READBACK_ONLY,
+    }
 
     /**
      * Type-safe handshake state machine. Each state carries exactly the data that is valid during that phase,
@@ -220,12 +262,17 @@ class MeshConfigFlowManagerImpl(
          */
         data class ReceivingConfig(
             val generation: Long,
+            val radioSessionEpoch: Long,
             val rawMyNodeInfo: ProtoMyNodeInfo,
             val metadata: DeviceMetadata? = null,
+            val purpose: HandshakePurpose = HandshakePurpose.FULL,
+            val readbackRequestToken: Long? = null,
+            val publishReadbackCompletion: Boolean = true,
         ) : HandshakeState()
 
         /** Stage 1 packets are frozen while the complete channel readback is persisted. */
-        data class FinalizingConfig(val generation: Long) : HandshakeState()
+        data class FinalizingConfig(val generation: Long, val radioSessionEpoch: Long, val purpose: HandshakePurpose) :
+            HandshakeState()
 
         /**
          * Stage 2: receiving node-info packets from the firmware.
@@ -233,11 +280,14 @@ class MeshConfigFlowManagerImpl(
          * [myNodeInfo] was committed at the Stage 1→2 transition. [nodes] accumulates [NodeInfo] packets until
          * `config_complete_id` arrives.
          */
-        data class ReceivingNodeInfo(val myNodeInfo: SharedMyNodeInfo, val nodes: List<NodeInfo> = emptyList()) :
-            HandshakeState()
+        data class ReceivingNodeInfo(
+            val radioSessionEpoch: Long,
+            val myNodeInfo: SharedMyNodeInfo,
+            val nodes: List<NodeInfo> = emptyList(),
+        ) : HandshakeState()
 
         /** Both stages finished. The app is fully connected. */
-        data class Complete(val myNodeInfo: SharedMyNodeInfo) : HandshakeState()
+        data class Complete(val radioSessionEpoch: Long, val myNodeInfo: SharedMyNodeInfo) : HandshakeState()
     }
 
     private var handshakeState: HandshakeState = HandshakeState.Idle
@@ -253,7 +303,22 @@ class MeshConfigFlowManagerImpl(
                     Logger.w { "Ignoring Stage 1 config_complete in state=$state" }
                     return
                 }
-                handleConfigOnlyComplete(state)
+                if (state.purpose == HandshakePurpose.CHANNEL_READBACK_ONLY) {
+                    val token = state.readbackRequestToken
+                    val owner =
+                        pendingReadback.value?.takeIf { pending ->
+                            pending.epoch == state.radioSessionEpoch && pending.requestToken == token
+                        }
+                    if (owner == null || !pendingReadback.compareAndSet(owner, null)) {
+                        channelSetCollector.cancel(state.generation)
+                        handshakeState = HandshakeState.Idle
+                        Logger.w { "Ignoring unowned channel-readback completion" }
+                        return
+                    }
+                    handleConfigOnlyComplete(state.copy(publishReadbackCompletion = !owner.abandoned), state.purpose)
+                    return
+                }
+                handleConfigOnlyComplete(state, state.purpose)
             }
 
             HandshakeConstants.NODE_INFO_NONCE -> {
@@ -268,16 +333,20 @@ class MeshConfigFlowManagerImpl(
         }
     }
 
-    private fun handleConfigOnlyComplete(state: HandshakeState.ReceivingConfig) {
+    private fun handleConfigOnlyComplete(state: HandshakeState.ReceivingConfig, completionPurpose: HandshakePurpose) {
         Logger.i { "Config-only complete (Stage 1)" }
 
         val finalizedInfo = buildMyNodeInfo(state.rawMyNodeInfo, state.metadata)
         if (finalizedInfo == null) {
-            Logger.w { "Stage 1 failed: could not build MyNodeInfo, retrying Stage 1" }
             handshakeState = HandshakeState.Idle
-            scope.handledLaunch {
-                delay(wantConfigDelay)
-                connectionManager.value.startConfigOnly()
+            if (state.purpose == HandshakePurpose.FULL) {
+                Logger.w { "Stage 1 failed: could not build MyNodeInfo, retrying Stage 1" }
+                scope.handledLaunch {
+                    delay(wantConfigDelay)
+                    connectionManager.value.startConfigOnly()
+                }
+            } else {
+                Logger.w { "Channel readback failed: could not build MyNodeInfo; no full-handshake retry started" }
             }
             return
         }
@@ -298,39 +367,84 @@ class MeshConfigFlowManagerImpl(
             Logger.w { "Stage 1 channel readback was not current; waiting for the active handshake" }
             return
         }
-        handshakeState = HandshakeState.FinalizingConfig(state.generation)
-        scope.handledLaunch {
-            if (!channelSetCollector.commit(state.generation)) return@handledLaunch
-            val current = handshakeState
-            if (
-                handshakeGeneration.value != state.generation ||
-                current !is HandshakeState.FinalizingConfig ||
-                current.generation != state.generation
-            ) {
-                return@handledLaunch
+        val purpose =
+            if (completionPurpose == HandshakePurpose.CHANNEL_READBACK_ONLY) {
+                HandshakePurpose.CHANNEL_READBACK_ONLY
+            } else {
+                state.purpose
             }
-            completeConfigStage(state.generation, finalizedInfo)
+        handshakeState = HandshakeState.FinalizingConfig(state.generation, state.radioSessionEpoch, purpose)
+        scope.handledLaunch {
+            channelOperationLock.withLock {
+                if (!isCurrentActiveRadioSession(state.radioSessionEpoch)) {
+                    Logger.w { "Discarding stale Stage 1 completion for radio session ${state.radioSessionEpoch}" }
+                    return@withLock
+                }
+                if (!channelSetCollector.commit(state.generation)) return@withLock
+                val current = handshakeState
+                if (!isCurrentFinalizingConfig(state, current)) {
+                    return@withLock
+                }
+                if (purpose == HandshakePurpose.CHANNEL_READBACK_ONLY) {
+                    val requestToken = state.readbackRequestToken ?: return@withLock
+                    if (state.publishReadbackCompletion) {
+                        _channelReadbackCompletion.value =
+                            ChannelReadbackCompletion(
+                                requestToken = requestToken,
+                                radioSessionEpoch = state.radioSessionEpoch,
+                                channelSet = radioConfigRepository.channelSetFlow.first(),
+                            )
+                    }
+                    handshakeState = HandshakeState.Complete(state.radioSessionEpoch, finalizedInfo)
+                    Logger.i { "Channel readback committed without starting NodeInfo or readiness side effects" }
+                } else {
+                    completeConfigStage(state.generation, state.radioSessionEpoch, finalizedInfo)
+                }
+            }
         }
     }
 
-    private fun completeConfigStage(generation: Long, finalizedInfo: SharedMyNodeInfo) {
-        handshakeState = HandshakeState.ReceivingNodeInfo(myNodeInfo = finalizedInfo)
+    @Suppress("ReturnCount")
+    private fun isCurrentFinalizingConfig(expected: HandshakeState.ReceivingConfig, current: HandshakeState): Boolean {
+        if (handshakeGeneration.value != expected.generation) return false
+        if (current !is HandshakeState.FinalizingConfig) return false
+        return current.generation == expected.generation &&
+            current.radioSessionEpoch == expected.radioSessionEpoch &&
+            current.purpose == expected.purpose &&
+            isCurrentActiveRadioSession(expected.radioSessionEpoch)
+    }
+
+    private fun completeConfigStage(generation: Long, radioSessionEpoch: Long, finalizedInfo: SharedMyNodeInfo) {
+        handshakeState =
+            HandshakeState.ReceivingNodeInfo(radioSessionEpoch = radioSessionEpoch, myNodeInfo = finalizedInfo)
         Logger.i { "myNodeInfo committed (nodeNum=${finalizedInfo.myNodeNum})" }
         connectionManager.value.onRadioConfigLoaded()
 
         scope.handledLaunch {
             delay(wantConfigDelay)
-            if (!isReceivingNodeInfo(generation)) return@handledLaunch
-            heartbeatSender.sendHeartbeat("inter-stage")
+            val heartbeatSent =
+                channelOperationLock.withLock {
+                    if (!isReceivingNodeInfo(generation, radioSessionEpoch)) return@withLock false
+                    heartbeatSender.sendHeartbeat("inter-stage")
+                    true
+                }
+            if (!heartbeatSent) return@handledLaunch
             delay(wantConfigDelay)
-            if (!isReceivingNodeInfo(generation)) return@handledLaunch
-            Logger.i { "Requesting NodeInfo (Stage 2)" }
-            connectionManager.value.startNodeInfoOnly()
+            channelOperationLock.withLock {
+                if (!isReceivingNodeInfo(generation, radioSessionEpoch)) return@withLock
+                Logger.i { "Requesting NodeInfo (Stage 2)" }
+                connectionManager.value.startNodeInfoOnly()
+            }
         }
     }
 
-    private fun isReceivingNodeInfo(generation: Long): Boolean =
-        handshakeGeneration.value == generation && handshakeState is HandshakeState.ReceivingNodeInfo
+    private fun isReceivingNodeInfo(generation: Long, radioSessionEpoch: Long): Boolean {
+        val state = handshakeState
+        return handshakeGeneration.value == generation &&
+            state is HandshakeState.ReceivingNodeInfo &&
+            state.radioSessionEpoch == radioSessionEpoch &&
+            isCurrentActiveRadioSession(radioSessionEpoch)
+    }
 
     private fun handleNodeInfoComplete(state: HandshakeState.ReceivingNodeInfo) {
         Logger.i { "NodeInfo complete (Stage 2)" }
@@ -338,54 +452,100 @@ class MeshConfigFlowManagerImpl(
         val info = state.myNodeInfo
 
         // Transition state immediately (synchronously) to prevent duplicate handling.
-        // The async work below (DB writes, broadcasts) proceeds without the guard.
-        // Because nodes is now immutable, no snapshot is needed — state.nodes IS the snapshot.
+        // The async work below rechecks the captured session while holding the shared radio/channel-operation lock.
+        // Because nodes is now immutable, no additional snapshot is needed — state.nodes IS the snapshot.
         // Any stall-guard retry that re-enters handleNodeInfo will see Complete state and be ignored.
-        handshakeState = HandshakeState.Complete(myNodeInfo = info)
-
-        val entities =
-            state.nodes.mapNotNull { nodeInfo ->
-                nodeManager.installNodeInfo(nodeInfo, withBroadcast = false)
-                nodeManager.nodeDBbyNodeNum[nodeInfo.num]
-                    ?: run {
-                        Logger.w { "Node ${nodeInfo.num} missing from DB after installNodeInfo; skipping" }
-                        null
-                    }
-            }
+        handshakeState = HandshakeState.Complete(radioSessionEpoch = state.radioSessionEpoch, myNodeInfo = info)
 
         scope.handledLaunch {
-            nodeRepository.installConfig(info, entities)
-            analytics.setDeviceAttributes(info.firmwareVersion ?: "unknown", info.model ?: "unknown")
-            nodeManager.setNodeDbReady(true)
-            nodeManager.setAllowNodeDbWrites(true)
-            serviceRepository.setConnectionState(ConnectionState.Connected)
-            serviceBroadcasts.broadcastConnection()
-            connectionManager.value.onNodeDbReady()
+            channelOperationLock.withLock {
+                if (!isCurrentActiveRadioSession(state.radioSessionEpoch)) {
+                    Logger.w { "Discarding stale Stage 2 completion for radio session ${state.radioSessionEpoch}" }
+                    return@withLock
+                }
+
+                val entities =
+                    state.nodes.mapNotNull { nodeInfo ->
+                        nodeManager.installNodeInfo(nodeInfo, withBroadcast = false)
+                        nodeManager.nodeDBbyNodeNum[nodeInfo.num]
+                            ?: run {
+                                Logger.w { "Node ${nodeInfo.num} missing from DB after installNodeInfo; skipping" }
+                                null
+                            }
+                    }
+
+                nodeRepository.installConfig(info, entities)
+                if (!connectionManager.value.onNodeDbReady(state.radioSessionEpoch)) {
+                    Logger.w { "Radio session changed before Stage 2 completion could be published" }
+                    return@withLock
+                }
+                analytics.setDeviceAttributes(info.firmwareVersion ?: "unknown", info.model ?: "unknown")
+                nodeManager.setNodeDbReady(true)
+                nodeManager.setAllowNodeDbWrites(true)
+                serviceRepository.setConnectionState(ConnectionState.Connected)
+                serviceBroadcasts.broadcastConnection()
+            }
         }
+    }
+
+    private fun isCurrentActiveRadioSession(expectedEpoch: Long): Boolean {
+        val session = radioInterfaceService.radioSessionState.value
+        return session.epoch == expectedEpoch &&
+            session.selectedDeviceAddress != null &&
+            session.selectedDeviceAddress == session.activeDeviceAddress &&
+            session.transportConnectionState == ConnectionState.Connected
     }
 
     override fun handleMyInfo(myInfo: ProtoMyNodeInfo) {
         Logger.i { "MyNodeInfo received: ${myInfo.my_node_num}" }
 
         val gen = handshakeGeneration.incrementAndGet()
+        val radioSessionEpoch = radioInterfaceService.radioSessionState.value.epoch
+        while (true) {
+            val owner = pendingReadback.value ?: break
+            if (owner.epoch == radioSessionEpoch || pendingReadback.compareAndSet(owner, null)) break
+        }
+        val readback = pendingReadback.value?.takeIf { it.epoch == radioSessionEpoch }
+        val purpose = if (readback == null) HandshakePurpose.FULL else HandshakePurpose.CHANNEL_READBACK_ONLY
 
         // Transition to Stage 1, discarding any stale data from a prior interrupted handshake.
-        handshakeState = HandshakeState.ReceivingConfig(generation = gen, rawMyNodeInfo = myInfo)
+        handshakeState =
+            HandshakeState.ReceivingConfig(
+                generation = gen,
+                radioSessionEpoch = radioSessionEpoch,
+                rawMyNodeInfo = myInfo,
+                purpose = purpose,
+                readbackRequestToken = readback?.requestToken,
+            )
         channelSetCollector.begin(gen)
-        nodeManager.setMyNodeNum(myInfo.my_node_num)
-        nodeManager.setFirmwareEdition(myInfo.firmware_edition)
-        applyEventFirmwareNotificationDefaults(myInfo.firmware_edition)
+        if (purpose == HandshakePurpose.FULL) {
+            nodeManager.setMyNodeNum(myInfo.my_node_num)
+            nodeManager.setFirmwareEdition(myInfo.firmware_edition)
+            applyEventFirmwareNotificationDefaults(myInfo.firmware_edition)
+        }
 
         // ChannelSet has its own generation-bound clear/commit barrier. Other session caches still clear here.
-        scope.handledLaunch {
-            if (handshakeGeneration.value != gen) return@handledLaunch // Stale handshake; skip.
-            radioConfigRepository.clearLocalConfig()
-            if (handshakeGeneration.value != gen) return@handledLaunch
-            radioConfigRepository.clearLocalModuleConfig()
-            if (handshakeGeneration.value != gen) return@handledLaunch
-            radioConfigRepository.clearDeviceUIConfig()
-            if (handshakeGeneration.value != gen) return@handledLaunch
-            radioConfigRepository.clearFileManifest()
+        if (purpose == HandshakePurpose.FULL) {
+            scope.handledLaunch {
+                channelOperationLock.withLock {
+                    if (handshakeGeneration.value != gen || !isCurrentActiveRadioSession(radioSessionEpoch)) {
+                        return@withLock
+                    }
+                    radioConfigRepository.clearLocalConfig()
+                    if (handshakeGeneration.value != gen || !isCurrentActiveRadioSession(radioSessionEpoch)) {
+                        return@withLock
+                    }
+                    radioConfigRepository.clearLocalModuleConfig()
+                    if (handshakeGeneration.value != gen || !isCurrentActiveRadioSession(radioSessionEpoch)) {
+                        return@withLock
+                    }
+                    radioConfigRepository.clearDeviceUIConfig()
+                    if (handshakeGeneration.value != gen || !isCurrentActiveRadioSession(radioSessionEpoch)) {
+                        return@withLock
+                    }
+                    radioConfigRepository.clearFileManifest()
+                }
+            }
         }
     }
 
@@ -396,8 +556,20 @@ class MeshConfigFlowManagerImpl(
             handshakeState = state.copy(metadata = metadata)
             // Persist the metadata immediately — buildMyNodeInfo() reads it at Stage 1 complete,
             // but the DB write does not need to wait until then.
-            if (metadata != DeviceMetadata()) {
-                scope.handledLaunch { nodeRepository.insertMetadata(state.rawMyNodeInfo.my_node_num, metadata) }
+            if (state.purpose == HandshakePurpose.FULL && metadata != DeviceMetadata()) {
+                scope.handledLaunch {
+                    channelOperationLock.withLock {
+                        val current = handshakeState
+                        if (
+                            current is HandshakeState.ReceivingConfig &&
+                            current.generation == state.generation &&
+                            current.radioSessionEpoch == state.radioSessionEpoch &&
+                            isCurrentActiveRadioSession(state.radioSessionEpoch)
+                        ) {
+                            nodeRepository.insertMetadata(state.rawMyNodeInfo.my_node_num, metadata)
+                        }
+                    }
+                }
             }
         } else {
             Logger.w { "Ignoring metadata outside Stage 1 (state=$state)" }
@@ -415,11 +587,49 @@ class MeshConfigFlowManagerImpl(
 
     override fun handleFileInfo(info: FileInfo) {
         Logger.d { "FileInfo received: ${info.file_name} (${info.size_bytes} bytes)" }
-        scope.handledLaunch { radioConfigRepository.addFileInfo(info) }
+        val epoch = handshakeState.radioSessionEpochOrNull() ?: radioInterfaceService.radioSessionState.value.epoch
+        scope.handledLaunch {
+            channelOperationLock.withLock {
+                if (isCurrentActiveRadioSession(epoch)) radioConfigRepository.addFileInfo(info)
+            }
+        }
+    }
+
+    private fun HandshakeState.radioSessionEpochOrNull(): Long? = when (this) {
+        HandshakeState.Idle -> null
+        is HandshakeState.ReceivingConfig -> radioSessionEpoch
+        is HandshakeState.FinalizingConfig -> radioSessionEpoch
+        is HandshakeState.ReceivingNodeInfo -> radioSessionEpoch
+        is HandshakeState.Complete -> radioSessionEpoch
     }
 
     override fun triggerWantConfig() {
         connectionManager.value.startConfigOnly()
+    }
+
+    override fun triggerWantConfigForSession(expectedRadioSessionEpoch: Long): Boolean =
+        beginChannelReadbackForSession(expectedRadioSessionEpoch) != null
+
+    override fun beginChannelReadbackForSession(expectedRadioSessionEpoch: Long): Long? {
+        val session = radioInterfaceService.radioSessionState.value
+        if (session.epoch != expectedRadioSessionEpoch || !session.isConfiguredReady) return null
+        val state = handshakeState
+        if (state !is HandshakeState.Complete || state.radioSessionEpoch != expectedRadioSessionEpoch) return null
+        val reservation = PendingReadback(expectedRadioSessionEpoch, nextReadbackRequestToken.incrementAndGet())
+        if (!pendingReadback.compareAndSet(null, reservation)) return null
+        val admitted = connectionManager.value.startConfigOnlyForSession(expectedRadioSessionEpoch)
+        if (!admitted) pendingReadback.compareAndSet(reservation, null)
+        return reservation.requestToken.takeIf { admitted }
+    }
+
+    override fun cancelChannelReadbackForSession(expectedRadioSessionEpoch: Long, requestToken: Long) {
+        while (true) {
+            val owner = pendingReadback.value ?: return
+            if (owner.epoch != expectedRadioSessionEpoch || owner.requestToken != requestToken || owner.abandoned) {
+                return
+            }
+            if (pendingReadback.compareAndSet(owner, owner.copy(abandoned = true))) return
+        }
     }
 
     /**

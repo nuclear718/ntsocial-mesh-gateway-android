@@ -28,11 +28,16 @@ import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.model.SessionStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannel
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannelStatus
+import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.CommandSender
+import com.ntsocial.meshlink.core.repository.MeshConfigFlowManager
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.SessionManager
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filter
@@ -41,67 +46,106 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import kotlin.time.Duration.Companion.seconds
 
 /** Ensures every connected MeshLink-managed radio has the canonical NTsocial channel installed. */
 @Single
+@Suppress("ReturnCount", "TooManyFunctions")
 open class NtsocialChannelProvisioner(
     private val commandSender: CommandSender,
     private val radioConfigRepository: RadioConfigRepository,
     private val sessionManager: SessionManager,
     private val channelOperationLock: ChannelOperationLock,
+    private val channelMutationLock: ChannelMutationLock,
+    private val radioInterfaceService: RadioInterfaceService,
+    private val ntsocialGatewayRepository: NtsocialGatewayRepository,
+    private val meshConfigFlowManager: Lazy<MeshConfigFlowManager>,
 ) {
     open suspend fun ensureDefaultChannel(myNodeNum: Int, maxChannels: Int): NtsocialChannelProvisionResult =
-        channelOperationLock.withLock {
-            val defaultChannelSet = NtsocialDefaultChannel.channelSet
-            val defaultSettings = defaultChannelSet.settings.firstOrNull()
+        channelMutationLock.withLock { ensureDefaultChannelLocked(myNodeNum, maxChannels, expectedSession = null) }
 
-            if (defaultSettings == null) {
-                NtsocialChannelProvisionResult.InvalidDefaultChannel
-            } else {
-                val currentChannelSet = radioConfigRepository.channelSetFlow.first()
-                val currentLocalConfig = radioConfigRepository.localConfigFlow.first()
-                val channelPlan =
-                    buildChannelPlan(
-                        currentSettings = currentChannelSet.settings,
-                        defaultSettings = defaultSettings,
-                        maxChannels = maxChannels.coerceAtLeast(1),
-                    )
-                val defaultLoraConfig =
-                    defaultChannelSet.lora_config?.takeIf { shouldApplyDefaultLora(currentLocalConfig.lora) }
+    /** Returns null if this delayed handshake task no longer belongs to the configured active radio session. */
+    open suspend fun ensureDefaultChannelForSession(
+        myNodeNum: Int,
+        maxChannels: Int,
+        expectedRadioSessionEpoch: Long,
+    ): NtsocialChannelProvisionResult? =
+        ensureDefaultChannelForSession(myNodeNum, maxChannels, expectedRadioSessionEpoch, mutationLease = null)
 
-                when {
-                    channelPlan.noSpace -> {
-                        Logger.w { "NTsocial channel provisioning skipped: no free channel slot" }
-                        NtsocialChannelProvisionResult.NoSpace
-                    }
+    /** Composes provisioning inside a caller-owned mutation lease without recursively acquiring its mutex. */
+    open suspend fun ensureDefaultChannelForSession(
+        myNodeNum: Int,
+        maxChannels: Int,
+        expectedRadioSessionEpoch: Long,
+        mutationLease: ChannelMutationLock.Lease?,
+    ): NtsocialChannelProvisionResult? = channelMutationLock.withLease(mutationLease) {
+        val expectedSession = captureExpectedSession(expectedRadioSessionEpoch) ?: return@withLease null
+        ensureDefaultChannelLocked(myNodeNum, maxChannels, expectedSession).takeIf {
+            isExpectedSessionCurrent(expectedSession)
+        }
+    }
 
-                    channelPlan.channel == null && defaultLoraConfig == null -> {
-                        Logger.d { "NTsocial channel already provisioned" }
-                        NtsocialChannelProvisionResult.AlreadyPresent
-                    }
+    private suspend fun ensureDefaultChannelLocked(
+        myNodeNum: Int,
+        maxChannels: Int,
+        expectedSession: ExpectedSession?,
+    ): NtsocialChannelProvisionResult {
+        if (!isExpectedSessionCurrent(expectedSession)) return NtsocialChannelProvisionResult.RadioRejected
+        val defaultChannelSet = NtsocialDefaultChannel.channelSet
+        val defaultSettings = defaultChannelSet.settings.firstOrNull()
 
-                    !ensureLocalAdminSession(myNodeNum) -> {
-                        Logger.w { "NTsocial channel provisioning skipped: local admin session timed out" }
-                        NtsocialChannelProvisionResult.SessionTimeout
-                    }
+        return if (defaultSettings == null) {
+            NtsocialChannelProvisionResult.InvalidDefaultChannel
+        } else {
+            val currentChannelSet = radioConfigRepository.channelSetFlow.first()
+            if (!isExpectedSessionCurrent(expectedSession)) return NtsocialChannelProvisionResult.RadioRejected
+            val currentLocalConfig = radioConfigRepository.localConfigFlow.first()
+            if (!isExpectedSessionCurrent(expectedSession)) return NtsocialChannelProvisionResult.RadioRejected
+            val channelPlan =
+                buildChannelPlan(
+                    currentSettings = currentChannelSet.settings,
+                    defaultSettings = defaultSettings,
+                    maxChannels = maxChannels.coerceAtLeast(1),
+                )
+            val defaultLoraConfig =
+                defaultChannelSet.lora_config?.takeIf { shouldApplyDefaultLora(currentLocalConfig.lora) }
 
-                    else -> applyProvisioning(myNodeNum, defaultLoraConfig, channelPlan.channel)
+            when {
+                channelPlan.noSpace -> {
+                    Logger.w { "NTsocial channel provisioning skipped: no free channel slot" }
+                    NtsocialChannelProvisionResult.NoSpace
                 }
+
+                channelPlan.channel == null && defaultLoraConfig == null -> {
+                    Logger.d { "NTsocial channel already provisioned" }
+                    NtsocialChannelProvisionResult.AlreadyPresent
+                }
+
+                !ensureLocalAdminSession(myNodeNum, expectedSession) -> {
+                    Logger.w { "NTsocial channel provisioning skipped: local admin session timed out" }
+                    NtsocialChannelProvisionResult.SessionTimeout
+                }
+
+                else -> applyProvisioning(myNodeNum, defaultLoraConfig, channelPlan.channel, expectedSession)
             }
         }
+    }
 
     /** Finds the currently configured canonical NTsocial channel without exposing its PSK or other RF settings. */
-    open suspend fun currentDefaultChannelIndex(): Int? {
-        val defaultSettings = NtsocialDefaultChannel.channelSet.settings.firstOrNull() ?: return null
-        return radioConfigRepository.channelSetFlow
-            .first()
-            .settings
-            .indexOfFirst { it.matchesNtsocial(defaultSettings) }
-            .takeIf { it >= 0 }
-    }
+    open suspend fun currentDefaultChannelIndex(): Int? = currentDefaultChannelIndex(mutationLease = null)
+
+    open suspend fun currentDefaultChannelIndex(mutationLease: ChannelMutationLock.Lease?): Int? =
+        channelMutationLock.withLease(mutationLease) {
+            val defaultSettings = NtsocialDefaultChannel.channelSet.settings.firstOrNull() ?: return@withLease null
+            radioConfigRepository.channelSetFlow
+                .first()
+                .settings
+                .indexOfFirst { it.matchesNtsocial(defaultSettings) }
+                .takeIf { it >= 0 }
+        }
 
     private fun buildChannelPlan(
         currentSettings: List<ChannelSettings>,
@@ -144,35 +188,65 @@ open class NtsocialChannelProvisioner(
     private fun shouldApplyDefaultLora(current: Config.LoRaConfig?): Boolean =
         current == null || current.region == Config.LoRaConfig.RegionCode.UNSET
 
-    private suspend fun setLoraConfig(myNodeNum: Int, loraConfig: Config.LoRaConfig): Boolean {
+    private suspend fun setLoraConfig(
+        myNodeNum: Int,
+        loraConfig: Config.LoRaConfig,
+        expectedSession: ExpectedSession?,
+    ): Boolean {
+        if (!isExpectedSessionCurrent(expectedSession)) return false
         val config = Config(lora = loraConfig)
-        val accepted = commandSender.sendAdminAwait(myNodeNum) { AdminMessage(set_config = config) }
-        if (accepted) radioConfigRepository.setLocalConfig(config)
-        return accepted
+        val accepted = sendAdminAwait(myNodeNum, expectedSession) { AdminMessage(set_config = config) }
+        if (!accepted || !isExpectedSessionCurrent(expectedSession)) return false
+        return channelOperationLock.withLock {
+            if (!isExpectedSessionCurrent(expectedSession)) return@withLock false
+            radioConfigRepository.setLocalConfig(config)
+            isExpectedSessionCurrent(expectedSession)
+        }
     }
 
-    private suspend fun setChannel(myNodeNum: Int, channel: Channel): Boolean {
-        val accepted = commandSender.sendAdminAwait(myNodeNum) { AdminMessage(set_channel = channel) }
-        if (accepted) radioConfigRepository.updateChannelSettings(channel)
-        return accepted
+    private suspend fun setChannel(myNodeNum: Int, channel: Channel, expectedSession: ExpectedSession?): Boolean {
+        if (!isExpectedSessionCurrent(expectedSession)) return false
+        val accepted = sendAdminAwait(myNodeNum, expectedSession) { AdminMessage(set_channel = channel) }
+        if (!accepted || !isExpectedSessionCurrent(expectedSession)) return false
+        return channelOperationLock.withLock {
+            if (!isExpectedSessionCurrent(expectedSession)) return@withLock false
+            radioConfigRepository.updateChannelSettings(channel)
+            isExpectedSessionCurrent(expectedSession)
+        }
     }
 
     private suspend fun applyProvisioning(
         myNodeNum: Int,
         defaultLoraConfig: Config.LoRaConfig?,
         channelPlan: ChannelPlan?,
+        expectedSession: ExpectedSession?,
     ): NtsocialChannelProvisionResult {
-        val loraApplied = defaultLoraConfig?.let { setLoraConfig(myNodeNum, it) }
+        val ingressClosed =
+            channelOperationLock.withLock {
+                if (!isExpectedSessionCurrent(expectedSession)) return@withLock false
+                ntsocialGatewayRepository.invalidateInboundSession()
+                true
+            }
+        if (!ingressClosed) return NtsocialChannelProvisionResult.RadioRejected
+        val loraApplied = defaultLoraConfig?.let { setLoraConfig(myNodeNum, it, expectedSession) }
         val channelApplied =
             if (loraApplied == false) {
                 null
             } else {
-                channelPlan?.let { setChannel(myNodeNum, it.channel) }
+                channelPlan?.let { setChannel(myNodeNum, it.channel, expectedSession) }
             }
 
         return if (loraApplied == false || channelApplied == false) {
             NtsocialChannelProvisionResult.RadioRejected
         } else {
+            if (expectedSession != null) {
+                val expectedReadback = radioConfigRepository.channelSetFlow.first().normalizedReadback()
+                val freshReadback = requestFreshReadback(expectedSession)
+                if (freshReadback == null || !freshReadback.matches(expectedReadback)) {
+                    Logger.w { "NTsocial channel provisioning fresh readback was missing or mismatched" }
+                    return NtsocialChannelProvisionResult.ReadbackFailed
+                }
+            }
             Logger.i {
                 "NTsocial channel provisioned: channelChange=${channelPlan?.change}, loraApplied=${loraApplied == true}"
             }
@@ -184,31 +258,112 @@ open class NtsocialChannelProvisioner(
         }
     }
 
-    private suspend fun ensureLocalAdminSession(myNodeNum: Int): Boolean {
-        if (hasActiveSession(myNodeNum)) return true
+    private suspend fun ensureLocalAdminSession(myNodeNum: Int, expectedSession: ExpectedSession?): Boolean {
+        if (!isExpectedSessionCurrent(expectedSession)) return false
+        val alreadyActive = hasActiveSession(myNodeNum)
+        if (!isExpectedSessionCurrent(expectedSession)) return false
+        if (alreadyActive) return true
 
-        return withTimeoutOrNull(ADMIN_SESSION_TIMEOUT) {
-            coroutineScope {
-                val refreshed =
-                    async(start = CoroutineStart.UNDISPATCHED) {
-                        sessionManager.sessionRefreshFlow.filter { it == myNodeNum }.first()
-                    }
-                try {
-                    if (hasActiveSession(myNodeNum)) {
-                        true
-                    } else {
-                        commandSender.sendAdmin(myNodeNum, wantResponse = true) {
-                            AdminMessage(get_device_metadata_request = true)
+        val didRefresh =
+            withTimeoutOrNull(ADMIN_SESSION_TIMEOUT) {
+                coroutineScope {
+                    val refreshWaiter =
+                        async(start = CoroutineStart.UNDISPATCHED) {
+                            sessionManager.sessionRefreshFlow.filter { it == myNodeNum }.first()
                         }
-                        refreshed.await()
-                        true
+                    try {
+                        val becameActive = hasActiveSession(myNodeNum)
+                        if (!isExpectedSessionCurrent(expectedSession)) {
+                            false
+                        } else if (becameActive) {
+                            true
+                        } else {
+                            if (!isExpectedSessionCurrent(expectedSession)) return@coroutineScope false
+                            val admitted =
+                                sendAdminAwait(myNodeNum, expectedSession, wantResponse = true) {
+                                    AdminMessage(get_device_metadata_request = true)
+                                }
+                            if (!admitted || !isExpectedSessionCurrent(expectedSession)) return@coroutineScope false
+                            refreshWaiter.await()
+                            isExpectedSessionCurrent(expectedSession)
+                        }
+                    } finally {
+                        refreshWaiter.cancel()
                     }
-                } finally {
-                    refreshed.cancel()
                 }
-            }
-        } ?: false
+            } ?: false
+        return didRefresh && isExpectedSessionCurrent(expectedSession)
     }
+
+    private suspend fun sendAdminAwait(
+        myNodeNum: Int,
+        expectedSession: ExpectedSession?,
+        wantResponse: Boolean = false,
+        message: () -> AdminMessage,
+    ): Boolean = channelOperationLock.withLock {
+        if (!isExpectedSessionCurrent(expectedSession)) return@withLock false
+        if (expectedSession == null) {
+            commandSender.sendAdminAwait(myNodeNum, wantResponse = wantResponse, initFn = message)
+        } else {
+            commandSender.sendAdminAwaitForSession(
+                expectedRadioSessionEpoch = expectedSession.epoch,
+                destNum = myNodeNum,
+                wantResponse = wantResponse,
+                initFn = message,
+            )
+        }
+    }
+
+    private suspend fun requestFreshReadback(expectedSession: ExpectedSession): ChannelSet? = coroutineScope {
+        val admission: Pair<Long?, Deferred<ChannelSet?>?> =
+            channelOperationLock.withLock {
+                if (!isExpectedSessionCurrent(expectedSession)) return@withLock null to null
+                val manager = meshConfigFlowManager.value
+                val requestToken = manager.beginChannelReadbackForSession(expectedSession.epoch)
+                if (requestToken == null || !isExpectedSessionCurrent(expectedSession)) {
+                    if (requestToken != null) {
+                        manager.cancelChannelReadbackForSession(expectedSession.epoch, requestToken)
+                    }
+                    return@withLock null to null
+                }
+                val waiter =
+                    async(start = CoroutineStart.UNDISPATCHED) {
+                        withTimeoutOrNull(READBACK_TIMEOUT) {
+                            manager.channelReadbackCompletion
+                                .filter { completion ->
+                                    completion?.requestToken == requestToken &&
+                                        completion.radioSessionEpoch == expectedSession.epoch
+                                }
+                                .first()
+                                ?.channelSet
+                                ?.normalizedReadback()
+                        }
+                    }
+                requestToken to waiter
+            }
+        val requestToken = admission.first ?: return@coroutineScope null
+        val result = admission.second?.await()?.takeIf { isExpectedSessionCurrent(expectedSession) }
+        if (result == null) {
+            meshConfigFlowManager.value.cancelChannelReadbackForSession(expectedSession.epoch, requestToken)
+        }
+        result
+    }
+
+    private fun captureExpectedSession(expectedSessionEpoch: Long): ExpectedSession? =
+        radioInterfaceService.radioSessionState.value.let { session ->
+            session
+                .takeIf { it.epoch == expectedSessionEpoch && it.isConfiguredReady }
+                ?.selectedDeviceAddress
+                ?.let { address -> ExpectedSession(epoch = expectedSessionEpoch, address = address) }
+        }
+
+    private fun isExpectedSessionCurrent(expectedSession: ExpectedSession?): Boolean = expectedSession == null ||
+        radioInterfaceService.radioSessionState.value.let { session ->
+            session.epoch == expectedSession.epoch &&
+                session.selectedDeviceAddress == expectedSession.address &&
+                session.activeDeviceAddress == expectedSession.address &&
+                session.isConfiguredReady
+        }
 
     private suspend fun hasActiveSession(myNodeNum: Int): Boolean =
         sessionManager.observeSessionStatus(myNodeNum).first() is SessionStatus.Active
@@ -217,8 +372,11 @@ open class NtsocialChannelProvisioner(
 
     private data class ChannelPlanResult(val channel: ChannelPlan? = null, val noSpace: Boolean = false)
 
+    private data class ExpectedSession(val epoch: Long, val address: String)
+
     private companion object {
         val ADMIN_SESSION_TIMEOUT = 10.seconds
+        val READBACK_TIMEOUT = 30.seconds
     }
 }
 
@@ -232,6 +390,8 @@ sealed interface NtsocialChannelProvisionResult {
     data object RadioRejected : NtsocialChannelProvisionResult
 
     data object SessionTimeout : NtsocialChannelProvisionResult
+
+    data object ReadbackFailed : NtsocialChannelProvisionResult
 
     data class Provisioned(
         val channelIndex: Int?,
@@ -278,6 +438,13 @@ internal fun NtsocialChannelProvisionResult.toDefaultChannelStatus(channelIndex:
                 provisioningState = "SESSION_TIMEOUT",
             )
 
+        NtsocialChannelProvisionResult.ReadbackFailed ->
+            NtsocialDefaultChannelStatus(
+                ready = false,
+                channelIndex = channelIndex,
+                provisioningState = "READBACK_FAILED",
+            )
+
         is NtsocialChannelProvisionResult.Provisioned ->
             NtsocialDefaultChannelStatus(
                 ready = channelIndex != null,
@@ -287,3 +454,14 @@ internal fun NtsocialChannelProvisionResult.toDefaultChannelStatus(channelIndex:
                 provisioningLoraApplied = loraConfigApplied,
             )
     }
+
+private fun ChannelSet.normalizedReadback(): ChannelSet {
+    val normalizedSettings = settings.dropLastWhile { it == ChannelSettings() }
+    return copy(settings = normalizedSettings)
+}
+
+private fun ChannelSet.matches(expected: ChannelSet): Boolean {
+    val actual = normalizedReadback()
+    val normalizedExpected = expected.normalizedReadback()
+    return actual.settings == normalizedExpected.settings && actual.lora_config == normalizedExpected.lora_config
+}

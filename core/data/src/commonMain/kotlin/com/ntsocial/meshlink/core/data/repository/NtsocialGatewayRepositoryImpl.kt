@@ -22,12 +22,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-@file:Suppress("MagicNumber")
+@file:Suppress("LongMethod", "MagicNumber", "ReturnCount")
 
 package com.ntsocial.meshlink.core.data.repository
 
 import co.touchlab.kermit.Logger
+import com.ntsocial.meshlink.core.common.database.DatabaseManager
 import com.ntsocial.meshlink.core.common.util.nowMillis
+import com.ntsocial.meshlink.core.data.manager.RadioIngressWorkTracker
+import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
@@ -40,17 +43,23 @@ import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayNativeText
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.repository.CommandSender
+import com.ntsocial.meshlink.core.repository.GatewayIngressSessionGate
 import com.ntsocial.meshlink.core.repository.MessageQueue
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -59,10 +68,16 @@ import okio.ByteString.Companion.toByteString
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.MeshPacket
+import kotlin.concurrent.Volatile
 import kotlin.random.Random
 
+// This repository intentionally owns both overlay and native-text admission surfaces so their shared
+// insertion/idempotency mutexes cannot be bypassed. The broad history-flow catch is a long-lived service boundary:
+// cancellation is rethrown immediately and an unavailable database is reported without killing the service scope.
+@Suppress("TooManyFunctions", "TooGenericExceptionCaught")
 @Single(binds = [NtsocialGatewayRepository::class])
 class NtsocialGatewayRepositoryImpl(
     private val commandSender: CommandSender,
@@ -70,25 +85,225 @@ class NtsocialGatewayRepositoryImpl(
     private val messageQueue: MessageQueue,
     private val nodeRepository: NodeRepository,
     private val radioConfigRepository: RadioConfigRepository,
+    private val radioInterfaceService: RadioInterfaceService,
+    private val databaseManager: DatabaseManager,
+    private val ingressWorkTracker: RadioIngressWorkTracker,
     @Named("ServiceScope") private val scope: CoroutineScope,
+    private val ingressSessionGate: GatewayIngressSessionGate = GatewayIngressSessionGate(),
 ) : NtsocialGatewayRepository {
     private val _cachedEnvelopes = MutableStateFlow<List<NtsocialCachedEnvelope>>(emptyList())
     private val _defaultChannelStatus = MutableStateFlow(NtsocialDefaultChannelStatus())
     private val cacheMutex = Mutex()
     private val nativeTextMutex = Mutex()
+    private val inboundIdentityMutex = Mutex()
     private val seenCacheKeys = mutableSetOf<String>()
+    private val inboundActivationState = atomic(InboundActivationState())
+    private val _inboundSessionRevision = MutableStateFlow(0L)
+
+    internal var beforeInboundIdentityClearCompareAndSetForTest: (() -> Unit)? = null
+
+    @Volatile private var currentChannelSet = ChannelSet()
+
+    @Volatile private var currentHistoryEpoch: String? = null
+
+    init {
+        scope.launch { radioConfigRepository.channelSetFlow.collectLatest { currentChannelSet = it } }
+        scope.launch {
+            radioConfigRepository.channelSnapshotGeneration.collectLatest { generation ->
+                inboundIdentityMutex.withLock {
+                    val current = inboundActivationState.value
+                    if (current.identity?.channelSnapshotGeneration == generation && current.identity.isCurrent()) {
+                        return@withLock
+                    }
+                    val capturedGate = clearPublishedIdentity(current) ?: return@withLock
+                    val expectedEpoch = capturedGate.expectedRadioSessionEpoch
+                    if (generation.isMutationInFlight() || expectedEpoch == null) return@withLock
+                    val session = radioInterfaceService.radioSessionState.value
+                    if (
+                        radioConfigRepository.channelReadbackGeneration.value > 0 &&
+                        session.isConfiguredReady &&
+                        session.epoch == expectedEpoch
+                    ) {
+                        refreshInboundSession(expectedEpoch, capturedGate)
+                    }
+                }
+            }
+        }
+        scope.launch {
+            try {
+                packetRepository.getGatewayHistoryState(emptyList()).collectLatest {
+                    currentHistoryEpoch = it.historyEpoch
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Logger.w(error) { "Gateway history domain is not available yet" }
+            }
+        }
+    }
 
     override val cachedEnvelopes: StateFlow<List<NtsocialCachedEnvelope>> = _cachedEnvelopes.asStateFlow()
 
+    override val inboundSessionRevision: StateFlow<Long> = _inboundSessionRevision.asStateFlow()
+
     override val defaultChannelStatus: StateFlow<NtsocialDefaultChannelStatus> = _defaultChannelStatus.asStateFlow()
 
-    override fun cacheInbound(packet: MeshPacket, dataPacket: DataPacket): Boolean {
-        val record =
-            toCacheRecord(packet = packet, dataPacket = dataPacket, direction = NtsocialEnvelopeDirection.INBOUND)
-                ?: return false
+    override suspend fun activateInboundSession(expectedRadioSessionEpoch: Long): Boolean =
+        inboundIdentityMutex.withLock {
+            val capturedGate = rotateInboundActivation(replacementExpectedEpoch = expectedRadioSessionEpoch)
+            refreshInboundSession(expectedRadioSessionEpoch, capturedGate)
+        }
 
-        cache(record)
-        return true
+    override fun invalidateInboundSession() {
+        rotateInboundActivation(replacementExpectedEpoch = null)
+    }
+
+    override fun isInboundSessionActive(expectedRadioSessionEpoch: Long): Boolean {
+        if (!ingressSessionGate.isActive(expectedRadioSessionEpoch)) return false
+        val state = inboundActivationState.value
+        val identity = state.identity ?: return false
+        return state.expectedRadioSessionEpoch == expectedRadioSessionEpoch &&
+            identity.radioSessionEpoch == expectedRadioSessionEpoch &&
+            identity.isCurrent()
+    }
+
+    override fun cacheInbound(packet: MeshPacket, dataPacket: DataPacket): Boolean {
+        val activationState = inboundActivationState.value
+        val identity = activationState.identity
+        val record =
+            when {
+                identity == null -> null
+
+                !identity.isCurrent() -> {
+                    if (inboundActivationState.compareAndSet(activationState, activationState.copy(identity = null))) {
+                        ingressSessionGate.invalidate()
+                        _inboundSessionRevision.update { it + 1 }
+                    }
+                    null
+                }
+
+                else ->
+                    toCacheRecord(
+                        packet = packet,
+                        dataPacket = dataPacket,
+                        direction = NtsocialEnvelopeDirection.INBOUND,
+                        channelSet = identity.channelSet,
+                        historyEpoch = identity.historyEpoch,
+                    )
+            }
+        return record?.also(::cacheInboundRecord) != null
+    }
+
+    @Suppress("ReturnCount", "CyclomaticComplexMethod", "ComplexCondition")
+    private suspend fun refreshInboundSession(
+        expectedRadioSessionEpoch: Long,
+        capturedGate: InboundActivationState,
+    ): Boolean {
+        if (
+            capturedGate.expectedRadioSessionEpoch != expectedRadioSessionEpoch ||
+            capturedGate.identity != null ||
+            inboundActivationState.value !== capturedGate
+        ) {
+            return false
+        }
+        val session = radioInterfaceService.radioSessionState.value
+        val selectedAddress = session.selectedDeviceAddress
+        val readbackGeneration = radioConfigRepository.channelReadbackGeneration.value
+        val snapshotGeneration = radioConfigRepository.channelSnapshotGeneration.value
+        if (
+            selectedAddress == null ||
+            !session.isExactConfiguredSession(expectedRadioSessionEpoch) ||
+            databaseManager.currentAddress.value != selectedAddress ||
+            readbackGeneration <= 0 ||
+            snapshotGeneration.isMutationInFlight()
+        ) {
+            return false
+        }
+
+        val channelSet = radioConfigRepository.channelSetFlow.first()
+        val historyState =
+            try {
+                packetRepository.readCurrentGatewayHistoryState(emptyList())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Logger.w(error) { "Unable to capture exact Gateway ingress history identity" }
+                return false
+            }
+
+        val currentSession = radioInterfaceService.radioSessionState.value
+        if (
+            inboundActivationState.value !== capturedGate ||
+            !currentSession.isExactConfiguredSession(expectedRadioSessionEpoch) ||
+            currentSession.selectedDeviceAddress != selectedAddress ||
+            databaseManager.currentAddress.value != selectedAddress ||
+            radioConfigRepository.channelReadbackGeneration.value != readbackGeneration ||
+            radioConfigRepository.channelSnapshotGeneration.value != snapshotGeneration
+        ) {
+            return false
+        }
+
+        val published =
+            inboundActivationState.compareAndSet(
+                capturedGate,
+                capturedGate.copy(
+                    identity =
+                    GatewayIngressIdentity(
+                        radioSessionEpoch = expectedRadioSessionEpoch,
+                        radioAddress = selectedAddress,
+                        channelReadbackGeneration = readbackGeneration,
+                        channelSnapshotGeneration = snapshotGeneration,
+                        historyEpoch = historyState.historyEpoch,
+                        channelSet = channelSet,
+                    ),
+                ),
+            )
+        if (published) {
+            ingressSessionGate.publish(expectedRadioSessionEpoch)
+            _inboundSessionRevision.update { it + 1 }
+        }
+        return published
+    }
+
+    private fun rotateInboundActivation(replacementExpectedEpoch: Long?): InboundActivationState {
+        while (true) {
+            val current = inboundActivationState.value
+            val replacement =
+                InboundActivationState(
+                    revision = current.revision + 1,
+                    expectedRadioSessionEpoch = replacementExpectedEpoch,
+                )
+            if (inboundActivationState.compareAndSet(current, replacement)) {
+                ingressSessionGate.invalidate()
+                _inboundSessionRevision.update { it + 1 }
+                return replacement
+            }
+        }
+    }
+
+    @Suppress("ReturnCount")
+    private fun clearPublishedIdentity(current: InboundActivationState): InboundActivationState? {
+        var candidate = current
+        while (true) {
+            if (
+                candidate.revision != current.revision ||
+                candidate.expectedRadioSessionEpoch != current.expectedRadioSessionEpoch
+            ) {
+                return null
+            }
+            if (candidate.identity == null) return candidate
+            val replacement = candidate.copy(identity = null)
+            beforeInboundIdentityClearCompareAndSetForTest?.let { hook ->
+                beforeInboundIdentityClearCompareAndSetForTest = null
+                hook()
+            }
+            if (inboundActivationState.compareAndSet(candidate, replacement)) {
+                ingressSessionGate.invalidate()
+                _inboundSessionRevision.update { it + 1 }
+                return replacement
+            }
+            candidate = inboundActivationState.value
+        }
     }
 
     override fun sendTestPayload(
@@ -123,6 +338,8 @@ class NtsocialGatewayRepositoryImpl(
                 channelIndex = dataPacket.channel,
                 portNum = dataPacket.dataType,
                 cachedAtMillis = nowMillis,
+                sourceChannelId = sourceChannelIdAtInsertion(dataPacket.channel),
+                historyEpoch = currentHistoryEpoch,
             )
         cache(record)
         return record
@@ -172,19 +389,22 @@ class NtsocialGatewayRepositoryImpl(
             channelIndex = dataPacket.channel,
             portNum = dataPacket.dataType,
             cachedAtMillis = nowMillis,
+            sourceChannelId = sourceChannelIdAtInsertion(dataPacket.channel),
+            historyEpoch = currentHistoryEpoch,
         )
             .also(::cache)
     }
 
     override suspend fun persistAndQueueRawEnvelope(
         rawEnvelope: ByteString,
+        sourceChannelId: String?,
         to: String?,
         channelIndex: Int,
         hopLimit: Int,
         wantAck: Boolean,
         packetId: Int,
     ): NtsocialCachedEnvelope {
-        val (packet, record) =
+        val prepared =
             prepareRawEnvelope(
                 rawEnvelope = rawEnvelope,
                 to = to,
@@ -193,7 +413,14 @@ class NtsocialGatewayRepositoryImpl(
                 wantAck = wantAck,
                 packetId = packetId,
             )
-        val existing = packetRepository.getPacketByPacketId(packetId)
+        val packet = prepared.first
+        val exactChannelSet = radioConfigRepository.channelSetFlow.first()
+        val record = prepared.second.copy(sourceChannelId = sourceChannelIdAtInsertion(channelIndex, exactChannelSet))
+        val durableSourceChannelId = requireNotNull(record.sourceChannelId) { "Gateway source channel is unavailable" }
+        require(sourceChannelId == null || sourceChannelId == durableSourceChannelId) {
+            "Gateway route no longer matches its channel"
+        }
+        val existing = packetRepository.getDurablePacketByPacketId(packetId)
         when {
             existing == null ->
                 packetRepository.savePacket(
@@ -201,13 +428,15 @@ class NtsocialGatewayRepositoryImpl(
                     contactKey = "$channelIndex${to ?: DataPacket.ID_BROADCAST}",
                     packet = packet,
                     receivedTime = nowMillis,
+                    expectedGatewaySourceChannelId = durableSourceChannelId,
                 )
 
-            !existing.matchesDurableGatewayPacket(packet) ->
+            !existing.packet.matchesDurableGatewayPacket(packet) ||
+                existing.expectedSourceChannelId != durableSourceChannelId ->
                 throw IllegalArgumentException("Gateway packet ID already belongs to different content")
         }
 
-        if (existing == null || existing.status == MessageStatus.QUEUED) {
+        if (existing == null || existing.packet.status == MessageStatus.QUEUED) {
             messageQueue.enqueue(packetId)
         }
         cache(record)
@@ -243,22 +472,10 @@ class NtsocialGatewayRepositoryImpl(
                 "Gateway route no longer matches its channel"
             }
 
-            val ourNode = nodeRepository.ourNodeInfo.value
-            val localNodeNum =
-                ourNode?.num?.takeIf { it != 0 } ?: nodeRepository.myNodeInfo.value?.myNodeNum?.takeIf { it != 0 }
-            val localNodeId =
-                requireNotNull(
-                    NtsocialGatewayIdentity.stableLocalNodeId(
-                        userId = ourNode?.user?.id,
-                        myId = nodeRepository.myId.value,
-                        nodeNum = localNodeNum,
-                    ),
-                ) {
-                    "Stable local node identity is not ready"
-                }
+            val sender = nodeRepository.requireNativeSenderIdentity()
             val packet =
                 DataPacket(to = DataPacket.ID_BROADCAST, channel = channelIndex, text = text).apply {
-                    from = localNodeId
+                    from = sender.nodeId
                     id = packetId
                     status = MessageStatus.QUEUED
                     time = nowMillis
@@ -272,7 +489,7 @@ class NtsocialGatewayRepositoryImpl(
             when {
                 existing == null ->
                     packetRepository.savePacket(
-                        myNodeNum = localNodeNum ?: 0,
+                        myNodeNum = sender.nodeNum ?: 0,
                         contactKey = "$channelIndex${DataPacket.ID_BROADCAST}",
                         packet = packet,
                         receivedTime = packet.time,
@@ -308,6 +525,8 @@ class NtsocialGatewayRepositoryImpl(
         packet: MeshPacket,
         dataPacket: DataPacket,
         direction: NtsocialEnvelopeDirection,
+        channelSet: ChannelSet = currentChannelSet,
+        historyEpoch: String? = currentHistoryEpoch,
     ): NtsocialCachedEnvelope? {
         val rawBytes = dataPacket.bytes
         val envelope =
@@ -326,6 +545,8 @@ class NtsocialGatewayRepositoryImpl(
                 channelIndex = dataPacket.channel,
                 portNum = dataPacket.dataType,
                 cachedAtMillis = nowMillis,
+                sourceChannelId = sourceChannelIdAtInsertion(dataPacket.channel, channelSet),
+                historyEpoch = historyEpoch,
             )
         }
     }
@@ -372,6 +593,8 @@ class NtsocialGatewayRepositoryImpl(
                 channelIndex = packet.channel,
                 portNum = packet.dataType,
                 cachedAtMillis = nowMillis,
+                sourceChannelId = sourceChannelIdAtInsertion(packet.channel),
+                historyEpoch = currentHistoryEpoch,
             )
     }
 
@@ -399,18 +622,34 @@ class NtsocialGatewayRepositoryImpl(
         originClientMessageId == expectedOriginClientMessageId
 
     private fun cache(record: NtsocialCachedEnvelope) {
-        scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            cacheMutex.withLock {
-                if (!seenCacheKeys.add(record.cacheKey)) return@withLock
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { applyCache(record) }
+    }
 
-                val next = (_cachedEnvelopes.value + record).takeLast(NtsocialTransport.MAX_CACHED_ENVELOPES)
-                if (next.size == NtsocialTransport.MAX_CACHED_ENVELOPES) {
-                    seenCacheKeys.clear()
-                    seenCacheKeys.addAll(next.map { it.cacheKey })
-                }
-                _cachedEnvelopes.value = next
+    private fun cacheInboundRecord(record: NtsocialCachedEnvelope) {
+        ingressWorkTracker.launchUndispatched(scope) { applyCache(record) }
+    }
+
+    private suspend fun applyCache(record: NtsocialCachedEnvelope) {
+        cacheMutex.withLock {
+            if (!seenCacheKeys.add(record.cacheKey)) return@withLock
+
+            val next = (_cachedEnvelopes.value + record).takeLast(NtsocialTransport.MAX_CACHED_ENVELOPES)
+            if (next.size == NtsocialTransport.MAX_CACHED_ENVELOPES) {
+                seenCacheKeys.clear()
+                seenCacheKeys.addAll(next.map { it.cacheKey })
             }
+            _cachedEnvelopes.value = next
         }
+    }
+
+    private fun sourceChannelIdAtInsertion(channelIndex: Int, channelSet: ChannelSet = currentChannelSet): String? {
+        val settings = channelSet.settings.getOrNull(channelIndex) ?: return null
+        val role = if (channelIndex == 0) Channel.Role.PRIMARY else Channel.Role.SECONDARY
+        return NtsocialGatewayIdentity.channel(
+            Channel(index = channelIndex, role = role, settings = settings),
+            channelSet.lora_config ?: Config.LoRaConfig(),
+        )
+            .sourceChannelId
     }
 
     private fun randomHeaderMsgId(): ByteString = ByteArray(NtsocialTransport.HEADER_MSG_ID_SIZE_BYTES) {
@@ -422,4 +661,52 @@ class NtsocialGatewayRepositoryImpl(
         const val RANDOM_BYTE_EXCLUSIVE = 256
         val CLIENT_MESSAGE_ID_REGEX = Regex("^[0-9A-F]{32}$")
     }
+
+    private fun GatewayIngressIdentity.isCurrent(): Boolean {
+        val session = radioInterfaceService.radioSessionState.value
+        return session.isExactConfiguredSession(radioSessionEpoch) &&
+            session.selectedDeviceAddress == radioAddress &&
+            databaseManager.currentAddress.value == radioAddress &&
+            radioConfigRepository.channelReadbackGeneration.value == channelReadbackGeneration &&
+            radioConfigRepository.channelSnapshotGeneration.value == channelSnapshotGeneration
+    }
+
+    private fun com.ntsocial.meshlink.core.repository.RadioSessionState.isExactConfiguredSession(
+        expectedEpoch: Long,
+    ): Boolean = epoch == expectedEpoch &&
+        selectedDeviceAddress != null &&
+        selectedDeviceAddress == activeDeviceAddress &&
+        transportConnectionState == ConnectionState.Connected &&
+        configured
+}
+
+private data class GatewayIngressIdentity(
+    val radioSessionEpoch: Long,
+    val radioAddress: String,
+    val channelReadbackGeneration: Long,
+    val channelSnapshotGeneration: Long,
+    val historyEpoch: String,
+    val channelSet: ChannelSet,
+)
+
+private data class InboundActivationState(
+    val revision: Long = 0,
+    val expectedRadioSessionEpoch: Long? = null,
+    val identity: GatewayIngressIdentity? = null,
+)
+
+private fun Long.isMutationInFlight(): Boolean = this and 1L != 0L
+
+private data class NativeSenderIdentity(val nodeNum: Int?, val nodeId: String)
+
+private fun NodeRepository.requireNativeSenderIdentity(): NativeSenderIdentity {
+    val ourNode = ourNodeInfo.value
+    val nodeNum = ourNode?.num?.takeIf { it != 0 } ?: myNodeInfo.value?.myNodeNum?.takeIf { it != 0 }
+    val nodeId =
+        requireNotNull(
+            NtsocialGatewayIdentity.stableLocalNodeId(userId = ourNode?.user?.id, myId = myId.value, nodeNum = nodeNum),
+        ) {
+            "Stable local node identity is not ready"
+        }
+    return NativeSenderIdentity(nodeNum, nodeId)
 }
