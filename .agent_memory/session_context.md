@@ -1,5 +1,31 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+## 2026-08-08 - Android local-debug Gateway signer interoperability
+- The Android Gateway caller verifier keeps the fixed NTsocial release (`29EF...0646`) and stable
+  team-debug (`C67E...FD61`) pins for both MeshLink build types. A debuggable MeshLink host now also
+  accepts only `com.ntsocial.android.debug` when the parent's complete current signer set is nonempty
+  and exactly equals the host's complete current signer set. Release hosts never enable this path;
+  partial multi-signer overlap and signing-history-only overlap fail closed.
+- The verifier derives host debuggability from `ApplicationInfo.FLAG_DEBUGGABLE` and reads current
+  host/client signers through `PackageManager`, so `core:service` does not depend on the App module's
+  `BuildConfig`. Fixed pins continue checking signing history for legitimate certificate rotation.
+- No machine-local signer digest was added to source. `signature|knownSigner` continues listing only
+  the approved release and stable team-debug certificates; Android's ordinary `signature` grant
+  covers a same-signed debug pair. Both F-Droid and Google Debug merged manifests are debuggable;
+  both Release merged manifests omit the debuggable flag.
+- Focused trust tests pass 8/8; current service host plus JVM tests pass 122, and the full root test
+  outputs contain 2,793 passing tests. Changed service Android main/host-test Detekt and Spotless pass.
+  F-Droid/Google Debug APK assembly, both Debug lints, KMP smoke compilation, and the Google Release
+  no-cloud/R8/Lint Vital/AAB pipeline pass. Root Detekt remains nonzero only for five pre-existing
+  findings outside this change.
+- The exact local-debug NTsocial and F-Droid MeshLink APKs, both signed by the same machine-local
+  certificate without pinning it, were installed with data-preserving updates on three Android 16
+  phones. All three returned v1/v2 status rows, issued a capability, accepted the verified sender and
+  capability, then returned the correlated expected `COMMAND_REJECTED/invalid_route` event for a
+  deliberately nonexistent route. UI discovery, Open-app launch, toggle recovery, and parent-process
+  restart recovery passed; an ADB-shell Provider query remained untrusted. No Meshtastic node, RF,
+  remote receipt, signed Play artifact, or F-Droid-release signer test was available.
+
 ## 2026-08-07 - iOS third-track source implementation and simulator verification
 - Added iOS as the repository's third product track on branch `codex/feat/ios-meshlink`, from base
   HEAD `988d3327e45772e73dd2147ee7fffe4a26d370a6`. The implementation remains uncommitted at this

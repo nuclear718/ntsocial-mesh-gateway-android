@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Public signer digests only. The authoritative in-process verifier also binds each digest to an exact NTsocial package.
-  The stable team debug private key remains outside this repository.
+  Public signer digests only. Do not add a machine-local debug certificate: Android's signature permission covers a
+  same-signed debug pair, and the in-process verifier restricts that path to a debuggable host and the exact debug
+  parent package. The stable team debug private key remains outside this repository.
 -->
 <resources>
     <string-array name="ntsocial_gateway_known_signers">

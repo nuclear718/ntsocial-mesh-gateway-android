@@ -30,45 +30,159 @@ import kotlin.test.assertTrue
 
 class NtsocialGatewayCallerVerifierTest {
     @Test
-    fun `debug and release clients are accepted by either MeshLink build type`() {
-        listOf("debug", "release").forEach { meshLinkBuildType ->
+    fun `pinned debug and release clients are accepted by either MeshLink build type`() {
+        listOf(true, false).forEach { hostIsDebuggable ->
             assertTrue(
                 NtsocialGatewayClientTrust.isTrusted(
                     NtsocialGatewayClientTrust.DEBUG_PACKAGE,
-                    setOf(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+                    signingIdentity(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+                    signingIdentity(HOST_SIGNER),
+                    hostIsDebuggable,
                 ),
-                meshLinkBuildType,
+                "hostIsDebuggable=$hostIsDebuggable",
             )
             assertTrue(
                 NtsocialGatewayClientTrust.isTrusted(
                     NtsocialGatewayClientTrust.RELEASE_PACKAGE,
-                    setOf(NtsocialGatewayClientTrust.RELEASE_CERTIFICATE_SHA256),
+                    signingIdentity(NtsocialGatewayClientTrust.RELEASE_CERTIFICATE_SHA256),
+                    signingIdentity(HOST_SIGNER),
+                    hostIsDebuggable,
                 ),
-                meshLinkBuildType,
+                "hostIsDebuggable=$hostIsDebuggable",
             )
         }
     }
 
     @Test
-    fun `package and signer must match the same approved client identity`() {
+    fun `fixed pins accept an approved signer in a valid signing history`() {
+        assertTrue(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.RELEASE_PACKAGE,
+                GatewayPackageSigningIdentity(
+                    currentSignerDigests = setOf(ROTATED_CLIENT_SIGNER),
+                    signingHistoryDigests =
+                    setOf(NtsocialGatewayClientTrust.RELEASE_CERTIFICATE_SHA256, ROTATED_CLIENT_SIGNER),
+                ),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `debug host accepts a same-signed local debug client`() {
+        assertTrue(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                signingIdentity(HOST_SIGNER),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `release host rejects a same-signed local debug client`() {
         assertFalse(
             NtsocialGatewayClientTrust.isTrusted(
                 NtsocialGatewayClientTrust.DEBUG_PACKAGE,
-                setOf(NtsocialGatewayClientTrust.RELEASE_CERTIFICATE_SHA256),
+                signingIdentity(HOST_SIGNER),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = false,
             ),
         )
+    }
+
+    @Test
+    fun `same-signer debug trust remains bound to the debug client package`() {
         assertFalse(
             NtsocialGatewayClientTrust.isTrusted(
                 NtsocialGatewayClientTrust.RELEASE_PACKAGE,
-                setOf(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+                signingIdentity(HOST_SIGNER),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = true,
             ),
         )
         assertFalse(
             NtsocialGatewayClientTrust.isTrusted(
                 "com.example.fake.ntsocial",
-                setOf(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+                signingIdentity(HOST_SIGNER),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = true,
             ),
         )
-        assertFalse(NtsocialGatewayClientTrust.isTrusted(NtsocialGatewayClientTrust.DEBUG_PACKAGE, emptySet()))
+    }
+
+    @Test
+    fun `same-signer debug trust requires matching current signers`() {
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                GatewayPackageSigningIdentity(
+                    currentSignerDigests = setOf(ROTATED_CLIENT_SIGNER),
+                    signingHistoryDigests = setOf(HOST_SIGNER, ROTATED_CLIENT_SIGNER),
+                ),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `same-signer debug trust rejects partially overlapping multi-signer sets`() {
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                signingIdentity(HOST_SIGNER, CLIENT_SECOND_SIGNER),
+                signingIdentity(HOST_SIGNER, HOST_SECOND_SIGNER),
+                hostIsDebuggable = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `package and pinned signer must match the same approved client identity`() {
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                signingIdentity(NtsocialGatewayClientTrust.RELEASE_CERTIFICATE_SHA256),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = false,
+            ),
+        )
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.RELEASE_PACKAGE,
+                signingIdentity(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = true,
+            ),
+        )
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                "com.example.fake.ntsocial",
+                signingIdentity(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = true,
+            ),
+        )
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                signingIdentity(),
+                signingIdentity(),
+                hostIsDebuggable = true,
+            ),
+        )
+    }
+
+    private fun signingIdentity(vararg digests: String) =
+        GatewayPackageSigningIdentity(currentSignerDigests = digests.toSet())
+
+    private companion object {
+        const val HOST_SIGNER = "LOCAL_DEBUG_HOST_SIGNER"
+        const val ROTATED_CLIENT_SIGNER = "ROTATED_LOCAL_DEBUG_CLIENT_SIGNER"
+        const val CLIENT_SECOND_SIGNER = "LOCAL_DEBUG_CLIENT_SECOND_SIGNER"
+        const val HOST_SECOND_SIGNER = "LOCAL_DEBUG_HOST_SECOND_SIGNER"
     }
 }
