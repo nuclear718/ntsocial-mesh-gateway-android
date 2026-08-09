@@ -264,6 +264,75 @@ class PacketHandlerImplTest {
     }
 
     @Test
+    fun `configured exact session dispatches startup control while canonical state is connecting`() =
+        runTest(testDispatcher) {
+            connectionStateFlow.value = ConnectionState.Connecting
+            val epoch = radioSessionStateFlow.value.epoch
+            every { radioInterfaceService.sendToRadioForSession(any(), epoch) } returns true
+
+            val retainedOrdinary = async { handler.sendToRadioAndAwait(MeshPacket(id = 816)) }
+            testScheduler.runCurrent()
+            assertFalse(retainedOrdinary.isCompleted)
+            verify(mode = VerifyMode.not) { radioInterfaceService.sendToRadio(any()) }
+
+            val accepted = async { handler.sendToRadioAndAwaitForSession(MeshPacket(id = 812), epoch) }
+            testScheduler.runCurrent()
+
+            assertFalse(accepted.isCompleted)
+            verify(mode = VerifyMode.exactly(1)) { radioInterfaceService.sendToRadioForSession(any(), epoch) }
+            verify(mode = VerifyMode.not) { radioInterfaceService.sendToRadio(any()) }
+
+            handler.handleQueueStatus(QueueStatus(mesh_packet_id = 0, res = 0, free = 1))
+            testScheduler.runCurrent()
+
+            assertTrue(accepted.await())
+            assertFalse(retainedOrdinary.isCompleted)
+
+            connectionStateFlow.value = ConnectionState.Connected
+            testScheduler.runCurrent()
+            verify(mode = VerifyMode.exactly(1)) { radioInterfaceService.sendToRadio(any()) }
+            assertFalse(retainedOrdinary.isCompleted)
+            handler.handleQueueStatus(QueueStatus(mesh_packet_id = 816, res = 0, free = 1))
+            testScheduler.runCurrent()
+            assertTrue(retainedOrdinary.await())
+        }
+
+    @Test
+    fun `ordinary awaited packet waits without queue spin until canonical state is connected`() =
+        runTest(testDispatcher) {
+            connectionStateFlow.value = ConnectionState.Connecting
+            val epoch = radioSessionStateFlow.value.epoch
+
+            val accepted = async { handler.sendToRadioAndAwait(MeshPacket(id = 813)) }
+            testScheduler.runCurrent()
+
+            assertFalse(accepted.isCompleted)
+            verify(mode = VerifyMode.not) { radioInterfaceService.sendToRadio(any()) }
+            verify(mode = VerifyMode.not) { radioInterfaceService.sendToRadioForSession(any(), epoch) }
+
+            connectionStateFlow.value = ConnectionState.Connected
+            testScheduler.runCurrent()
+            verify(mode = VerifyMode.exactly(1)) { radioInterfaceService.sendToRadio(any()) }
+
+            handler.handleQueueStatus(QueueStatus(mesh_packet_id = 813, res = 0, free = 1))
+            testScheduler.runCurrent()
+            assertTrue(accepted.await())
+        }
+
+    @Test
+    fun `gateway packet cannot use the pre-connected exact control window`() = runTest(testDispatcher) {
+        connectionStateFlow.value = ConnectionState.Connecting
+        val epoch = radioSessionStateFlow.value.epoch
+
+        val result = handler.dispatchGatewayPacketAndAwait(MeshPacket(id = 815), epoch, "source-channel")
+        testScheduler.runCurrent()
+
+        assertTrue(result == GatewayPacketDispatchResult.TRANSIENT_FAILURE)
+        verify(mode = VerifyMode.not) { radioInterfaceService.sendToRadio(any()) }
+        verify(mode = VerifyMode.not) { radioInterfaceService.sendToRadioForSession(any(), epoch) }
+    }
+
+    @Test
     fun `queued exact packet retains epoch and cannot dispatch through replacement transport`() =
         runTest(testDispatcher) {
             connectionStateFlow.value = ConnectionState.Connected

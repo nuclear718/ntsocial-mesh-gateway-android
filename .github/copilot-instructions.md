@@ -341,11 +341,13 @@ installed variants on a device:
 - After changing native dependencies, verify the target APK with `zipalign -c -P 16` and audit all
   packaged arm64 ELF `PT_LOAD` alignments.
 
-Both MeshLink build types may interoperate with the exact NTsocial debug and release packages when
-their package-specific stable team-debug or approved release signer is pinned. A debuggable MeshLink
-host may also accept the exact debug parent only when their current signers match; release hosts must
-never enable that local-debug exception. Keep private keys outside the repository and preserve
-Provider capability plus sender verification.
+Both MeshLink build types may interoperate with the exact NTsocial debug and release packages. The
+release package uses its approved production signer; the debug package may use the stable team-debug
+or retained development-debug signer. A debuggable MeshLink host may also accept only the exact debug
+parent when their nonempty complete current-signer sets match; release hosts never enable that
+unpinned exception. Empty identities, unknown signers, partial multi-signer matches, and arbitrary
+package names fail closed. Keep private keys outside the repository and preserve Provider capability
+plus sender verification.
 
 ## Deeper Guidance
 

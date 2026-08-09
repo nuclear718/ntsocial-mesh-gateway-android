@@ -32,15 +32,21 @@ class NtsocialGatewayCallerVerifierTest {
     @Test
     fun `pinned debug and release clients are accepted by either MeshLink build type`() {
         listOf(true, false).forEach { hostIsDebuggable ->
-            assertTrue(
-                NtsocialGatewayClientTrust.isTrusted(
-                    NtsocialGatewayClientTrust.DEBUG_PACKAGE,
-                    signingIdentity(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
-                    signingIdentity(HOST_SIGNER),
-                    hostIsDebuggable,
-                ),
-                "hostIsDebuggable=$hostIsDebuggable",
+            listOf(
+                NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256,
+                NtsocialGatewayClientTrust.DEVELOPMENT_DEBUG_CERTIFICATE_SHA256,
             )
+                .forEach { debugSigner ->
+                    assertTrue(
+                        NtsocialGatewayClientTrust.isTrusted(
+                            NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                            signingIdentity(debugSigner),
+                            signingIdentity(HOST_SIGNER),
+                            hostIsDebuggable,
+                        ),
+                        "hostIsDebuggable=$hostIsDebuggable debugSigner=$debugSigner",
+                    )
+                }
             assertTrue(
                 NtsocialGatewayClientTrust.isTrusted(
                     NtsocialGatewayClientTrust.RELEASE_PACKAGE,
@@ -111,6 +117,14 @@ class NtsocialGatewayCallerVerifierTest {
                 hostIsDebuggable = true,
             ),
         )
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                "com.example.fake.ntsocial",
+                signingIdentity(NtsocialGatewayClientTrust.DEVELOPMENT_DEBUG_CERTIFICATE_SHA256),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = true,
+            ),
+        )
     }
 
     @Test
@@ -141,6 +155,18 @@ class NtsocialGatewayCallerVerifierTest {
     }
 
     @Test
+    fun `same-signer debug trust accepts identical complete multi-signer sets`() {
+        assertTrue(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.DEBUG_PACKAGE,
+                signingIdentity(HOST_SIGNER, HOST_SECOND_SIGNER),
+                signingIdentity(HOST_SIGNER, HOST_SECOND_SIGNER),
+                hostIsDebuggable = true,
+            ),
+        )
+    }
+
+    @Test
     fun `package and pinned signer must match the same approved client identity`() {
         assertFalse(
             NtsocialGatewayClientTrust.isTrusted(
@@ -156,6 +182,14 @@ class NtsocialGatewayCallerVerifierTest {
                 signingIdentity(NtsocialGatewayClientTrust.TEAM_DEBUG_CERTIFICATE_SHA256),
                 signingIdentity(HOST_SIGNER),
                 hostIsDebuggable = true,
+            ),
+        )
+        assertFalse(
+            NtsocialGatewayClientTrust.isTrusted(
+                NtsocialGatewayClientTrust.RELEASE_PACKAGE,
+                signingIdentity(NtsocialGatewayClientTrust.DEVELOPMENT_DEBUG_CERTIFICATE_SHA256),
+                signingIdentity(HOST_SIGNER),
+                hostIsDebuggable = false,
             ),
         )
         assertFalse(

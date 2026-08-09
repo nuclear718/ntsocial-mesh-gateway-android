@@ -1,18 +1,100 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+## 2026-08-09 - Android Gateway Debug/Release reciprocal trust matrix
+- The connected Android 16 SM-S9280 currently has `com.ntsocial.android.debug` 1.5.3 (33) and
+  `com.ntsocial.meshlink.google.debug` 1.0.3 (4), not the globally published `com.ntsocial.android`
+  package. Both installed APKs have the same current signer SHA-256
+  `B578F8445925AEA570F7E916C335172559773D7B6EC92DB0D76355E0E8F3FF8D`; the parent has both Gateway
+  permissions granted, its MeshLink preference is enabled, and the selected provider is `meshlink`.
+  There is no versionCode/versionName gate and no current package, authority, permission, or signer
+  mismatch in this installed debug pair.
+- MeshLink application IDs and the exact allowed parent package IDs remain unchanged. Fixed production
+  (`29EF...E646`), stable team-debug (`C67E...FD61`), and retained development-debug (`B578...3FF8`)
+  pins are recognized by both Debug and Release builds and by the Gateway `knownSigner` permissions.
+  A debuggable MeshLink host additionally trusts only the exact `com.ntsocial.android.debug` package
+  when both Apps' complete nonempty current-signer sets are identical. Release hosts, empty or unknown
+  signer identities, partial multi-signer overlap, and arbitrary package names still fail closed.
+- MeshLink verifier regressions pass 9/9; the complete `core:service` host-test suite plus its
+  Android-main/host-test Spotless and Detekt gates pass. Root
+  `spotlessCheck assembleDebug test allTests kmpSmokeCompile` and both Debug flavor lints completed
+  1,856 actionable tasks successfully. Google Release AAB/R8/Lint Vital/no-cloud verification also
+  passes (753 actionable tasks); the local AAB remains an unsigned release-pipeline artifact. Root
+  Detekt remains nonzero only for the five known pre-existing findings in unmodified BLE (3), model (1),
+  and network (1) sources. The `NTsocial_release` reciprocal
+  matrix tests pass 9/9; its complete Debug unit-test task plus Debug and R8 Release APK assembly pass.
+  A final independent cross-repository review confirmed all four controlled Debug/Release pairings and
+  found no functional P0-P2 or missing manifest/permission gate.
+- The final Google arm64 Debug MeshLink APK is 53,570,324 bytes with SHA-256
+  `ACE5378FC35C161DEB09A0EAA195860DE7289754C03E23C36BCB640A393378E2`; the final NTsocial Debug APK
+  is 32,552,070 bytes with SHA-256
+  `1881005631DFCC132FC8963160A4AA9F8E42E813C18380E1AEC7A97F954125E2`. Both were installed as
+  data-preserving updates and the installed base-APK sizes/hashes matched exactly. MeshLink first-install
+  time remained `2026-08-09 07:30:12`; NTsocial remained `2026-08-08 20:32:59`.
+- After the final pair was installed, a real parent-process restart appended 97 log lines with no new
+  MeshLink/Gateway `SecurityException`, `Untrusted`, permission denial, or Provider-query failure while
+  both processes stayed alive and both Gateway permissions remained granted. The existing debug E2E
+  bootstrap then started the real parent foreground service; it logged no Gateway authorization failure.
+  The handset stayed keyguard-locked, so no fresh parent UI status or connected-radio command was
+  retained; this is local-debug identity/startup evidence, not a current Play-delivered pair, RF
+  transmission, or remote-receipt proof.
+- Reciprocal trust is synchronized with `NTsocial_release`: its exact MeshLink debug-package allow-list
+  recognizes both the stable team-debug and retained `B578...3FF8` development-debug signers, while
+  its exact release-package pin is unchanged. This covers the four Debug/Release pairings for the
+  controlled project signers without accepting an arbitrary locally signed App. Android was the only
+  affected product track; Windows and iOS behavior did not change.
+
+## 2026-08-09 - Android Stage-2 connection deadlock and Messages UI recovery
+- Diagnosed the reported missing Messages QR/share FAB and disabled channel composer on a USB-connected Android 16
+  SM-S9280 with a standard Meshtastic radio. Baseline BLE/GATT, Stage 1, and Stage 2 all completed at the transport
+  layer, but canonical state remained `Connecting`; the composer accessibility node was `enabled=false` and the FAB
+  was absent. The stall guard later forced a reconnect.
+- Root cause was commit `524778151`: `MeshConfigFlowManagerImpl` began awaiting
+  `MeshConnectionManagerImpl.onNodeDbReady(epoch)` before publishing canonical `Connected`; `onNodeDbReady` awaited
+  exact-session startup admin packets, while `PacketHandlerImpl` dequeued and sent packets only after canonical
+  `Connected`. Its `finally` also restarted indefinitely while the blocked queue remained nonempty. Both UI symptoms
+  use that same canonical state gate; the barcode provider/navigation and text field implementation were intact.
+- Fixed the shared `PacketHandlerImpl` with explicit `READY`/`WAIT`/`REJECT` dispatch semantics. Ordinary history
+  packets remain queued during `Connecting`; exact configured-session control packets may bypass them; canonical
+  `Connected` wakes retained work; Gateway traffic remains canonical-Connected-only; stale/disconnected epochs fail
+  closed through the atomic exact-session send. Rejected dequeued work completes response/dispatch/Gateway ownership
+  in `NonCancellable`, preventing reconnect cancellation from orphaning callers.
+- Deferred registration now occurs immediately before actual radio dispatch, rather than while an ordinary item is
+  still waiting. This keeps zero-ID QueueStatus fallback bound to the sole in-flight item and prevents startup status
+  from falsely completing retained history work. Independent read-only concurrency review found no remaining P0-P2.
+- Added three PacketHandler regressions: configured exact control bypasses a waiting ordinary item in canonical
+  `Connecting` and handles zero-ID QueueStatus correctly; an ordinary awaited item waits without scheduler spin and
+  resumes on canonical `Connected`; Gateway cannot use the pre-connected exact-control window. The focused suite is
+  20/20. Changed-module Spotless, Detekt, and complete data JVM tests pass.
+- The required root `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile` and both Debug
+  flavor lints ran with JDK 21/en-US and `--continue`: 1,960 actionable tasks completed; only the five documented
+  pre-existing Detekt findings remain in unmodified BLE (3), model (1), and network (1) files. Android, Desktop/JVM,
+  and shared KMP compilation/tests/lints therefore completed; no Windows or iOS device run was performed.
+- Clean-uninstalled and installed the Google arm64 Debug APK. Artifact size is 52,299,121 bytes, version 1.0.3 (4),
+  SHA-256 `04DF73D0911CF5FC2268654DF33110B4B03B8BF62E349508226E0405D5DD5846`; the installed base APK hash matched exactly
+  and first-install time reset. After onboarding and reselecting the same radio, logcat showed Stage 2 followed by four
+  exact-session startup sends and matching successful QueueStatus completions, then retained ordinary work success.
+- The same process/session stayed connected for over five minutes with zero handshake-stall, forced-reconnect,
+  app-level disconnect, queue-timeout, RadioNotConnectedException, or fatal events. The Messages FAB was present; its
+  QR scanner opened with Camera permission; channel sharing generated a Meshtastic QR and URL (secret-bearing evidence
+  intentionally not retained in prose); a channel composer was enabled/focusable, accepted `abc123`, showed `6/200`,
+  and was cleared to `0/200` without pressing Send. This is one-device Debug evidence, not Play/RF/remote-receipt proof.
+- Preserved the user's pre-existing `config.properties` changes; task source changes are limited to PacketHandler
+  production/test code plus this status documentation.
+
 ## 2026-08-08 - Android local-debug Gateway signer interoperability
 - The Android Gateway caller verifier keeps the fixed NTsocial release (`29EF...0646`) and stable
   team-debug (`C67E...FD61`) pins for both MeshLink build types. A debuggable MeshLink host now also
   accepts only `com.ntsocial.android.debug` when the parent's complete current signer set is nonempty
-  and exactly equals the host's complete current signer set. Release hosts never enable this path;
-  partial multi-signer overlap and signing-history-only overlap fail closed.
+  and exactly equals the host's complete current signer set. Release hosts never enable this path, and
+  partial multi-signer overlap fails closed. This historical 2026-08-08 behavior is supplemented by
+  the retained development-debug fixed pin documented in the 2026-08-09 section above.
 - The verifier derives host debuggability from `ApplicationInfo.FLAG_DEBUGGABLE` and reads current
   host/client signers through `PackageManager`, so `core:service` does not depend on the App module's
   `BuildConfig`. Fixed pins continue checking signing history for legitimate certificate rotation.
-- No machine-local signer digest was added to source. `signature|knownSigner` continues listing only
-  the approved release and stable team-debug certificates; Android's ordinary `signature` grant
-  covers a same-signed debug pair. Both F-Droid and Google Debug merged manifests are debuggable;
-  both Release merged manifests omit the debuggable flag.
+- At that 2026-08-08 snapshot no development signer digest was added to source; the later retained
+  development-debug pin is documented in the current 2026-08-09 section above. Both F-Droid and
+  Google Debug merged manifests are debuggable; both Release merged manifests omit the debuggable
+  flag.
 - Focused trust tests pass 8/8; current service host plus JVM tests pass 122, and the full root test
   outputs contain 2,793 passing tests. Changed service Android main/host-test Detekt and Spotless pass.
   F-Droid/Google Debug APK assembly, both Debug lints, KMP smoke compilation, and the Google Release

@@ -45,10 +45,9 @@ internal data class GatewayPackageSigningIdentity(
 /**
  * Exact NTsocial client package and signer policy shared by debug and release MeshLink builds.
  *
- * The fixed release and team-debug pins remain valid for every MeshLink build. A debuggable MeshLink host may also
- * trust the exact debug client package when its complete nonempty current signer set exactly matches the host's current
- * signer set. This permits a developer to build both Apps with the same local debug keystore without hard-coding a
- * machine-specific certificate, while a non-debuggable release host can never take that path.
+ * The fixed release, team-debug, and retained development-debug pins remain valid for every MeshLink build. A
+ * debuggable MeshLink host may also trust the exact debug client package when both Apps have the same complete nonempty
+ * current-signer set. A non-debuggable release host never takes that local same-signer path.
  */
 internal object NtsocialGatewayClientTrust {
     const val RELEASE_PACKAGE = "com.ntsocial.android"
@@ -56,11 +55,12 @@ internal object NtsocialGatewayClientTrust {
 
     const val RELEASE_CERTIFICATE_SHA256 = "29EF6EF5F0BE97EF1B8F2B405CEE99643FECFF11B71AC3B54D637EE01D0AE646"
     const val TEAM_DEBUG_CERTIFICATE_SHA256 = "C67E44DEE96374FC9E44FCE30B97CEA190FCD3124B266E05D0A9944D4E74FD61"
+    const val DEVELOPMENT_DEBUG_CERTIFICATE_SHA256 = "B578F8445925AEA570F7E916C335172559773D7B6EC92DB0D76355E0E8F3FF8"
 
     private val pinnedSigners =
         mapOf(
             RELEASE_PACKAGE to setOf(RELEASE_CERTIFICATE_SHA256),
-            DEBUG_PACKAGE to setOf(TEAM_DEBUG_CERTIFICATE_SHA256),
+            DEBUG_PACKAGE to setOf(TEAM_DEBUG_CERTIFICATE_SHA256, DEVELOPMENT_DEBUG_CERTIFICATE_SHA256),
         )
 
     fun isTrusted(

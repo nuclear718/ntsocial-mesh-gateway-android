@@ -123,6 +123,15 @@ class PacketHandlerImpl(
         // Single consumer serializes enqueues from the non-suspend sendToRadio(MeshPacket)
         // entry point, preserving FIFO across rapid concurrent callers.
         scope.launch { outboundChannel.consumeAsFlow().collect(::admitOutboundItem) }
+        // Ordinary packets intentionally wait during the handshake. Wake that retained work when canonical readiness
+        // is published; exact Stage 2 control packets can independently bypass it in the queue worker.
+        scope.launch {
+            serviceRepository.connectionState.collect { state ->
+                if (state == ConnectionState.Connected) {
+                    queueMutex.withLock { startPacketQueueLocked() }
+                }
+            }
+        }
     }
 
     override fun sendToRadio(p: ToRadio) {
@@ -212,11 +221,21 @@ class PacketHandlerImpl(
         val admitted =
             admissionMutex.withLock {
                 val capturedGeneration = outboundGeneration.value
-                if (!outboundAccepting.value || queueStopped || !isExpectedSessionReady(expectedRadioSessionEpoch)) {
+                if (
+                    !outboundAccepting.value ||
+                    queueStopped ||
+                    packetDispatchDisposition(queuedPacket) != PacketDispatchDisposition.READY
+                ) {
                     return@withLock false
                 }
                 queueMutex.withLock {
-                    if (capturedGeneration != outboundGeneration.value || queueStopped) return@withLock false
+                    if (
+                        capturedGeneration != outboundGeneration.value ||
+                        queueStopped ||
+                        packetDispatchDisposition(queuedPacket) != PacketDispatchDisposition.READY
+                    ) {
+                        return@withLock false
+                    }
                     queuedPackets.add(queuedPacket)
                     startPacketQueueLocked()
                     true
@@ -244,8 +263,8 @@ class PacketHandlerImpl(
         expectedRadioSessionEpoch: Long?,
         expectedSourceChannelId: String? = null,
     ): Boolean {
-        // Pre-register the deferred so the queue processor and QueueStatus handler
-        // can find it immediately — no polling required.
+        // Create the response now, but register it only when this item is actually dequeued for radio dispatch.
+        // WAIT items must not be visible to zero-id QueueStatus fallback while an exact startup packet is in flight.
         val deferred = CompletableDeferred<Boolean>()
         val dispatchCompletion = CompletableDeferred<Boolean>()
         val queuedPacket =
@@ -254,17 +273,23 @@ class PacketHandlerImpl(
                 expectedRadioSessionEpoch = expectedRadioSessionEpoch,
                 expectedSourceChannelId = expectedSourceChannelId,
                 dispatchCompletion = dispatchCompletion,
+                response = deferred,
             )
         val admitted =
             admissionMutex.withLock {
                 val capturedGeneration = outboundGeneration.value
-                if (!outboundAccepting.value || queueStopped || !isExpectedSessionReady(expectedRadioSessionEpoch)) {
+                if (
+                    !outboundAccepting.value ||
+                    queueStopped ||
+                    packetDispatchDisposition(queuedPacket) == PacketDispatchDisposition.REJECT
+                ) {
                     return@withLock false
                 }
-                responseMutex.withLock { queueResponse[packet.id] = deferred }
                 queueMutex.withLock {
-                    if (capturedGeneration != outboundGeneration.value) {
-                        responseMutex.withLock { queueResponse.remove(packet.id) }
+                    if (
+                        capturedGeneration != outboundGeneration.value ||
+                        packetDispatchDisposition(queuedPacket) == PacketDispatchDisposition.REJECT
+                    ) {
                         return@withLock false
                     }
                     queuedPackets.add(queuedPacket)
@@ -278,7 +303,6 @@ class PacketHandlerImpl(
         } catch (e: CancellationException) {
             val removed = queueMutex.withLock { queuedPackets.remove(queuedPacket) }
             if (removed) {
-                responseMutex.withLock { queueResponse.remove(packet.id) }
                 dispatchCompletion.complete(false)
             } else {
                 // A dequeued worker owns the exact-session dispatch. Await its bounded per-item QueueStatus result so
@@ -354,9 +378,13 @@ class PacketHandlerImpl(
         OutboundQueueItem(generation = outboundGeneration.value, packet = packet)
 
     private fun tagOutboundIfAccepting(packet: MeshPacket): OutboundQueueItem? {
-        if (!outboundAccepting.value) return null
+        if (!outboundAccepting.value || !acceptsOrdinaryPacketAdmission()) {
+            return null
+        }
         val item = tagOutbound(packet)
-        return item.takeIf { outboundAccepting.value && it.generation == outboundGeneration.value }
+        return item.takeIf {
+            outboundAccepting.value && acceptsOrdinaryPacketAdmission() && it.generation == outboundGeneration.value
+        }
     }
 
     internal suspend fun admitOutboundItem(item: OutboundQueueItem) {
@@ -364,9 +392,10 @@ class PacketHandlerImpl(
             if (queueStopped || !outboundAccepting.value || item.generation != outboundGeneration.value) {
                 return@withLock
             }
-            queuedPackets.add(
-                QueuedPacket(packet = item.packet, expectedRadioSessionEpoch = null, expectedSourceChannelId = null),
-            )
+            val queuedPacket =
+                QueuedPacket(packet = item.packet, expectedRadioSessionEpoch = null, expectedSourceChannelId = null)
+            if (packetDispatchDisposition(queuedPacket) == PacketDispatchDisposition.REJECT) return@withLock
+            queuedPackets.add(queuedPacket)
             startPacketQueueLocked()
         }
     }
@@ -408,8 +437,8 @@ class PacketHandlerImpl(
         queueJob =
             scope.handledLaunch {
                 try {
-                    while (serviceRepository.connectionState.value == ConnectionState.Connected) {
-                        val queuedPacket = queueMutex.withLock { queuedPackets.removeFirstOrNull() } ?: break
+                    while (true) {
+                        val queuedPacket = takeNextDispatchReadyPacket() ?: break
                         val packet = queuedPacket.packet
                         if (packet.decoded?.portnum?.value == NtsocialTransport.PRIVATE_APP_PORT_NUM) {
                             Logger.i {
@@ -452,7 +481,7 @@ class PacketHandlerImpl(
                     // atomic with respect to new senders calling startPacketQueueLocked().
                     queueMutex.withLock {
                         queueJob = null
-                        if (!queueStopped && queuedPackets.isNotEmpty()) {
+                        if (!queueStopped && hasActionableQueuedPacketLocked()) {
                             startPacketQueueLocked()
                         }
                     }
@@ -533,13 +562,84 @@ class PacketHandlerImpl(
         }
     }
 
+    /**
+     * Canonical app readiness remains the boundary for user and Gateway traffic. During Stage 2, internal control
+     * packets may use only the exact configured radio session so startup administration can complete before the app
+     * publishes Connected. Disconnected and sleeping sessions always fail closed.
+     */
+    private fun packetDispatchDisposition(queuedPacket: QueuedPacket): PacketDispatchDisposition {
+        val connectionState = serviceRepository.connectionState.value
+        val exactSessionReady = isExpectedSessionReady(queuedPacket.expectedRadioSessionEpoch)
+        return when {
+            queuedPacket.gatewayCompletion != null ->
+                if (connectionState == ConnectionState.Connected && exactSessionReady) {
+                    PacketDispatchDisposition.READY
+                } else {
+                    PacketDispatchDisposition.REJECT
+                }
+
+            queuedPacket.expectedRadioSessionEpoch != null ->
+                if (
+                    (connectionState == ConnectionState.Connecting || connectionState == ConnectionState.Connected) &&
+                    exactSessionReady
+                ) {
+                    PacketDispatchDisposition.READY
+                } else {
+                    PacketDispatchDisposition.REJECT
+                }
+
+            connectionState == ConnectionState.Connected -> PacketDispatchDisposition.READY
+
+            connectionState == ConnectionState.Connecting -> PacketDispatchDisposition.WAIT
+
+            else -> PacketDispatchDisposition.REJECT
+        }
+    }
+
+    private fun acceptsOrdinaryPacketAdmission(): Boolean = serviceRepository.connectionState.value.let { state ->
+        state == ConnectionState.Connecting || state == ConnectionState.Connected
+    }
+
+    /** Must be called while holding [queueMutex]. */
+    private fun hasActionableQueuedPacketLocked(): Boolean =
+        queuedPackets.any { packetDispatchDisposition(it) != PacketDispatchDisposition.WAIT }
+
+    private suspend fun rejectQueuedPacket(queuedPacket: QueuedPacket) = withContext(NonCancellable) {
+        responseMutex.withLock { queueResponse.remove(queuedPacket.packet.id)?.complete(false) }
+        queuedPacket.dispatchCompletion?.complete(false)
+        queuedPacket.gatewayCompletion?.complete(GatewayPacketDispatchResult.TRANSIENT_FAILURE)
+    }
+
+    private suspend fun takeNextDispatchReadyPacket(): QueuedPacket? {
+        while (true) {
+            val selection = queueMutex.withLock { removeNextActionablePacketLocked() } ?: return null
+            if (selection.disposition == PacketDispatchDisposition.READY) return selection.packet
+            rejectQueuedPacket(selection.packet)
+        }
+    }
+
+    /** Must be called while holding [queueMutex]. */
+    private fun removeNextActionablePacketLocked(): PacketQueueSelection? {
+        queuedPackets.forEachIndexed { index, packet ->
+            val disposition = packetDispatchDisposition(packet)
+            if (disposition != PacketDispatchDisposition.WAIT) {
+                return PacketQueueSelection(packet = queuedPackets.removeAt(index), disposition = disposition)
+            }
+        }
+        return null
+    }
+
     @Suppress("TooGenericExceptionCaught")
     private suspend fun sendPacket(queuedPacket: QueuedPacket): Deferred<Boolean> {
         val packet = queuedPacket.packet
-        // Reuse a deferred pre-registered by sendToRadioAndAwait, or create a new one.
-        val deferred = responseMutex.withLock { queueResponse.getOrPut(packet.id) { CompletableDeferred() } }
+        // Register immediately before the radio send. The queue has one in-flight item, so zero-id QueueStatus cannot
+        // accidentally complete a retained WAIT item that has not reached the radio yet.
+        val deferred =
+            responseMutex.withLock {
+                queueResponse.getOrPut(packet.id) { queuedPacket.response ?: CompletableDeferred() }
+            }
         try {
-            if (serviceRepository.connectionState.value != ConnectionState.Connected) {
+            if (packetDispatchDisposition(queuedPacket) != PacketDispatchDisposition.READY) {
                 throw RadioNotConnectedException()
             }
             if (packet.decoded?.portnum?.value == NtsocialTransport.PRIVATE_APP_PORT_NUM) {
@@ -587,7 +687,16 @@ private data class QueuedPacket(
     val expectedSourceChannelId: String?,
     val gatewayCompletion: CompletableDeferred<GatewayPacketDispatchResult>? = null,
     val dispatchCompletion: CompletableDeferred<Boolean>? = null,
+    val response: CompletableDeferred<Boolean>? = null,
 )
+
+private enum class PacketDispatchDisposition {
+    READY,
+    WAIT,
+    REJECT,
+}
+
+private data class PacketQueueSelection(val packet: QueuedPacket, val disposition: PacketDispatchDisposition)
 
 private fun ChannelSet.sourceChannelId(slotIndex: Int): String? {
     val settings = settings.getOrNull(slotIndex) ?: return null

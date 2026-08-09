@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Public signer digests only. Do not add a machine-local debug certificate: Android's signature permission covers a
-  same-signed debug pair, and the in-process verifier restricts that path to a debuggable host and the exact debug
-  parent package. The stable team debug private key remains outside this repository.
+  Public signer digests only. The stable team and retained development debug private keys remain outside this
+  repository. Exact package and in-process certificate checks remain authoritative.
 -->
 <resources>
     <string-array name="ntsocial_gateway_known_signers">
         <item>29EF6EF5F0BE97EF1B8F2B405CEE99643FECFF11B71AC3B54D637EE01D0AE646</item>
         <item>C67E44DEE96374FC9E44FCE30B97CEA190FCD3124B266E05D0A9944D4E74FD61</item>
+        <item>B578F8445925AEA570F7E916C335172559773D7B6EC92DB0D76355E0E8F3FF8</item>
     </string-array>
 </resources>
