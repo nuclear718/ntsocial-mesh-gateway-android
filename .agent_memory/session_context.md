@@ -1,5 +1,65 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+## 2026-08-17 - Android channel-wait semantics and Gateway/parent route-catalog recovery
+- The main-repository channel fix changes shared KMP reliability and Compose code used by Android and the shared
+  Desktop surface, while preserving the exact-session/fail-closed contract used by the iOS runtime. Firmware admin
+  outcomes are now typed as acknowledged, explicit rejection, or unconfirmed. A successfully decoded matching
+  `Routing` response whose error is not `NONE` is an explicit rejection; a malformed matching response, queue/session
+  loss, no response, node reboot, readback timeout, or radio/session rotation is unconfirmed rather than a red failure.
+  A commit followed by the 30-second readback timeout, or an exact first readback followed by a context/generation race
+  during stable capture or protected-snapshot persistence, returns `VERIFICATION_PENDING`. Only a complete stable
+  readback that still belongs to the same exact context and mismatches the requested settings returns
+  `READBACK_FAILED`. Pending identity remains fail closed for Gateway ingress.
+- QR replace, Channels reset, and local Channel Config now render a non-red, non-modal progress/information surface
+  explaining that the node normally restarts, reconnection/verification takes about 30 seconds, and the user may leave.
+  The QR dialog permits Back, outside dismissal, and Cancel while applying. Once admitted, these three apply jobs finish
+  their transaction/readback in a non-cancellable section even if navigation clears the ViewModel. Terminal results use
+  the app-wide alert; pending/no-response outcomes do not. en, zh-rTW, and ja resources and focused UI/domain/data tests
+  cover these distinctions. These are shared-source/build results; no Windows or iOS device validation was performed.
+- A separate Android-only Gateway race came from publishing the configured `ChannelSet` and opaque radio generation in
+  independent state flows. Provider `/v2/status`, `/v2/channels`, and command-route validation could therefore observe
+  different generations during one refresh. `GatewayCatalogSnapshot` now publishes the channel set and generation
+  atomically, and all three consumers derive their view from that snapshot. No PSK or other secret is added to the
+  exported surface.
+- The authorized `NTsocial_release` parent had a second catalog race: it selected a Provider primarily by legacy-v1
+  readiness/package order, queried v2 status and channel rows without a closing generation fence, and could replace a
+  last-known-good catalog with a transient empty result just as the LoRa dialog opened. Its Android changes score all
+  installed candidates by coherent bindable v2 overlay catalog and connection state, serialize refresh, use bounded
+  status -> channels -> status generation validation, retain the active last-known-good catalog across transient probe
+  failure, and replace it only with a connected coherent alternative. Opening the manual route dialog requests a fresh
+  catalog and shows a loading state instead of a false empty warning. Stable manual bindings continue to allow several
+  logical NTsocial channels to share one radio route. Parent changes are limited to its Gateway manager, Chat/Channel UI,
+  three locales, and focused binding/provider/route tests; no parent proprietary code was copied into this GPL repo.
+- Main focused validation passed
+  `:core:domain:jvmTest :core:data:jvmTest :core:ui:jvmTest :feature:settings:jvmTest
+  :core:service:testAndroidHostTest --continue` with 263 tasks green. The full JDK-21/en-US gate
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile :app:lintFdroidDebug
+  :app:lintGoogleDebug --continue` finished `BUILD SUCCESSFUL` in 8m13s with 1,960 actionable tasks
+  (286 executed, 1 from cache, 1,673 up-to-date). Functional tests, APK assembly, both Android lints, shared KMP, and iOS
+  compilation passed. Root Detekt remains nonzero only for five pre-existing findings in unmodified BLE
+  `JvmDesktopBluetoothPairingService` (3), model `NtsocialGatewayIdentity` (1), and network `BleRadioTransport` (1).
+  The parent focused suite passed 27/27 and its `:app:assembleDebug` passed with 42 tasks.
+- The final F-Droid arm64 MeshLink Debug APK is 51,877,548 bytes, package
+  `com.ntsocial.meshlink.fdroid.debug`, version 1.0.3 (4), SHA-256
+  `1061020C17D6131115D829BE864715D18A8B34A92418F6DC691EB472B6758491`. The final parent Debug APK is
+  32,707,210 bytes, package `com.ntsocial.android.debug`, version 1.5.5 (35), SHA-256
+  `51EF930312D11A6278B47444B8091909584C6C48094B7817E98470E26704C3F4`. Both exact artifacts are installed on
+  an Android 16 SM-S9280 and CPH2695; on-device package versions, base-APK sizes, and SHA-256 hashes match the local
+  artifacts on both phones.
+- On the Android 16 Samsung, fresh-install BLE scan/connect permission was granted, the existing node was discovered and
+  connected, and Stage 2 completed. A secondary channel was reversibly renamed from `SignalTest` to `SignalTest2` and
+  then restored, exercising two complete manual channel sends. During both operations the UI showed the neutral green
+  message that the node was restarting or reconnecting, confirmation takes about 30 seconds, this is not an error, and
+  the user may leave. System Back successfully left the screen while applying; both transactions continued in the
+  background through reboot, reconnect, and fresh readback, and the original name was restored. There were zero terminal
+  popups, `RADIO_REJECTED`, readback-mismatch, or fatal events. After both event storms the parent LoRa dialog still
+  listed all five configured routes (one primary and four secondary), and all five were marked online.
+- The parent test channel was then reversibly bound to that secondary route and sent one synthetic test envelope. Retained
+  logs show exact counts of 9 Gateway receives, 9 accepted authorizations, 9 packet enqueues, 9 dequeues, 9
+  `to_radio` dispatches, and 22 QueueStatus events, with zero rejects and zero fatal events. The binding was removed and
+  the original state restored. This proves local protected-Gateway acceptance and dispatch to the connected radio queue;
+  it does not prove RF airtime, remote receipt, or end-to-end delivery. A second node and remote receive remain required.
+
 ## 2026-08-09 - Android Gateway Debug/Release reciprocal trust matrix
 - The connected Android 16 SM-S9280 currently has `com.ntsocial.android.debug` 1.5.3 (33) and
   `com.ntsocial.meshlink.google.debug` 1.0.3 (4), not the globally published `com.ntsocial.android`

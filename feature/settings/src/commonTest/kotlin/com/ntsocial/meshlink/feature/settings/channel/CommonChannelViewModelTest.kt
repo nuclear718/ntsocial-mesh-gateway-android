@@ -29,6 +29,7 @@ import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.testing.FakeRadioController
+import com.ntsocial.meshlink.core.ui.util.AlertManager
 import dev.mokkery.MockMode
 import dev.mokkery.answering.returns
 import dev.mokkery.every
@@ -58,6 +59,7 @@ abstract class CommonChannelViewModelTest {
     protected val radioConfigRepository: RadioConfigRepository = mock(MockMode.autofill)
     protected val analytics: PlatformAnalytics = mock(MockMode.autofill)
     protected val channelReliabilityManager: ChannelReliabilityManager = mock(MockMode.autofill)
+    protected val alertManager: AlertManager = mock(MockMode.autofill)
     protected val testDispatcher = UnconfinedTestDispatcher()
 
     protected lateinit var viewModel: ChannelViewModel
@@ -68,7 +70,8 @@ abstract class CommonChannelViewModelTest {
         every { radioConfigRepository.channelSetFlow } returns MutableStateFlow(ChannelSet())
         every { channelReliabilityManager.isProtected } returns MutableStateFlow(false)
 
-        viewModel = ChannelViewModel(radioController, radioConfigRepository, analytics, channelReliabilityManager)
+        viewModel =
+            ChannelViewModel(radioController, radioConfigRepository, analytics, channelReliabilityManager, alertManager)
     }
 
     @AfterTest
@@ -80,7 +83,8 @@ abstract class CommonChannelViewModelTest {
     fun `isManaged returns true when security is managed`() = runTest {
         val config = LocalConfig(security = Config.SecurityConfig(is_managed = true))
         every { radioConfigRepository.localConfigFlow } returns MutableStateFlow(config)
-        viewModel = ChannelViewModel(radioController, radioConfigRepository, analytics, channelReliabilityManager)
+        viewModel =
+            ChannelViewModel(radioController, radioConfigRepository, analytics, channelReliabilityManager, alertManager)
 
         viewModel.localConfig.test {
             awaitItem().security?.is_managed shouldBe true

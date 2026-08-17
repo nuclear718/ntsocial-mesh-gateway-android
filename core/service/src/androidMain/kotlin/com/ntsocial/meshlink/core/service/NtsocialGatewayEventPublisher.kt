@@ -65,9 +65,12 @@ internal constructor(
     private val packetRepository: PacketRepository,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) {
-    private val _channelSet = MutableStateFlow(ChannelSet())
     private val catalogGenerationTracker = GatewayCatalogGenerationTracker()
-    private val _radioGeneration = MutableStateFlow(catalogGenerationTracker.currentGeneration)
+    private val initialCatalogSnapshot =
+        GatewayCatalogSnapshot(ChannelSet(), catalogGenerationTracker.currentGeneration)
+    private val catalogSnapshotState = MutableStateFlow(initialCatalogSnapshot)
+    private val _channelSet = MutableStateFlow(initialCatalogSnapshot.channelSet)
+    private val _radioGeneration = MutableStateFlow(initialCatalogSnapshot.radioGeneration)
     private val _historyState = MutableStateFlow(NtsocialGatewayHistoryState(HISTORY_NOT_READY, 0L))
     private val deliveredEnvelopeKeys = mutableSetOf<String>()
 
@@ -75,6 +78,7 @@ internal constructor(
 
     val channelSet: StateFlow<ChannelSet> = _channelSet.asStateFlow()
     val radioGeneration: StateFlow<String> = _radioGeneration.asStateFlow()
+    internal val catalogSnapshot: StateFlow<GatewayCatalogSnapshot> = catalogSnapshotState.asStateFlow()
     val historyState: StateFlow<NtsocialGatewayHistoryState> = _historyState.asStateFlow()
 
     fun start() {
@@ -101,8 +105,10 @@ internal constructor(
         nodeRepository.ourNodeInfo.onEach { publishDataChanged(statusUri) }.launchIn(scope)
         radioConfigRepository.channelSetFlow
             .onEach { channelSet ->
+                val radioGeneration = catalogGenerationTracker.update(channelSet)
                 _channelSet.value = channelSet
-                _radioGeneration.value = catalogGenerationTracker.update(channelSet)
+                _radioGeneration.value = radioGeneration
+                catalogSnapshotState.value = GatewayCatalogSnapshot(channelSet, radioGeneration)
                 publishDataChanged(channelsUri)
                 publishDataChanged(statusUri)
                 publishDataChanged(v2ChannelsUri, NtsocialGatewayContract.EVENT_CHANNEL_CATALOG_CHANGED)
@@ -206,6 +212,9 @@ internal constructor(
         const val HISTORY_NOT_READY = "not-ready"
     }
 }
+
+/** One atomic Provider/command view of the configured channels and their opaque route generation. */
+internal data class GatewayCatalogSnapshot(val channelSet: ChannelSet, val radioGeneration: String)
 
 /** Opaque runtime generation: no exported value is derived from ChannelSet or its PSKs. */
 internal class GatewayCatalogGenerationTracker(

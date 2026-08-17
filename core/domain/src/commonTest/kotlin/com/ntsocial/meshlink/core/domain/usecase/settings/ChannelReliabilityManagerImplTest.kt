@@ -56,6 +56,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.decodeHex
 import okio.ByteString.Companion.toByteString
@@ -85,7 +86,7 @@ class ChannelReliabilityManagerImplTest {
 
         val result = fixture.manager.applyAndVerify(fixture.protectedSet)
 
-        assertEquals(ChannelReliabilityResult.RADIO_REJECTED, result)
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
         assertEquals(listOf("begin", "channel:0", "commit"), fixture.commandSender.events())
         assertEquals(0, fixture.readbackRequests)
     }
@@ -105,7 +106,19 @@ class ChannelReliabilityManagerImplTest {
     }
 
     @Test
-    fun `failed normal commit is retried only as cleanup and remains rejected`() = runTest {
+    fun `routing timeout is unconfirmed rather than a radio rejection`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.commandSender.outcomes += AdminOutcome(emitRoutingResponse = false)
+
+        val result = fixture.manager.applyAndVerify(fixture.protectedSet)
+
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
+        assertEquals(listOf("begin"), fixture.commandSender.events())
+        assertEquals(0, fixture.readbackRequests)
+    }
+
+    @Test
+    fun `unconfirmed normal commit is retried only as cleanup and remains unavailable`() = runTest {
         val fixture = Fixture(backgroundScope)
         fixture.commandSender.outcomes += AdminOutcome() // begin
         fixture.commandSender.outcomes += AdminOutcome() // primary
@@ -115,7 +128,7 @@ class ChannelReliabilityManagerImplTest {
 
         val result = fixture.manager.applyAndVerify(fixture.protectedSet)
 
-        assertEquals(ChannelReliabilityResult.RADIO_REJECTED, result)
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
         assertEquals(listOf("begin", "channel:0", "channel:1", "commit", "commit"), fixture.commandSender.events())
         assertEquals(0, fixture.readbackRequests)
     }
@@ -131,6 +144,19 @@ class ChannelReliabilityManagerImplTest {
         assertNotEquals(ChannelReliabilityResult.VERIFIED, result)
         assertEquals(1, fixture.commandSender.messages.count { it.commit_edit_settings == true })
         assertEquals(1, fixture.readbackRequests)
+    }
+
+    @Test
+    fun `commit ACK followed by reboot readback timeout remains pending`() = runTest {
+        val fixture = Fixture(backgroundScope)
+
+        val result = fixture.manager.applyAndVerify(fixture.protectedSet)
+
+        assertEquals(ChannelReliabilityResult.VERIFICATION_PENDING, result)
+        assertNotEquals(ChannelReliabilityResult.READBACK_FAILED, result)
+        assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
+        assertEquals(1, fixture.readbackRequests)
+        assertEquals(listOf("invalidate", "command", "command", "command", "command"), fixture.gatewayLifecycle)
     }
 
     @Test
@@ -183,7 +209,7 @@ class ChannelReliabilityManagerImplTest {
 
         val result = fixture.manager.applyAndVerify(fixture.protectedSet)
 
-        assertEquals(ChannelReliabilityResult.RADIO_REJECTED, result)
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
         assertEquals(listOf("begin", "channel:0"), fixture.commandSender.events())
         assertEquals(0, fixture.readbackRequests)
     }
@@ -197,7 +223,7 @@ class ChannelReliabilityManagerImplTest {
 
         val result = fixture.manager.applyAndVerify(fixture.protectedSet)
 
-        assertEquals(ChannelReliabilityResult.RADIO_REJECTED, result)
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
         assertEquals(listOf("begin", "channel:0"), fixture.commandSender.events())
         assertEquals(0, fixture.readbackRequests)
     }
@@ -211,7 +237,7 @@ class ChannelReliabilityManagerImplTest {
 
         val result = fixture.manager.applyAndVerify(fixture.protectedSet)
 
-        assertEquals(ChannelReliabilityResult.RADIO_REJECTED, result)
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
         assertEquals(listOf("begin"), fixture.commandSender.events())
         assertEquals(0, fixture.readbackRequests)
     }
@@ -224,10 +250,24 @@ class ChannelReliabilityManagerImplTest {
 
         val result = fixture.manager.applyAndVerify(fixture.protectedSet)
 
-        assertEquals(ChannelReliabilityResult.READBACK_FAILED, result)
+        assertEquals(ChannelReliabilityResult.VERIFICATION_PENDING, result)
         assertNotEquals(ChannelReliabilityResult.VERIFIED, result)
         assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
         assertEquals(1, fixture.readbackRequests)
+    }
+
+    @Test
+    fun `reconnect during stable readback capture after exact transaction remains pending`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.nextReadback = fixture.protectedSet
+        fixture.beforeStableReadbackCapture = fixture::reconnectSameRadio
+
+        val result = fixture.manager.applyAndVerify(fixture.protectedSet)
+
+        assertEquals(ChannelReliabilityResult.VERIFICATION_PENDING, result)
+        assertNotEquals(ChannelReliabilityResult.READBACK_FAILED, result)
+        assertEquals(1, fixture.readbackRequests)
+        assertTrue("activate" !in fixture.gatewayLifecycle)
     }
 
     @Test
@@ -238,7 +278,7 @@ class ChannelReliabilityManagerImplTest {
 
         val result = fixture.manager.applyAndVerify(fixture.protectedSet)
 
-        assertEquals(ChannelReliabilityResult.READBACK_FAILED, result)
+        assertEquals(ChannelReliabilityResult.VERIFICATION_PENDING, result)
         assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
         assertEquals(0, fixture.readbackRequests)
     }
@@ -281,7 +321,7 @@ class ChannelReliabilityManagerImplTest {
         fixture.reconnectSameRadio()
         releaseSave.complete(Unit)
 
-        assertEquals(ChannelReliabilityResult.READBACK_FAILED, result.await())
+        assertEquals(ChannelReliabilityResult.VERIFICATION_PENDING, result.await())
         assertEquals(previous, fixture.snapshotRepository.get(fixture.identity))
         assertTrue("activate" !in fixture.gatewayLifecycle)
     }
@@ -340,6 +380,7 @@ class ChannelReliabilityManagerImplTest {
         var nextReadback: ChannelSet? = null
         var beforeReadbackAdmission: (() -> Unit)? = null
         var afterReadbackRequested: (() -> Unit)? = null
+        var beforeStableReadbackCapture: (() -> Unit)? = null
         var readbackRequests = 0
         private var nextReadbackToken = 0L
 
@@ -356,7 +397,14 @@ class ChannelReliabilityManagerImplTest {
         init {
             every { serviceRepository.connectionState } returns MutableStateFlow(ConnectionState.Connected)
             every { serviceRepository.meshPacketFlow } returns meshPackets
-            every { radioConfigRepository.channelSetFlow } returns channelSetFlow
+            every { radioConfigRepository.channelSetFlow } returns
+                flow {
+                    beforeStableReadbackCapture?.also { callback ->
+                        beforeStableReadbackCapture = null
+                        callback()
+                    }
+                    emit(channelSetFlow.value)
+                }
             every { radioConfigRepository.channelReadbackGeneration } returns readbackGeneration
             every { radioConfigRepository.localConfigFlow } returns localConfigFlow
             every { radioInterfaceService.radioSessionState } returns radioSessionState
@@ -449,6 +497,7 @@ class ChannelReliabilityManagerImplTest {
         val queued: Boolean = true,
         val routingError: Routing.Error = Routing.Error.NONE,
         val unrelatedRoutingError: Routing.Error? = null,
+        val emitRoutingResponse: Boolean = true,
     )
 
     private class RecordingCommandSender(
@@ -482,7 +531,7 @@ class ChannelReliabilityManagerImplTest {
         ): Boolean {
             messages += initFn()
             val outcome = outcomes.removeFirstOrNull() ?: AdminOutcome()
-            if (outcome.queued) {
+            if (outcome.queued && outcome.emitRoutingResponse) {
                 outcome.unrelatedRoutingError?.let { error ->
                     meshPackets.emit(routingPacket(from = destNum + 1, requestId = requestId, error = error))
                 }

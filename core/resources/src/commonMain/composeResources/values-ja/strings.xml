@@ -98,6 +98,13 @@
     <string name="channel_6">チャンネル 6</string>
     <string name="channel_7">チャンネル 7</string>
     <string name="channel_8">チャンネル 8</string>
+    <string name="channel_apply_failed">ノードから返されたチャンネル設定が要求した設定と一致しません。接続を確認して、もう一度お試しください。</string>
+    <string name="channel_apply_failed_title">チャンネル設定に失敗しました</string>
+    <string name="channel_apply_in_progress">チャンネル設定を適用しています。通常、ノードは再起動し、再接続と確認には約 %1$d 秒かかります。この画面を離れてもかまいません。</string>
+    <string name="channel_apply_invalid">チャンネル設定が無効か、このノードの上限を超えているため適用できません。</string>
+    <string name="channel_apply_pending">ノードの再起動または再接続中のため、確認を待っています。約 %1$d 秒お待ちください。これはエラーではなく、この画面を離れてもかまいません。</string>
+    <string name="channel_apply_rejected">ノードがチャンネル設定を明示的に拒否しました（NAK）。確認済みの変更はありません。</string>
+    <string name="channel_apply_verified">ノードがチャンネル設定全体を確認しました。</string>
     <string name="channel_invalid">このチャンネルURLは無効なため使用できません。</string>
     <string name="channel_label">チャンネル</string>
     <string name="channel_name">チャンネル名</string>

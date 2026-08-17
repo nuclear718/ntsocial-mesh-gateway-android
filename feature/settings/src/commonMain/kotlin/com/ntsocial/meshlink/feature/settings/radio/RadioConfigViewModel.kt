@@ -46,7 +46,6 @@ import com.ntsocial.meshlink.core.model.MyNodeInfo
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Position
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
-import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.LocationRepository
@@ -60,13 +59,17 @@ import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.UiText
 import com.ntsocial.meshlink.core.resources.cant_shutdown
-import com.ntsocial.meshlink.core.resources.channel_apply_failed
 import com.ntsocial.meshlink.core.resources.timeout
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
+import com.ntsocial.meshlink.core.ui.component.showChannelApplyFailure
+import com.ntsocial.meshlink.core.ui.component.toChannelApplyUiState
+import com.ntsocial.meshlink.core.ui.util.AlertManager
 import com.ntsocial.meshlink.core.ui.util.getChannelList
 import com.ntsocial.meshlink.core.ui.viewmodel.safeLaunch
 import com.ntsocial.meshlink.feature.settings.navigation.ConfigRoute
 import com.ntsocial.meshlink.feature.settings.navigation.ModuleRoute
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -77,6 +80,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.StringResource
 import org.koin.core.annotation.InjectedParam
 import org.koin.core.annotation.KoinViewModel
@@ -114,6 +118,7 @@ data class RadioConfigState(
     val deviceUIConfig: DeviceUIConfig? = null,
     val fileManifest: List<FileInfo> = emptyList(),
     val responseState: ResponseState<Boolean> = ResponseState.Empty,
+    val channelApplyState: ChannelApplyUiState = ChannelApplyUiState.Idle,
     val nodeDbResetPreserveFavorites: Boolean = false,
 )
 
@@ -140,6 +145,7 @@ open class RadioConfigViewModel(
     private val fileService: FileService,
     private val mqttManager: MqttManager,
     private val channelReliabilityManager: ChannelReliabilityManager,
+    private val alertManager: AlertManager,
 ) : ViewModel() {
     val homoglyphEncodingEnabledFlow = homoglyphEncodingPrefs.homoglyphEncodingEnabled
 
@@ -297,16 +303,32 @@ open class RadioConfigViewModel(
         val destNum = destNode.value?.num ?: return
         if (destNum == myNodeNum) {
             safeLaunch(tag = "setVerifiedLocalChannels") {
-                _radioConfigState.update { it.copy(responseState = ResponseState.Loading(total = 1)) }
-                val result =
-                    channelReliabilityManager.applyAndVerify(
-                        ChannelSet(settings = new, lora_config = radioConfigState.value.radioConfig.lora),
-                    )
-                if (result == ChannelReliabilityResult.VERIFIED) {
-                    packetRepository.migrateChannelsByPSK(old, new)
-                    _radioConfigState.update { it.copy(channelList = new, responseState = ResponseState.Success(true)) }
-                } else {
-                    sendError(Res.string.channel_apply_failed)
+                _radioConfigState.update { it.copy(channelApplyState = ChannelApplyUiState.Applying) }
+                try {
+                    withContext(NonCancellable) {
+                        val result =
+                            channelReliabilityManager.applyAndVerify(
+                                ChannelSet(settings = new, lora_config = radioConfigState.value.radioConfig.lora),
+                            )
+                        val applyState = result.toChannelApplyUiState()
+                        if (applyState == ChannelApplyUiState.Verified) {
+                            packetRepository.migrateChannelsByPSK(old, new)
+                            _radioConfigState.update {
+                                it.copy(channelList = new, channelApplyState = ChannelApplyUiState.Verified)
+                            }
+                        } else {
+                            _radioConfigState.update { it.copy(channelApplyState = applyState) }
+                            if (applyState is ChannelApplyUiState.Failed) {
+                                alertManager.showChannelApplyFailure(result)
+                            }
+                        }
+                    }
+                } finally {
+                    if (_radioConfigState.value.channelApplyState == ChannelApplyUiState.Applying) {
+                        _radioConfigState.update {
+                            it.copy(channelApplyState = ChannelApplyUiState.WaitingForReconnect)
+                        }
+                    }
                 }
             }
             return
@@ -319,6 +341,10 @@ open class RadioConfigViewModel(
             }
         }
         _radioConfigState.update { it.copy(channelList = new) }
+    }
+
+    fun clearChannelApplyState() {
+        _radioConfigState.update { it.copy(channelApplyState = ChannelApplyUiState.Idle) }
     }
 
     fun setConfig(config: Config) {

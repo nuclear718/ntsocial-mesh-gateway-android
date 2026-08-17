@@ -524,6 +524,43 @@ class MeshConnectionManagerImplTest {
     }
 
     @Test
+    fun `pending channel repair keeps gateway ingress closed until a later verified session`() =
+        runTest(testDispatcher) {
+            every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+            every { nodeManager.getMyNodeInfo() } returns null
+            everySuspend {
+                channelReliabilityManager.reconcileProtectedChannelSetForSession(SESSION_EPOCH, any())
+            } returns ChannelReliabilityResult.VERIFICATION_PENDING
+            manager = createManager(backgroundScope)
+
+            manager.onNodeDbReady(SESSION_EPOCH)
+            advanceUntilIdle()
+
+            verifySuspend(mode = VerifyMode.not) { ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH) }
+            verifySuspend(mode = VerifyMode.not) {
+                ntsocialChannelProvisioner.ensureDefaultChannelForSession(any(), any(), any(), any())
+            }
+        }
+
+    @Test
+    fun `unconfirmed channel repair keeps provisioner and gateway ingress closed`() = runTest(testDispatcher) {
+        every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+        every { nodeManager.getMyNodeInfo() } returns null
+        everySuspend {
+            channelReliabilityManager.reconcileProtectedChannelSetForSession(SESSION_EPOCH, any())
+        } returns ChannelReliabilityResult.SESSION_UNAVAILABLE
+        manager = createManager(backgroundScope)
+
+        manager.onNodeDbReady(SESSION_EPOCH)
+        advanceUntilIdle()
+
+        verifySuspend(mode = VerifyMode.not) { ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH) }
+        verifySuspend(mode = VerifyMode.not) {
+            ntsocialChannelProvisioner.ensureDefaultChannelForSession(any(), any(), any(), any())
+        }
+    }
+
+    @Test
     fun `ambiguous provisioning acknowledgement timeout keeps gateway ingress closed`() = runTest(testDispatcher) {
         every { nodeManager.myNodeNum } returns MutableStateFlow(123)
         every { nodeManager.getMyNodeInfo() } returns null

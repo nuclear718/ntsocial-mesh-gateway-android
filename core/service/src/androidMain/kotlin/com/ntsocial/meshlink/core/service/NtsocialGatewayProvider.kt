@@ -240,7 +240,8 @@ private class NtsocialGatewaySnapshotCursorFactory(
     }
 
     private fun v2StatusCursor(projection: Array<String>?): Cursor {
-        val channelReady = eventPublisher.channelSet.value.settings.isNotEmpty()
+        val catalog = eventPublisher.catalogSnapshot.value
+        val channelReady = catalog.channelSet.settings.isNotEmpty()
         val nativeTextReady = channelReady && gatewayLocalNodeId() != null
         val historyState = eventPublisher.historyState.value
         val values: Map<String, Any?> =
@@ -250,7 +251,7 @@ private class NtsocialGatewaySnapshotCursorFactory(
                     serviceRepository.connectionState.value.toStatusName(),
                 NtsocialGatewayContract.COLUMN_CAPABILITIES to GATEWAY_V2_CAPABILITIES,
                 NtsocialGatewayContract.COLUMN_BEARER to BEARER_MESHTASTIC,
-                NtsocialGatewayContract.COLUMN_RADIO_GENERATION to eventPublisher.radioGeneration.value,
+                NtsocialGatewayContract.COLUMN_RADIO_GENERATION to catalog.radioGeneration,
                 NtsocialGatewayContract.COLUMN_HISTORY_EPOCH to historyState.historyEpoch,
                 NtsocialGatewayContract.COLUMN_MESSAGE_CHANGE_SEQ to historyState.messageChangeSeq,
                 NtsocialGatewayContract.COLUMN_NATIVE_HISTORY_AVAILABLE to 1,
@@ -312,7 +313,7 @@ private class NtsocialGatewaySnapshotCursorFactory(
 
     private fun channelsCursor(projection: Array<String>?): Cursor {
         val cursor = MatrixCursor(resolveProjection(projection, CHANNEL_COLUMNS))
-        eventPublisher.channelSet.value.settings.forEachIndexed { index, settings ->
+        eventPublisher.catalogSnapshot.value.channelSet.settings.forEachIndexed { index, settings ->
             cursor.addValues(
                 mapOf(
                     NtsocialGatewayContract.COLUMN_CHANNEL_INDEX to index,
@@ -327,7 +328,10 @@ private class NtsocialGatewaySnapshotCursorFactory(
 
     private fun v2ChannelsCursor(projection: Array<String>?, caller: NtsocialGatewayCaller): Cursor {
         val cursor = MatrixCursor(resolveProjection(projection, V2_CHANNEL_COLUMNS))
-        val channelSet = eventPublisher.channelSet.value
+        val catalog = eventPublisher.catalogSnapshot.value
+        val channelSet = catalog.channelSet
+        val radioGeneration = catalog.radioGeneration
+        val historyEpoch = eventPublisher.historyState.value.historyEpoch
         val loraConfig = channelSet.lora_config ?: Config.LoRaConfig()
         channelSet.settings.forEachIndexed { index, settings ->
             val role = if (index == 0) Channel.Role.PRIMARY else Channel.Role.SECONDARY
@@ -338,7 +342,7 @@ private class NtsocialGatewaySnapshotCursorFactory(
                     caller = caller,
                     sourceChannelId = identity.sourceChannelId,
                     channelIndex = index,
-                    radioGeneration = eventPublisher.radioGeneration.value,
+                    radioGeneration = radioGeneration,
                 )
             cursor.addValues(
                 mapOf(
@@ -355,8 +359,8 @@ private class NtsocialGatewaySnapshotCursorFactory(
                     NtsocialGatewayContract.COLUMN_CAN_READ_NATIVE_TEXT to 1,
                     NtsocialGatewayContract.COLUMN_CAN_SEND_NATIVE_TEXT to GATEWAY_CHANNEL_NATIVE_TEXT_SEND,
                     NtsocialGatewayContract.COLUMN_CAN_SEND_NT_OVERLAY to 1,
-                    NtsocialGatewayContract.COLUMN_RADIO_GENERATION to eventPublisher.radioGeneration.value,
-                    NtsocialGatewayContract.COLUMN_HISTORY_EPOCH to eventPublisher.historyState.value.historyEpoch,
+                    NtsocialGatewayContract.COLUMN_RADIO_GENERATION to radioGeneration,
+                    NtsocialGatewayContract.COLUMN_HISTORY_EPOCH to historyEpoch,
                 ),
             )
         }

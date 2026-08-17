@@ -140,8 +140,12 @@
     <string name="channel_6">Channel 6</string>
     <string name="channel_7">Channel 7</string>
     <string name="channel_8">Channel 8</string>
-    <string name="channel_apply_failed">The radio did not confirm the complete channel set. Keep the connection stable and try again.</string>
-    <string name="channel_apply_in_progress">Applying channels and verifying the radio…</string>
+    <string name="channel_apply_failed">The node returned a complete channel configuration that did not match the requested settings. Check the connection and try again.</string>
+    <string name="channel_apply_failed_title">Channel setup failed</string>
+    <string name="channel_apply_in_progress">Applying channel settings. The node normally restarts; reconnecting and verification take about %1$d seconds. You can leave this screen.</string>
+    <string name="channel_apply_invalid">These channel settings cannot be applied because they are invalid or exceed this node’s capacity.</string>
+    <string name="channel_apply_pending">The node is restarting or reconnecting, so confirmation is still pending. Allow about %1$d seconds. This is not an error, and you can leave this screen.</string>
+    <string name="channel_apply_rejected">The node explicitly rejected the channel settings (NAK). No changes were reported as verified.</string>
     <string name="channel_apply_verified">Channels were confirmed by the radio.</string>
     <string name="channel_features">Channel Features</string>
     <string name="channel_invalid">This Channel URL is invalid and can not be used</string>

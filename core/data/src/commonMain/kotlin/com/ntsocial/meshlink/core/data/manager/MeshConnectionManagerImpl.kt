@@ -564,8 +564,15 @@ class MeshConnectionManagerImpl(
         return true
     }
 
-    private fun ChannelReliabilityResult.isChannelIdentitySafe(): Boolean =
-        this != ChannelReliabilityResult.RADIO_REJECTED && this != ChannelReliabilityResult.READBACK_FAILED
+    private fun ChannelReliabilityResult.isChannelIdentitySafe(): Boolean = when (this) {
+        ChannelReliabilityResult.REPAIRED,
+        ChannelReliabilityResult.NO_REPAIR_NEEDED,
+        ChannelReliabilityResult.NO_SNAPSHOT,
+        ChannelReliabilityResult.CONFLICT,
+        -> true
+
+        else -> false
+    }
 
     private fun NtsocialChannelProvisionResult.isChannelIdentitySafe(): Boolean =
         this != NtsocialChannelProvisionResult.RadioRejected && this != NtsocialChannelProvisionResult.ReadbackFailed

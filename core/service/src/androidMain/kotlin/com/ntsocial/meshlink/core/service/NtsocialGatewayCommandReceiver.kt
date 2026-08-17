@@ -106,7 +106,7 @@ class NtsocialGatewayCommandReceiver :
                 token = request.routeToken,
                 caller = caller,
                 sourceChannelId = request.sourceChannelId,
-                radioGeneration = eventPublisher.radioGeneration.value,
+                radioGeneration = eventPublisher.catalogSnapshot.value.radioGeneration,
             )
         if (route == null) {
             reject(caller, request.requestId, REASON_INVALID_ROUTE)
@@ -171,7 +171,7 @@ class NtsocialGatewayCommandReceiver :
                 token = request.routeToken,
                 caller = caller,
                 sourceChannelId = request.sourceChannelId,
-                radioGeneration = eventPublisher.radioGeneration.value,
+                radioGeneration = eventPublisher.catalogSnapshot.value.radioGeneration,
             )
         if (route == null) {
             reject(caller, request.requestId, REASON_INVALID_ROUTE)

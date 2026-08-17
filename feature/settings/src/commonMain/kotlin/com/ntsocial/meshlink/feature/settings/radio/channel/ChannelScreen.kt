@@ -77,7 +77,6 @@ import com.ntsocial.meshlink.core.resources.add
 import com.ntsocial.meshlink.core.resources.apply
 import com.ntsocial.meshlink.core.resources.are_you_sure_change_default
 import com.ntsocial.meshlink.core.resources.cancel
-import com.ntsocial.meshlink.core.resources.channel_apply_failed
 import com.ntsocial.meshlink.core.resources.channel_apply_verified
 import com.ntsocial.meshlink.core.resources.channel_protection_disabled
 import com.ntsocial.meshlink.core.resources.channel_protection_save
@@ -95,6 +94,8 @@ import com.ntsocial.meshlink.core.resources.reset
 import com.ntsocial.meshlink.core.resources.reset_to_defaults
 import com.ntsocial.meshlink.core.resources.share_channels_qr
 import com.ntsocial.meshlink.core.ui.component.AdaptiveTwoPane
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyStatus
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
 import com.ntsocial.meshlink.core.ui.component.ChannelSelection
 import com.ntsocial.meshlink.core.ui.component.MainAppBar
 import com.ntsocial.meshlink.core.ui.component.MeshtasticDialog
@@ -122,12 +123,13 @@ import org.meshtastic.proto.Config
  * configurations via QR codes or URLs.
  */
 @Composable
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 fun ChannelScreen(
-    viewModel: ChannelViewModel = koinViewModel(),
-    radioConfigViewModel: RadioConfigViewModel = koinViewModel(),
     onNavigate: (Route) -> Unit,
     onNavigateUp: () -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: ChannelViewModel = koinViewModel(),
+    radioConfigViewModel: RadioConfigViewModel = koinViewModel(),
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -139,6 +141,7 @@ fun ChannelScreen(
     val channels by viewModel.channels.collectAsStateWithLifecycle()
     val protectionEnabled by viewModel.isChannelProtectionEnabled.collectAsStateWithLifecycle()
     val channelOperationResult by viewModel.channelOperationResult.collectAsStateWithLifecycle()
+    val channelApplyState by viewModel.channelApplyState.collectAsStateWithLifecycle()
     var channelSet by remember(channels) { mutableStateOf(channels) }
     val modemPresetName by
         remember(channels) { mutableStateOf(Channel(loraConfig = channels.lora_config ?: Config.LoRaConfig()).name) }
@@ -187,15 +190,25 @@ fun ChannelScreen(
 
     LaunchedEffect(channelOperationResult) {
         val result = channelOperationResult ?: return@LaunchedEffect
-        showToast(
-            when (result) {
-                ChannelReliabilityResult.VERIFIED -> Res.string.channel_apply_verified
-                ChannelReliabilityResult.PROTECTED -> Res.string.channel_protection_saved
-                ChannelReliabilityResult.PROTECTION_DISABLED -> Res.string.channel_protection_disabled
-                else -> Res.string.channel_apply_failed
-            },
-        )
+        when (result) {
+            ChannelReliabilityResult.PROTECTED -> showToast(Res.string.channel_protection_saved)
+            ChannelReliabilityResult.PROTECTION_DISABLED -> showToast(Res.string.channel_protection_disabled)
+            else -> Unit
+        }
         viewModel.clearChannelOperationResult()
+    }
+
+    LaunchedEffect(channelApplyState) {
+        when (channelApplyState) {
+            ChannelApplyUiState.Verified -> {
+                showToast(Res.string.channel_apply_verified)
+                viewModel.clearChannelApplyState()
+            }
+
+            is ChannelApplyUiState.Failed -> viewModel.clearChannelApplyState()
+
+            else -> Unit
+        }
     }
 
     // Send new channel settings to the device
@@ -242,6 +255,7 @@ fun ChannelScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             MainAppBar(
                 title = "",
@@ -260,6 +274,13 @@ fun ChannelScreen(
             modifier = Modifier.padding(innerPadding),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
         ) {
+            if (
+                channelApplyState == ChannelApplyUiState.Applying ||
+                channelApplyState == ChannelApplyUiState.WaitingForReconnect ||
+                channelApplyState == ChannelApplyUiState.InvalidSettings
+            ) {
+                item { ChannelApplyStatus(state = channelApplyState, modifier = Modifier.padding(bottom = 12.dp)) }
+            }
             item {
                 ChannelListView(
                     enabled = enabled,

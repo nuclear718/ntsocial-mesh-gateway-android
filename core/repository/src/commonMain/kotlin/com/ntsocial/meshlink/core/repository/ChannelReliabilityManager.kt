@@ -31,9 +31,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.meshtastic.proto.ChannelSet
 
+/** Expected user-facing wait while a channel commit restarts and reconnects a typical node. */
+const val CHANNEL_APPLY_RESTART_SECONDS = 30
+
 /** Outcome of a verified channel write or an explicit snapshot-protection action. */
 enum class ChannelReliabilityResult {
     VERIFIED,
+
+    /** The mutation was admitted, but the node rebooted or the exact fresh readback has not completed yet. */
+    VERIFICATION_PENDING,
     PROTECTED,
     PROTECTION_DISABLED,
     REPAIRED,

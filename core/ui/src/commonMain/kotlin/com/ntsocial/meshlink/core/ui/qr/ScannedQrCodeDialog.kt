@@ -37,7 +37,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -67,11 +66,11 @@ import com.ntsocial.meshlink.core.resources.accept
 import com.ntsocial.meshlink.core.resources.add
 import com.ntsocial.meshlink.core.resources.add_channels_description
 import com.ntsocial.meshlink.core.resources.cancel
-import com.ntsocial.meshlink.core.resources.channel_apply_failed
-import com.ntsocial.meshlink.core.resources.channel_apply_in_progress
 import com.ntsocial.meshlink.core.resources.new_channel_rcvd
 import com.ntsocial.meshlink.core.resources.replace
 import com.ntsocial.meshlink.core.resources.replace_channels_and_settings_description
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyStatus
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
 import com.ntsocial.meshlink.core.ui.component.ChannelSelection
 import com.ntsocial.meshlink.core.ui.util.getChannelPreviewForAdd
 import org.jetbrains.compose.resources.stringResource
@@ -88,18 +87,34 @@ fun ScannedQrCodeDialog(
     val maxChannels by viewModel.maxChannels.collectAsStateWithLifecycle()
     val applyState by viewModel.applyState.collectAsStateWithLifecycle()
     val currentOnDismiss by rememberUpdatedState(onDismiss)
+    var dialogPrepared by remember(incoming) { mutableStateOf(false) }
 
-    LaunchedEffect(applyState) {
-        if (applyState == ChannelQrApplyState.Verified) {
-            viewModel.clearApplyState()
-            currentOnDismiss()
+    LaunchedEffect(incoming) {
+        viewModel.onDialogShown()
+        dialogPrepared = true
+    }
+
+    LaunchedEffect(applyState, dialogPrepared) {
+        if (!dialogPrepared) return@LaunchedEffect
+        when (applyState) {
+            ChannelApplyUiState.Verified,
+            is ChannelApplyUiState.Failed,
+            -> {
+                viewModel.clearApplyState()
+                currentOnDismiss()
+            }
+
+            else -> Unit
         }
     }
 
     ScannedQrCodeDialog(
         channels = channels,
         incoming = incoming,
-        onDismiss = onDismiss,
+        onDismiss = {
+            viewModel.onDialogDismissed()
+            currentOnDismiss()
+        },
         maxChannels = maxChannels,
         applyState = applyState,
         onConfirm = viewModel::setChannels,
@@ -115,7 +130,7 @@ fun ScannedQrCodeDialog(
     incoming: ChannelSet,
     onDismiss: () -> Unit,
     maxChannels: Int = DEFAULT_MAX_CHANNELS,
-    applyState: ChannelQrApplyState = ChannelQrApplyState.Idle,
+    applyState: ChannelApplyUiState = ChannelApplyUiState.Idle,
     onConfirm: (ChannelSet) -> Unit,
 ) {
     var shouldReplace by rememberSaveable { mutableStateOf(incoming.lora_config != null) }
@@ -209,11 +224,8 @@ fun ScannedQrCodeDialog(
             }
         }
 
-    val isApplying = applyState == ChannelQrApplyState.Applying
-    Dialog(
-        onDismissRequest = { if (!isApplying) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = !isApplying),
-    ) {
+    val isApplying = applyState == ChannelApplyUiState.Applying
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier.widthIn(max = 600.dp),
             shape = RoundedCornerShape(16.dp),
@@ -320,25 +332,12 @@ fun ScannedQrCodeDialog(
 
                 /* User Actions via buttons */
                 item {
-                    when (applyState) {
-                        ChannelQrApplyState.Applying ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                CircularProgressIndicator()
-                                Text(stringResource(Res.string.channel_apply_in_progress))
-                            }
-
-                        is ChannelQrApplyState.Failed ->
-                            Text(
-                                text = stringResource(Res.string.channel_apply_failed),
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(vertical = 12.dp),
-                            )
-
-                        else -> Unit
+                    if (
+                        applyState == ChannelApplyUiState.Applying ||
+                        applyState == ChannelApplyUiState.WaitingForReconnect ||
+                        applyState == ChannelApplyUiState.InvalidSettings
+                    ) {
+                        ChannelApplyStatus(state = applyState, modifier = Modifier.padding(vertical = 12.dp))
                     }
                 }
 
@@ -347,7 +346,7 @@ fun ScannedQrCodeDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                     ) {
-                        TextButton(onClick = { onDismiss() }, enabled = !isApplying) {
+                        TextButton(onClick = onDismiss) {
                             Text(
                                 text = stringResource(Res.string.cancel),
                                 color = MaterialTheme.colorScheme.onSurface,

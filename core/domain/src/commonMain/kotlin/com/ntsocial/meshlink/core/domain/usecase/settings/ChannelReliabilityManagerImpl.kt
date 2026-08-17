@@ -124,9 +124,14 @@ class ChannelReliabilityManagerImpl(
         val result = applyTransaction(context, desired)
         if (result != ChannelReliabilityResult.VERIFIED) return@withLock result
 
-        val stableReadback = captureStableReadback(context)
-        if (stableReadback == null || !stableReadback.channelSet.matches(desired)) {
-            return@withLock ChannelReliabilityResult.READBACK_FAILED
+        val stableReadback =
+            captureStableReadback(context) ?: return@withLock ChannelReliabilityResult.VERIFICATION_PENDING
+        if (!stableReadback.channelSet.matches(desired)) {
+            return@withLock if (isStableReadbackCurrent(context, stableReadback.generation)) {
+                ChannelReliabilityResult.READBACK_FAILED
+            } else {
+                ChannelReliabilityResult.VERIFICATION_PENDING
+            }
         }
         if (currentSnapshot != null) {
             val persisted =
@@ -139,14 +144,14 @@ class ChannelReliabilityManagerImpl(
                         channelSet = desired,
                     ),
                 )
-            if (!persisted) return@withLock ChannelReliabilityResult.READBACK_FAILED
+            if (!persisted) return@withLock ChannelReliabilityResult.VERIFICATION_PENDING
             _isProtected.value = true
         }
         if (
             !isCurrentRadioContext(context) ||
             radioConfigRepository.channelReadbackGeneration.value != stableReadback.generation
         ) {
-            return@withLock ChannelReliabilityResult.READBACK_FAILED
+            return@withLock ChannelReliabilityResult.VERIFICATION_PENDING
         }
         if (!activateInboundSession(context)) {
             Logger.w { "Gateway ingress remains closed after verified channel apply because activation was stale" }
@@ -257,9 +262,12 @@ class ChannelReliabilityManagerImpl(
         if (generation <= 0L || !isCurrentRadioContext(context)) return null
         val channelSet = radioConfigRepository.channelSetFlow.first().normalizedReadback()
         return StableReadback(generation = generation, channelSet = channelSet).takeIf {
-            isCurrentRadioContext(context) && radioConfigRepository.channelReadbackGeneration.value == generation
+            isStableReadbackCurrent(context, generation)
         }
     }
+
+    private fun isStableReadbackCurrent(context: RadioContext, generation: Long): Boolean =
+        isCurrentRadioContext(context) && radioConfigRepository.channelReadbackGeneration.value == generation
 
     private suspend fun persistProtectionSnapshot(
         context: RadioContext,
@@ -295,33 +303,42 @@ class ChannelReliabilityManagerImpl(
         val commands = buildAuthoritativeChannelWrites(desired.settings, context.maxChannels)
         // Firmware can apply begin/channel/config writes before local readback advances the snapshot generation.
         // Close Gateway ingress at the last possible point before the first mutation admission.
-        if (!closeIngressForMutation(context)) return ChannelReliabilityResult.RADIO_REJECTED
-        val committed =
+        if (!closeIngressForMutation(context)) return ChannelReliabilityResult.SESSION_UNAVAILABLE
+        val transactionResult =
             runEditTransaction(context) {
                 for (channel in commands) {
-                    if (!sendVerifiedAdmin(context) { AdminMessage(set_channel = channel) }) {
-                        return@runEditTransaction false
+                    val result = sendVerifiedAdmin(context) { AdminMessage(set_channel = channel) }
+                    if (result != AdminCommandResult.ACKNOWLEDGED) {
+                        return@runEditTransaction result
                     }
                 }
                 val currentLora = radioConfigRepository.localConfigFlow.first().lora
                 if (desired.lora_config != null && desired.lora_config != currentLora) {
-                    if (!sendVerifiedAdmin(context) { AdminMessage(set_config = Config(lora = desired.lora_config)) }) {
-                        return@runEditTransaction false
+                    val result =
+                        sendVerifiedAdmin(context) { AdminMessage(set_config = Config(lora = desired.lora_config)) }
+                    if (result != AdminCommandResult.ACKNOWLEDGED) {
+                        return@runEditTransaction result
                     }
                 }
-                true
+                AdminCommandResult.ACKNOWLEDGED
             }
-        return if (!committed) {
-            ChannelReliabilityResult.RADIO_REJECTED
-        } else {
-            val readback = requestFreshReadback(context)
-            if (readback != null && isCurrentRadioContext(context) && readback.matches(desired)) {
-                ChannelReliabilityResult.VERIFIED
-            } else {
-                if (readback != null) {
-                    Logger.w { "Channel transaction readback did not match the requested channel set" }
+        return when (transactionResult) {
+            AdminCommandResult.REJECTED -> ChannelReliabilityResult.RADIO_REJECTED
+
+            AdminCommandResult.UNCONFIRMED -> ChannelReliabilityResult.SESSION_UNAVAILABLE
+
+            AdminCommandResult.ACKNOWLEDGED -> {
+                val readback = requestFreshReadback(context)
+                when {
+                    readback == null || !isCurrentRadioContext(context) -> ChannelReliabilityResult.VERIFICATION_PENDING
+
+                    readback.matches(desired) -> ChannelReliabilityResult.VERIFIED
+
+                    else -> {
+                        Logger.w { "Channel transaction readback did not match the requested channel set" }
+                        ChannelReliabilityResult.READBACK_FAILED
+                    }
                 }
-                ChannelReliabilityResult.READBACK_FAILED
             }
         }
     }
@@ -341,33 +358,41 @@ class ChannelReliabilityManagerImpl(
             } else {
                 // As with manual apply, no ingress identity may survive across the first firmware mutation and the
                 // exact fresh readback that proves its final channel set.
-                if (!closeIngressForMutation(context)) return ChannelReliabilityResult.RADIO_REJECTED
-                val committed =
+                if (!closeIngressForMutation(context)) return ChannelReliabilityResult.SESSION_UNAVAILABLE
+                val transactionResult =
                     runEditTransaction(context) {
                         for (channel in writes) {
-                            if (!sendVerifiedAdmin(context) { AdminMessage(set_channel = channel) }) {
-                                return@runEditTransaction false
+                            val result = sendVerifiedAdmin(context) { AdminMessage(set_channel = channel) }
+                            if (result != AdminCommandResult.ACKNOWLEDGED) {
+                                return@runEditTransaction result
                             }
                         }
-                        true
+                        AdminCommandResult.ACKNOWLEDGED
                     }
-                if (!committed) {
-                    ChannelReliabilityResult.RADIO_REJECTED
-                } else {
-                    val readback = requestFreshReadback(context)
-                    val drift =
-                        readback?.let {
-                            classifyChannelSnapshotDrift(
-                                snapshotChannelSet = snapshot.channelSet,
-                                snapshotMaxChannels = snapshot.maxChannels,
-                                currentChannelSet = it,
-                                currentMaxChannels = context.maxChannels,
-                            )
+                when (transactionResult) {
+                    AdminCommandResult.REJECTED -> ChannelReliabilityResult.RADIO_REJECTED
+
+                    AdminCommandResult.UNCONFIRMED -> ChannelReliabilityResult.SESSION_UNAVAILABLE
+
+                    AdminCommandResult.ACKNOWLEDGED -> {
+                        val readback = requestFreshReadback(context)
+                        val drift =
+                            readback?.let {
+                                classifyChannelSnapshotDrift(
+                                    snapshotChannelSet = snapshot.channelSet,
+                                    snapshotMaxChannels = snapshot.maxChannels,
+                                    currentChannelSet = it,
+                                    currentMaxChannels = context.maxChannels,
+                                )
+                            }
+                        when {
+                            readback == null || !isCurrentRadioContext(context) ->
+                                ChannelReliabilityResult.VERIFICATION_PENDING
+
+                            drift == ChannelSnapshotDrift.EXACT -> ChannelReliabilityResult.REPAIRED
+
+                            else -> ChannelReliabilityResult.READBACK_FAILED
                         }
-                    if (isCurrentRadioContext(context) && drift == ChannelSnapshotDrift.EXACT) {
-                        ChannelReliabilityResult.REPAIRED
-                    } else {
-                        ChannelReliabilityResult.READBACK_FAILED
                     }
                 }
             }
@@ -378,24 +403,31 @@ class ChannelReliabilityManagerImpl(
      * Runs one firmware edit-settings session and never leaves a successfully opened session without a commit attempt.
      * A cleanup commit closes the firmware session only; it cannot turn a failed write sequence into success.
      */
-    private suspend fun runEditTransaction(context: RadioContext, writes: suspend () -> Boolean): Boolean {
+    private suspend fun runEditTransaction(
+        context: RadioContext,
+        writes: suspend () -> AdminCommandResult,
+    ): AdminCommandResult {
         val opened = sendVerifiedAdmin(context) { AdminMessage(begin_edit_settings = true) }
-        return if (!opened) {
-            false
+        return if (opened != AdminCommandResult.ACKNOWLEDGED) {
+            opened
         } else {
-            var committed = false
+            var result = AdminCommandResult.UNCONFIRMED
             try {
-                if (writes()) {
-                    committed = sendVerifiedAdmin(context) { AdminMessage(commit_edit_settings = true) }
-                }
-                committed
+                val writeResult = writes()
+                result =
+                    if (writeResult == AdminCommandResult.ACKNOWLEDGED) {
+                        sendVerifiedAdmin(context) { AdminMessage(commit_edit_settings = true) }
+                    } else {
+                        writeResult
+                    }
+                result
             } finally {
-                if (!committed) {
+                if (result != AdminCommandResult.ACKNOWLEDGED) {
                     withContext(NonCancellable) {
                         if (isCurrentRadioContext(context)) {
                             val closed =
                                 runCatching { sendVerifiedAdmin(context) { AdminMessage(commit_edit_settings = true) } }
-                                    .getOrDefault(false)
+                                    .getOrDefault(AdminCommandResult.UNCONFIRMED) == AdminCommandResult.ACKNOWLEDGED
                             if (!closed) Logger.w { "Best-effort channel edit cleanup commit failed" }
                         } else {
                             Logger.w { "Skipped channel edit cleanup because the connected radio changed" }
@@ -406,10 +438,10 @@ class ChannelReliabilityManagerImpl(
         }
     }
 
-    private suspend fun sendVerifiedAdmin(context: RadioContext, message: () -> AdminMessage): Boolean =
+    private suspend fun sendVerifiedAdmin(context: RadioContext, message: () -> AdminMessage): AdminCommandResult =
         operationLock.withLock {
             coroutineScope {
-                if (!isCurrentRadioContext(context)) return@coroutineScope false
+                if (!isCurrentRadioContext(context)) return@coroutineScope AdminCommandResult.UNCONFIRMED
                 val destNum = context.nodeNum
                 val requestId = commandSender.generatePacketId()
                 val routingResult =
@@ -424,14 +456,23 @@ class ChannelReliabilityManagerImpl(
                                 }
                                 .first()
                                 .let { packet ->
-                                    runCatching { Routing.ADAPTER.decode(packet.decoded!!.payload) }
-                                        .getOrNull()
-                                        ?.error_reason == Routing.Error.NONE
+                                    val response =
+                                        runCatching { Routing.ADAPTER.decode(packet.decoded!!.payload) }.getOrNull()
+                                    when {
+                                        response == null -> {
+                                            Logger.w { "Matching channel-admin Routing response could not be decoded" }
+                                            AdminCommandResult.UNCONFIRMED
+                                        }
+
+                                        response.error_reason == Routing.Error.NONE -> AdminCommandResult.ACKNOWLEDGED
+
+                                        else -> AdminCommandResult.REJECTED
+                                    }
                                 }
-                        } ?: false
+                        } ?: AdminCommandResult.UNCONFIRMED
                     }
                 try {
-                    if (!isCurrentRadioContext(context)) return@coroutineScope false
+                    if (!isCurrentRadioContext(context)) return@coroutineScope AdminCommandResult.UNCONFIRMED
                     val queued =
                         commandSender.sendAdminAwaitForSession(
                             expectedRadioSessionEpoch = context.radioSessionEpoch,
@@ -439,9 +480,15 @@ class ChannelReliabilityManagerImpl(
                             requestId = requestId,
                             initFn = message,
                         )
-                    if (!queued || !isCurrentRadioContext(context)) return@coroutineScope false
-                    val routed = routingResult.await()
-                    routed && isCurrentRadioContext(context)
+                    if (!queued || !isCurrentRadioContext(context)) {
+                        return@coroutineScope AdminCommandResult.UNCONFIRMED
+                    }
+                    when (val routed = routingResult.await()) {
+                        AdminCommandResult.ACKNOWLEDGED ->
+                            if (isCurrentRadioContext(context)) routed else AdminCommandResult.UNCONFIRMED
+
+                        else -> routed
+                    }
                 } finally {
                     routingResult.cancel()
                 }
@@ -534,6 +581,12 @@ class ChannelReliabilityManagerImpl(
     )
 
     private data class StableReadback(val generation: Long, val channelSet: ChannelSet)
+
+    private enum class AdminCommandResult {
+        ACKNOWLEDGED,
+        REJECTED,
+        UNCONFIRMED,
+    }
 
     private companion object {
         val ROUTING_TIMEOUT = 15.seconds

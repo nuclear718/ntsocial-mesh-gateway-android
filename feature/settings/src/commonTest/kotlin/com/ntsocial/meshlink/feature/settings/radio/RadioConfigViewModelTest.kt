@@ -37,6 +37,7 @@ import com.ntsocial.meshlink.core.domain.usecase.settings.RadioResponseResult
 import com.ntsocial.meshlink.core.domain.usecase.settings.ToggleHomoglyphEncodingUseCase
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
+import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.LocationRepository
@@ -47,7 +48,12 @@ import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.repository.UiPrefs
+import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.channel_apply_rejected
 import com.ntsocial.meshlink.core.testing.FakeNodeRepository
+import com.ntsocial.meshlink.core.testing.TestDataFactory
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
+import com.ntsocial.meshlink.core.ui.util.AlertManager
 import com.ntsocial.meshlink.feature.settings.navigation.ConfigRoute
 import dev.mokkery.MockMode
 import dev.mokkery.answering.returns
@@ -80,6 +86,8 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -107,6 +115,7 @@ class RadioConfigViewModelTest {
     private val fileService: FileService = mock(MockMode.autofill)
     private val mqttManager: MqttManager = mock(MockMode.autofill)
     private val channelReliabilityManager: ChannelReliabilityManager = mock(MockMode.autofill)
+    private val alertManager = AlertManager()
     private val uiPrefs: UiPrefs = mock(MockMode.autofill)
 
     private lateinit var viewModel: RadioConfigViewModel
@@ -114,6 +123,7 @@ class RadioConfigViewModelTest {
     @BeforeTest
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        alertManager.dismissAlert()
 
         every { radioConfigRepository.deviceProfileFlow } returns MutableStateFlow(DeviceProfile())
         every { radioConfigRepository.localConfigFlow } returns MutableStateFlow(LocalConfig())
@@ -162,6 +172,7 @@ class RadioConfigViewModelTest {
         fileService = fileService,
         mqttManager = mqttManager,
         channelReliabilityManager = channelReliabilityManager,
+        alertManager = alertManager,
     )
 
     @Test
@@ -231,6 +242,44 @@ class RadioConfigViewModelTest {
 
         verifySuspend { radioConfigUseCase.setRemoteChannel(123, any()) }
         assertEquals(new, viewModel.radioConfigState.value.channelList)
+    }
+
+    @Test
+    fun `local channel readback timeout stays informational without an error dialog`() = runTest {
+        val nodeNum = 123
+        nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = nodeNum))
+        nodeRepository.setNodes(listOf(Node(num = nodeNum, user = User(id = "!123"))))
+        everySuspend { channelReliabilityManager.applyAndVerify(any()) } returns
+            ChannelReliabilityResult.VERIFICATION_PENDING
+        viewModel = createViewModel()
+
+        viewModel.updateChannels(
+            new = listOf(ChannelSettings(name = "New")),
+            old = listOf(ChannelSettings(name = "Old")),
+        )
+        runCurrent()
+
+        assertEquals(ChannelApplyUiState.WaitingForReconnect, viewModel.radioConfigState.value.channelApplyState)
+        assertNull(alertManager.currentAlert.value)
+        assertTrue(viewModel.radioConfigState.value.responseState !is ResponseState.Error)
+    }
+
+    @Test
+    fun `local channel explicit NAK opens the terminal error alert`() = runTest {
+        val nodeNum = 123
+        nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = nodeNum))
+        nodeRepository.setNodes(listOf(Node(num = nodeNum, user = User(id = "!123"))))
+        everySuspend { channelReliabilityManager.applyAndVerify(any()) } returns ChannelReliabilityResult.RADIO_REJECTED
+        viewModel = createViewModel()
+
+        viewModel.updateChannels(
+            new = listOf(ChannelSettings(name = "New")),
+            old = listOf(ChannelSettings(name = "Old")),
+        )
+        runCurrent()
+
+        assertIs<ChannelApplyUiState.Failed>(viewModel.radioConfigState.value.channelApplyState)
+        assertEquals(Res.string.channel_apply_rejected, alertManager.currentAlert.value?.messageRes)
     }
 
     @Test

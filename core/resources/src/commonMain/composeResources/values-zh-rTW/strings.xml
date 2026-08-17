@@ -117,8 +117,12 @@
     <string name="buzzer_gpio">蜂鳴器腳位</string>
     <string name="calculating">正在計算……</string>
     <string name="cancel">取消</string>
-    <string name="channel_apply_failed">節點尚未確認完整的頻道設定。請保持連線穩定後再試一次。</string>
-    <string name="channel_apply_in_progress">正在套用頻道並向節點重新讀回驗證…</string>
+    <string name="channel_apply_failed">節點回報的完整頻道設定與要求不一致。請檢查連線後再試一次。</string>
+    <string name="channel_apply_failed_title">頻道設定失敗</string>
+    <string name="channel_apply_in_progress">正在套用頻道設定。節點通常會重新開機；重新連線與確認約需 %1$d 秒。您可以離開此畫面。</string>
+    <string name="channel_apply_invalid">這組頻道設定無效或超過節點容量，因此無法套用。</string>
+    <string name="channel_apply_pending">節點正在重新開機或重新連線，因此仍在等待確認。請預留約 %1$d 秒；這不是錯誤，您可以離開此畫面。</string>
+    <string name="channel_apply_rejected">節點已明確拒絕頻道設定（NAK），目前沒有任何變更通過驗證。</string>
     <string name="channel_apply_verified">節點已確認完整的頻道設定。</string>
     <string name="channel_protection_disabled">已停止保護這個節點的頻道設定。</string>
     <string name="channel_protection_save">儲存並保護頻道</string>

@@ -34,11 +34,17 @@ import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.DataPair
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
+import com.ntsocial.meshlink.core.ui.component.showChannelApplyFailure
+import com.ntsocial.meshlink.core.ui.component.toChannelApplyUiState
+import com.ntsocial.meshlink.core.ui.util.AlertManager
 import com.ntsocial.meshlink.core.ui.viewmodel.safeLaunch
 import com.ntsocial.meshlink.core.ui.viewmodel.stateInWhileSubscribed
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import org.koin.core.annotation.KoinViewModel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.Config
@@ -50,6 +56,7 @@ class ChannelViewModel(
     private val radioConfigRepository: RadioConfigRepository,
     private val analytics: PlatformAnalytics,
     private val channelReliabilityManager: ChannelReliabilityManager,
+    private val alertManager: AlertManager,
 ) : ViewModel() {
 
     val connectionState = radioController.connectionState
@@ -62,6 +69,9 @@ class ChannelViewModel(
 
     private val _channelOperationResult = MutableStateFlow<ChannelReliabilityResult?>(null)
     val channelOperationResult: StateFlow<ChannelReliabilityResult?> = _channelOperationResult.asStateFlow()
+
+    private val _channelApplyState = MutableStateFlow<ChannelApplyUiState>(ChannelApplyUiState.Idle)
+    val channelApplyState: StateFlow<ChannelApplyUiState> = _channelApplyState.asStateFlow()
 
     // managed mode disables all access to configuration
     val isManaged: Boolean
@@ -101,7 +111,22 @@ class ChannelViewModel(
 
     /** Applies a complete local channel set and succeeds only after a matching radio readback. */
     fun setChannels(channelSet: ChannelSet) = safeLaunch(tag = "setChannels") {
-        _channelOperationResult.value = channelReliabilityManager.applyAndVerify(channelSet)
+        if (_channelApplyState.value == ChannelApplyUiState.Applying) return@safeLaunch
+        _channelApplyState.value = ChannelApplyUiState.Applying
+        try {
+            withContext(NonCancellable) {
+                val result = channelReliabilityManager.applyAndVerify(channelSet)
+                val state = result.toChannelApplyUiState()
+                _channelApplyState.value = state
+                if (state is ChannelApplyUiState.Failed) {
+                    alertManager.showChannelApplyFailure(result)
+                }
+            }
+        } finally {
+            if (_channelApplyState.value == ChannelApplyUiState.Applying) {
+                _channelApplyState.value = ChannelApplyUiState.WaitingForReconnect
+            }
+        }
     }
 
     fun protectCurrentChannels() = safeLaunch(tag = "protectCurrentChannels") {
@@ -114,6 +139,10 @@ class ChannelViewModel(
 
     fun clearChannelOperationResult() {
         _channelOperationResult.value = null
+    }
+
+    fun clearChannelApplyState() {
+        _channelApplyState.value = ChannelApplyUiState.Idle
     }
 
     // Set the radio config (also updates our saved copy in preferences)

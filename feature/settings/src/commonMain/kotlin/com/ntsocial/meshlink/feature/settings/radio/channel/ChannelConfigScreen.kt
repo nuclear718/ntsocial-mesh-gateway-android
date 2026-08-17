@@ -42,6 +42,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,9 +62,12 @@ import com.ntsocial.meshlink.core.model.Channel
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.add
 import com.ntsocial.meshlink.core.resources.cancel
+import com.ntsocial.meshlink.core.resources.channel_apply_verified
 import com.ntsocial.meshlink.core.resources.channels
 import com.ntsocial.meshlink.core.resources.press_and_drag
 import com.ntsocial.meshlink.core.resources.send
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyStatus
+import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
 import com.ntsocial.meshlink.core.ui.component.MainAppBar
 import com.ntsocial.meshlink.core.ui.component.PreferenceFooter
 import com.ntsocial.meshlink.core.ui.component.dragContainer
@@ -71,6 +75,7 @@ import com.ntsocial.meshlink.core.ui.component.dragDropItemsIndexed
 import com.ntsocial.meshlink.core.ui.component.rememberDragDropState
 import com.ntsocial.meshlink.core.ui.icon.Add
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
+import com.ntsocial.meshlink.core.ui.util.rememberShowToastResource
 import com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel
 import com.ntsocial.meshlink.feature.settings.radio.ResponseState
 import com.ntsocial.meshlink.feature.settings.radio.channel.component.ChannelCard
@@ -87,6 +92,20 @@ import org.meshtastic.proto.Config
 @Composable
 fun ChannelConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
     val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val showToast = rememberShowToastResource()
+
+    LaunchedEffect(state.channelApplyState) {
+        when (state.channelApplyState) {
+            ChannelApplyUiState.Verified -> {
+                showToast(Res.string.channel_apply_verified)
+                viewModel.clearChannelApplyState()
+            }
+
+            is ChannelApplyUiState.Failed -> viewModel.clearChannelApplyState()
+
+            else -> Unit
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         ChannelConfigScreen(
@@ -97,6 +116,7 @@ fun ChannelConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
             maxChannels = viewModel.maxChannels,
             firmwareVersion = state.metadata?.firmware_version ?: "0.0.0",
             enabled = state.connected,
+            channelApplyState = state.channelApplyState,
             onPositiveClicked = { channelListInput -> viewModel.updateChannels(channelListInput, state.channelList) },
         )
 
@@ -118,6 +138,7 @@ private fun ChannelConfigScreen(
     maxChannels: Int = 8,
     firmwareVersion: String,
     enabled: Boolean,
+    channelApplyState: ChannelApplyUiState,
     onPositiveClicked: (List<ChannelSettings>) -> Unit,
 ) {
     val primarySettings = settingsList.getOrNull(0) ?: return
@@ -211,6 +232,16 @@ private fun ChannelConfigScreen(
                         primaryChannel.channelNum
                     },
                 )
+                if (
+                    channelApplyState == ChannelApplyUiState.Applying ||
+                    channelApplyState == ChannelApplyUiState.WaitingForReconnect ||
+                    channelApplyState == ChannelApplyUiState.InvalidSettings
+                ) {
+                    ChannelApplyStatus(
+                        state = channelApplyState,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
                 Text(
                     text = stringResource(Res.string.press_and_drag),
                     fontSize = 11.sp,
