@@ -1388,6 +1388,22 @@
   v2 Provider, current Room migration on a retained device database, connected-radio queue, and remote RF reception
   still need current-artifact device testing.
 
+## 2026-08-19 - Meshtastic nRF52 XEdDSA size defect audit and firmware backport
+- Confirmed that the published file named `firmware-nrf52_promicro_diy_xtal-2.8.0.7c6b85d.uf2` actually embeds
+  `2.8.0.16831c5` (SHA-256 `4A7307...A30D5`), matching the field node metadata. Both the real `7c6b85d` and
+  `16831c5` firmware sources retain the old XEdDSA payload-size heuristic and exclude upstream fix `0e84c1a`.
+- Documented the deterministic PRIVATE_APP port-256 dead band: 165-byte payload is a signed exact fit, 166-168 bytes
+  are signed then rejected as `TOO_LARGE(7)`, and 169+ becomes unsigned and succeeds for the current Data shape.
+- Backported the upstream exact encoded-size sender/receiver policy in sibling firmware repo `faketec-RA-01SH-P` on
+  local branch `codex/xeddsa-size-gate`, commit `f3fd3d4bf7550c83244a412fc034ca2d891c3a03`, including malformed partial
+  signature rejection and PRIVATE_APP 165/166/167/168/169/180 regression coverage.
+- Built `nrf52_promicro_diy_xtal` successfully. The unflashed UF2 embeds `2.8.0.f3fd3d4`, is 1,430,016 bytes, and has
+  SHA-256 `F4C4352B49874FB314B5E6B473D87B188C51157E29B0B61443D22D3353844BA5`. No hardware was flashed or restarted.
+- Added `MESHTASTIC_NRF52_XEDDSA_SIZE_DEFECT_AUDIT_AND_FIX_2026-08-19.md` at repo root. Native unit cases remain
+  unexecuted on this Windows host because the native environment lacks `pkg-config`/POSIX shell; the production nRF52
+  build succeeded, terminal output reported the warm-region/ISR guards clean, two source reviews found no P0 blocker,
+  and `git diff --check` passed. Neither unit behavior nor two-node RF behavior is yet verified.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.
