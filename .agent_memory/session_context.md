@@ -1,5 +1,42 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+## 2026-08-20 - QR secondary replacement and immediate background apply
+- The shared scanned-channel dialog now has three explicit behaviors. Add remains additive and keeps all existing
+  channels. An `add=true` QR may be switched to secondary replacement only after a complete current primary and LoRa
+  state is available; the primary is locked, valid current and incoming secondaries are selectable, and selected
+  incoming channels fill explicitly released secondary slots before appending. A full-config QR retains the existing
+  complete replacement behavior and its explicit LoRa config. A new en/zh-rTW/ja description explains the partial
+  replacement contract.
+- Secondary replacement treats internal disabled placeholders as released slots and simulates the production reliable
+  normalizer before enabling Accept. Every current secondary that the user chose to retain must remain at the same
+  numeric slot after normalization. This prevents silent channel-index rotation from unmatched interior removals,
+  placeholders, or semantic duplicates while still allowing an explicitly removed trailing channel to disappear.
+- Add and secondary replacement submit null LoRa write intent. `ChannelReliabilityManagerImpl` captures the current LoRa
+  config inside the serialized mutation context for normalization and expected exact readback, but null input now
+  unconditionally skips `set_config`, including when the local config flow changes between channel writes. Explicit
+  full-config replacement still sends and verifies the exact requested LoRa config. The existing channel writes,
+  matching ACK/NAK handling, commit, stable fresh readback, and Gateway fail-closed activation path are unchanged.
+- Before Accept, a localized en/zh-rTW/ja notice explains that the node normally restarts, reconnect and verification
+  take about 30 seconds, the channel list may not update immediately after returning, and the admitted operation will
+  continue in the background. Accept remains a single action: it synchronously claims the operation and then dismisses
+  the QR dialog. The admitted apply/readback remains in its existing non-cancellable section, dismissal does not cancel
+  it, and terminal or invalid outcomes are reported through the app-wide alert surface. Operation/dismissal state is
+  isolated so completion of an older accepted QR cannot dismiss or consume a newly mounted QR dialog.
+- Focused dialog tests cover the pre-Accept wait notice, exact confirm-before-dismiss ordering, Add, one-for-one
+  secondary replacement, slot-stability rejection, internal placeholders, current-state readiness, current capacity
+  recomposition, and full-config replacement. ViewModel tests cover synchronous claim, dismissal, cancellation
+  resistance, post-dismiss invalid/NAK alerts, and second-QR isolation. Domain tests cover stable and racing null-LoRa
+  no-write behavior plus the exact explicit LoRa payload.
+- The JDK-21/en-US full gate
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile :app:lintFdroidDebug
+  :app:lintGoogleDebug --continue --no-configuration-cache` completed 1,960 actionable tasks (592 executed, 6 from cache,
+  1,362 up-to-date) in 19m49s. Formatting, tests, Android Debug assembly, both lints, Desktop/JVM, shared KMP, and iOS Simulator
+  compilation passed; the root command was nonzero only for the same five documented pre-existing Detekt findings in
+  unmodified BLE (3), model (1), and network (1) files. This directly changes Android and shared Desktop UI behavior;
+  the current iOS shell does not expose the dialog. The user's device test confirmed the preceding Replace and
+  immediate-dismiss behavior before this notice was added; the new notice has not yet received a device visual check,
+  and no new camera, connected-radio, or RF run was performed for this follow-up.
+
 ## 2026-08-17 - Android channel-wait semantics and Gateway/parent route-catalog recovery
 - The main-repository channel fix changes shared KMP reliability and Compose code used by Android and the shared
   Desktop surface, while preserving the exact-session/fail-closed contract used by the iOS runtime. Firmware admin

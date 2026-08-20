@@ -176,6 +176,59 @@ class ChannelReliabilityManagerImplTest {
     }
 
     @Test
+    fun `channel-only apply preserves current LoRa without a config write`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val channelOnlySet =
+            ChannelSet(settings = listOf(fixture.primary, fixture.changedSecondary), lora_config = null)
+        fixture.nextReadback = fixture.channelSet(fixture.primary, fixture.changedSecondary)
+
+        val result = fixture.manager.applyAndVerify(channelOnlySet)
+
+        assertEquals(ChannelReliabilityResult.VERIFIED, result)
+        assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
+        assertTrue("config" !in fixture.commandSender.events())
+        assertEquals(1, fixture.readbackRequests)
+    }
+
+    @Test
+    fun `channel-only apply never writes a stale LoRa value when the config flow changes`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val changedLora = fixture.lora.copy(hop_limit = fixture.lora.hop_limit + 1)
+        val channelOnlySet =
+            ChannelSet(settings = listOf(fixture.primary, fixture.changedSecondary), lora_config = null)
+        fixture.commandSender.afterMessageSent = { message ->
+            if (message.set_channel?.index == 0) {
+                fixture.localConfigFlow.value = LocalConfig(lora = changedLora)
+            }
+        }
+        fixture.nextReadback =
+            ChannelSet(settings = listOf(fixture.primary, fixture.changedSecondary), lora_config = changedLora)
+
+        val result = fixture.manager.applyAndVerify(channelOnlySet)
+
+        assertEquals(ChannelReliabilityResult.READBACK_FAILED, result)
+        assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
+        assertTrue("config" !in fixture.commandSender.events())
+        assertTrue("activate" !in fixture.gatewayLifecycle)
+    }
+
+    @Test
+    fun `explicit LoRa replacement still writes config and verifies`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val changedLora = fixture.lora.copy(hop_limit = fixture.lora.hop_limit + 1)
+        val replacement =
+            ChannelSet(settings = listOf(fixture.primary, fixture.changedSecondary), lora_config = changedLora)
+        fixture.nextReadback = replacement
+
+        val result = fixture.manager.applyAndVerify(replacement)
+
+        assertEquals(ChannelReliabilityResult.VERIFIED, result)
+        assertEquals(listOf("begin", "channel:0", "channel:1", "config", "commit"), fixture.commandSender.events())
+        assertEquals(changedLora, fixture.commandSender.messages.single { it.set_config != null }.set_config?.lora)
+        assertEquals(1, fixture.readbackRequests)
+    }
+
+    @Test
     fun `ambiguous manual apply closes gateway before begin and never reactivates`() = runTest {
         val fixture = Fixture(backgroundScope)
         fixture.nextReadback = fixture.channelSet(fixture.primary, fixture.changedSecondary)

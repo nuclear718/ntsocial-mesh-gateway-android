@@ -140,6 +140,7 @@
     <string name="channel_6">Channel 6</string>
     <string name="channel_7">Channel 7</string>
     <string name="channel_8">Channel 8</string>
+    <string name="channel_apply_accept_notice">After you tap Accept, the node normally restarts. Reconnecting and verification take about %1$d seconds. Please wait; the channel list may not update immediately when you return. The settings will continue in the background.</string>
     <string name="channel_apply_failed">The node returned a complete channel configuration that did not match the requested settings. Check the connection and try again.</string>
     <string name="channel_apply_failed_title">Channel setup failed</string>
     <string name="channel_apply_in_progress">Applying channel settings. The node normally restarts; reconnecting and verification take about %1$d seconds. You can leave this screen.</string>
@@ -1062,6 +1063,7 @@
     <string name="remove_node_text">This node will be removed from your list until your node receives data from it again.</string>
     <string name="replace">Replace</string>
     <string name="replace_channels_and_settings_description">This QR code contains a complete configuration. This will REPLACE your existing channels and radio settings. All existing channels will be removed.</string>
+    <string name="replace_secondary_channels_description">Select the existing secondary channels to keep and the QR code channels to add. Uncheck a secondary channel to free a slot. Your primary channel and current radio settings will be preserved.</string>
     <string name="reply">Reply</string>
     <string name="replying_to">Replying to %1$s</string>
     <string name="report">Report</string>
@@ -1444,4 +1446,3 @@
     <string name="zh_CN" translatable="false">简体中文</string>
     <string name="zh_TW" translatable="false">繁體中文</string>
 </resources>
-

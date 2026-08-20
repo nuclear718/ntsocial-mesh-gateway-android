@@ -28,19 +28,23 @@ import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.channel_apply_invalid
 import com.ntsocial.meshlink.core.resources.channel_apply_rejected
 import com.ntsocial.meshlink.core.testing.FakeNodeRepository
 import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
 import com.ntsocial.meshlink.core.ui.util.AlertManager
 import dev.mokkery.MockMode
+import dev.mokkery.answering.calls
 import dev.mokkery.answering.returns
 import dev.mokkery.every
 import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -52,7 +56,9 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ScannedQrCodeViewModelTest {
@@ -144,4 +150,116 @@ class ScannedQrCodeViewModelTest {
 
         assertEquals(ChannelApplyUiState.Idle, viewModel.applyState.value)
     }
+
+    @Test
+    fun `invalid settings remain visible globally after immediate dismissal`() = runTest(dispatcher) {
+        val applyStarted = CompletableDeferred<Unit>()
+        val releaseApply = CompletableDeferred<Unit>()
+        everySuspend { reliabilityManager.applyAndVerify(any()) } calls
+            {
+                applyStarted.complete(Unit)
+                releaseApply.await()
+                ChannelReliabilityResult.INVALID_CHANNEL_SET
+            }
+
+        viewModel.onDialogShown()
+        val job = assertNotNull(viewModel.setChannels(ChannelSet()))
+        applyStarted.await()
+        viewModel.onDialogDismissed()
+        releaseApply.complete(Unit)
+        job.join()
+
+        assertEquals(ChannelApplyUiState.Idle, viewModel.applyState.value)
+        assertEquals(Res.string.channel_apply_invalid, alertManager.currentAlert.value?.messageRes)
+    }
+
+    @Test
+    fun `a new dialog is not consumed by an earlier dismissed operation`() = runTest(dispatcher) {
+        val firstApplyStarted = CompletableDeferred<Unit>()
+        val releaseFirstApply = CompletableDeferred<Unit>()
+        var applyCount = 0
+        everySuspend { reliabilityManager.applyAndVerify(any()) } calls
+            {
+                applyCount++
+                if (applyCount == 1) {
+                    firstApplyStarted.complete(Unit)
+                    releaseFirstApply.await()
+                }
+                ChannelReliabilityResult.VERIFIED
+            }
+
+        viewModel.onDialogShown()
+        val firstJob = assertNotNull(viewModel.setChannels(ChannelSet()))
+        firstApplyStarted.await()
+        viewModel.onDialogDismissed()
+
+        viewModel.onDialogShown()
+        releaseFirstApply.complete(Unit)
+        firstJob.join()
+
+        assertEquals(ChannelApplyUiState.Idle, viewModel.applyState.value)
+        val secondJob = assertNotNull(viewModel.setChannels(ChannelSet()))
+        viewModel.onDialogDismissed()
+        secondJob.join()
+        assertEquals(2, applyCount)
+        assertEquals(ChannelApplyUiState.Idle, viewModel.applyState.value)
+    }
+
+    @Test
+    fun `setChannels claims the request before queued background work starts`() = runTest {
+        val queuedDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(queuedDispatcher)
+        everySuspend { reliabilityManager.applyAndVerify(any()) } returns ChannelReliabilityResult.VERIFIED
+        val queuedViewModel =
+            ScannedQrCodeViewModel(
+                radioConfigRepository = radioConfigRepository,
+                channelReliabilityManager = reliabilityManager,
+                alertManager = alertManager,
+                nodeRepository = FakeNodeRepository(),
+            )
+
+        queuedViewModel.onDialogShown()
+        val job = assertNotNull(queuedViewModel.setChannels(ChannelSet()))
+
+        assertEquals(ChannelApplyUiState.Applying, queuedViewModel.applyState.value)
+        queuedViewModel.onDialogDismissed()
+        assertEquals(ChannelApplyUiState.Applying, queuedViewModel.applyState.value)
+
+        runCurrent()
+        job.join()
+        assertEquals(ChannelApplyUiState.Idle, queuedViewModel.applyState.value)
+    }
+
+    @Test
+    fun `admitted transaction finishes and reports rejection after dismissal and caller cancellation`() =
+        runTest(dispatcher) {
+            val applyStarted = CompletableDeferred<Unit>()
+            val releaseApply = CompletableDeferred<Unit>()
+            var applyCount = 0
+            var applyFinished = false
+            everySuspend { reliabilityManager.applyAndVerify(any()) } calls
+                {
+                    applyCount++
+                    applyStarted.complete(Unit)
+                    releaseApply.await()
+                    applyFinished = true
+                    ChannelReliabilityResult.RADIO_REJECTED
+                }
+
+            viewModel.onDialogShown()
+            val job = assertNotNull(viewModel.setChannels(ChannelSet()))
+            applyStarted.await()
+            assertEquals(ChannelApplyUiState.Applying, viewModel.applyState.value)
+
+            viewModel.onDialogDismissed()
+            job.cancel()
+            releaseApply.complete(Unit)
+            job.join()
+
+            assertEquals(1, applyCount)
+            assertTrue(applyFinished)
+            assertTrue(job.isCompleted)
+            assertEquals(ChannelApplyUiState.Idle, viewModel.applyState.value)
+            assertEquals(Res.string.channel_apply_rejected, alertManager.currentAlert.value?.messageRes)
+        }
 }

@@ -61,14 +61,18 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ntsocial.meshlink.core.model.Channel
+import com.ntsocial.meshlink.core.model.normalizeReliableChannelSettings
+import com.ntsocial.meshlink.core.repository.CHANNEL_APPLY_RESTART_SECONDS
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.accept
 import com.ntsocial.meshlink.core.resources.add
 import com.ntsocial.meshlink.core.resources.add_channels_description
 import com.ntsocial.meshlink.core.resources.cancel
+import com.ntsocial.meshlink.core.resources.channel_apply_accept_notice
 import com.ntsocial.meshlink.core.resources.new_channel_rcvd
 import com.ntsocial.meshlink.core.resources.replace
 import com.ntsocial.meshlink.core.resources.replace_channels_and_settings_description
+import com.ntsocial.meshlink.core.resources.replace_secondary_channels_description
 import com.ntsocial.meshlink.core.ui.component.ChannelApplyStatus
 import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
 import com.ntsocial.meshlink.core.ui.component.ChannelSelection
@@ -76,6 +80,55 @@ import com.ntsocial.meshlink.core.ui.util.getChannelPreviewForAdd
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config
+
+private enum class ChannelQrImportMode {
+    ADD,
+    SECONDARY_REPLACE,
+    FULL_REPLACE,
+}
+
+/** Keeps selected existing slots stable by filling explicitly released secondary slots before appending QR channels. */
+private fun buildSecondaryReplacementSettings(
+    settings: List<ChannelSettings>,
+    selections: List<Boolean>,
+    existingCount: Int,
+): List<ChannelSettings> {
+    if (existingCount <= 0) return emptyList()
+    val selectedIncoming =
+        settings
+            .drop(existingCount)
+            .filterIndexed { index, _ -> selections.getOrNull(existingCount + index) == true }
+            .iterator()
+
+    return buildList {
+        settings.take(existingCount).forEachIndexed { index, current ->
+            when {
+                index == 0 -> add(current)
+                current != ChannelSettings() && selections.getOrNull(index) == true -> add(current)
+                selectedIncoming.hasNext() -> add(selectedIncoming.next())
+            }
+        }
+        while (selectedIncoming.hasNext()) add(selectedIncoming.next())
+    }
+}
+
+/** Rejects a selection that would compact a retained secondary into an earlier, unfilled slot. */
+private fun keepsRetainedSecondarySlotsStable(
+    currentSettings: List<ChannelSettings>,
+    selections: List<Boolean>,
+    desiredSettings: List<ChannelSettings>,
+    currentLora: Config.LoRaConfig?,
+): Boolean {
+    val normalizedDesired = normalizeReliableChannelSettings(desiredSettings, currentLora)
+    return (1..currentSettings.lastIndex).all { index ->
+        val current = currentSettings[index]
+        current == ChannelSettings() ||
+            selections.getOrNull(index) != true ||
+            normalizedDesired.getOrNull(index) == current
+    }
+}
 
 @Composable
 fun ScannedQrCodeDialog(
@@ -133,8 +186,16 @@ fun ScannedQrCodeDialog(
     applyState: ChannelApplyUiState = ChannelApplyUiState.Idle,
     onConfirm: (ChannelSet) -> Unit,
 ) {
-    var shouldReplace by rememberSaveable { mutableStateOf(incoming.lora_config != null) }
-    val effectiveMaxChannels = rememberSaveable { maxChannels }
+    var shouldReplace by rememberSaveable(incoming) { mutableStateOf(incoming.lora_config != null) }
+    val effectiveMaxChannels = maxChannels
+    val hasCurrentPrimary = channels.settings.firstOrNull()?.let { it != ChannelSettings() } == true
+    val hasCurrentRadioState = hasCurrentPrimary && channels.lora_config != null
+    val importMode =
+        when {
+            !shouldReplace -> ChannelQrImportMode.ADD
+            incoming.lora_config == null -> ChannelQrImportMode.SECONDARY_REPLACE
+            else -> ChannelQrImportMode.FULL_REPLACE
+        }
 
     val addPreview =
         remember(channels.settings, incoming.settings, channels.lora_config, effectiveMaxChannels) {
@@ -147,8 +208,8 @@ fun ScannedQrCodeDialog(
         }
 
     val channelSet =
-        remember(shouldReplace, channels, incoming, addPreview.settings) {
-            if (shouldReplace) {
+        remember(importMode, channels, incoming, addPreview.settings) {
+            if (importMode == ChannelQrImportMode.FULL_REPLACE) {
                 // When replacing, apply the incoming LoRa configuration but preserve certain
                 // locally safe fields such as MQTT flags and TX power. This prevents QR codes
                 // from unintentionally overriding device-specific power limits (e.g. E22 caps).
@@ -168,29 +229,54 @@ fun ScannedQrCodeDialog(
 
     /* Holds selections made by the user */
     val channelSelections =
-        remember(shouldReplace, channelSet.settings, addPreview.selections) {
+        remember(importMode, channelSet.settings, addPreview.selections) {
             val defaults =
-                if (shouldReplace) {
+                if (importMode == ChannelQrImportMode.FULL_REPLACE) {
                     List(channelSet.settings.size) { true }
                 } else {
-                    addPreview.selections
+                    addPreview.selections.mapIndexed { index, selected ->
+                        selected &&
+                            !(
+                                importMode == ChannelQrImportMode.SECONDARY_REPLACE &&
+                                    index < channels.settings.size &&
+                                    channelSet.settings.getOrNull(index) == ChannelSettings()
+                                )
+                    }
                 }
             mutableStateListOf<Boolean>().apply { addAll(defaults) }
         }
 
     val selectedChannelSet =
-        if (shouldReplace) {
-            channelSet.copy(
-                settings = channelSet.settings.filterIndexed { i, _ -> channelSelections.getOrNull(i) == true },
-            )
-        } else {
-            channelSet.copy(
-                settings =
-                channelSet.settings.filterIndexed { i, _ ->
-                    val isExisting = i < channels.settings.size
-                    isExisting || channelSelections.getOrNull(i) == true
-                },
-            )
+        when (importMode) {
+            ChannelQrImportMode.FULL_REPLACE ->
+                channelSet.copy(
+                    settings = channelSet.settings.filterIndexed { i, _ -> channelSelections.getOrNull(i) == true },
+                )
+
+            ChannelQrImportMode.SECONDARY_REPLACE ->
+                channelSet.copy(
+                    settings =
+                    buildSecondaryReplacementSettings(
+                        settings = channelSet.settings,
+                        selections = channelSelections,
+                        existingCount = channels.settings.size,
+                    ),
+                    // An add-only QR deliberately carries no LoRa configuration. Resolve the current value under the
+                    // exact radio/mutation lock instead of copying a potentially stale UI snapshot back to the MCU.
+                    lora_config = null,
+                )
+
+            ChannelQrImportMode.ADD ->
+                channelSet.copy(
+                    settings =
+                    channelSet.settings.filterIndexed { i, _ ->
+                        val isExisting = i < channels.settings.size
+                        isExisting || channelSelections.getOrNull(i) == true
+                    },
+                    // ADD is channel-only even when the QR also contains a radio configuration. Resolve the current
+                    // LoRa value inside the serialized transaction instead of returning this UI snapshot to the MCU.
+                    lora_config = null,
+                )
         }
 
     // Compute LoRa configuration changes when in replace mode
@@ -225,6 +311,14 @@ fun ScannedQrCodeDialog(
         }
 
     val isApplying = applyState == ChannelApplyUiState.Applying
+    val keepsRetainedSlotsStable =
+        importMode != ChannelQrImportMode.SECONDARY_REPLACE ||
+            keepsRetainedSecondarySlotsStable(
+                currentSettings = channels.settings,
+                selections = channelSelections,
+                desiredSettings = selectedChannelSet.settings,
+                currentLora = channels.lora_config,
+            )
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier.widthIn(max = 600.dp),
@@ -247,10 +341,14 @@ fun ScannedQrCodeDialog(
                     Text(
                         text =
                         stringResource(
-                            if (shouldReplace) {
-                                Res.string.replace_channels_and_settings_description
-                            } else {
-                                Res.string.add_channels_description
+                            when (importMode) {
+                                ChannelQrImportMode.ADD -> Res.string.add_channels_description
+
+                                ChannelQrImportMode.SECONDARY_REPLACE ->
+                                    Res.string.replace_secondary_channels_description
+
+                                ChannelQrImportMode.FULL_REPLACE ->
+                                    Res.string.replace_channels_and_settings_description
                             },
                         ),
                         modifier = Modifier.padding(bottom = 16.dp),
@@ -259,13 +357,33 @@ fun ScannedQrCodeDialog(
                 }
 
                 itemsIndexed(channelSet.settings) { index, channel ->
-                    val isExisting = !shouldReplace && index < channels.settings.size
+                    val isExisting = index < channels.settings.size
+                    val isPrimary = index == 0
+                    val isExistingPlaceholder = isExisting && channel == ChannelSettings()
                     val channelObj = Channel(channel, channelSet.lora_config ?: Channel.default.loraConfig)
+                    val forcedSelection: Boolean? =
+                        when (importMode) {
+                            ChannelQrImportMode.ADD -> if (isExisting) true else null
+
+                            ChannelQrImportMode.SECONDARY_REPLACE ->
+                                when {
+                                    isExistingPlaceholder -> false
+                                    isPrimary -> true
+                                    else -> null
+                                }
+
+                            ChannelQrImportMode.FULL_REPLACE -> null
+                        }
                     ChannelSelection(
                         index = index,
                         title = channel.name.ifEmpty { modemPresetName },
-                        enabled = !isExisting,
-                        isSelected = if (isExisting) true else channelSelections[index],
+                        enabled =
+                        when (importMode) {
+                            ChannelQrImportMode.ADD -> !isExisting
+                            ChannelQrImportMode.SECONDARY_REPLACE -> !isPrimary && !isExistingPlaceholder
+                            ChannelQrImportMode.FULL_REPLACE -> true
+                        },
+                        isSelected = forcedSelection ?: channelSelections[index],
                         onSelected = {
                             if (it || selectedChannelSet.settings.size > 1) {
                                 channelSelections[index] = it
@@ -319,7 +437,7 @@ fun ScannedQrCodeDialog(
                             onClick = { shouldReplace = true },
                             shapes = ButtonDefaults.shapesFor(mediumHeight),
                             modifier = Modifier.height(mediumHeight).weight(1f),
-                            enabled = incoming.lora_config != null,
+                            enabled = hasCurrentRadioState && incoming.settings.isNotEmpty(),
                             colors = if (shouldReplace) selectedColors else unselectedColors,
                         ) {
                             Text(
@@ -327,6 +445,22 @@ fun ScannedQrCodeDialog(
                                 style = ButtonDefaults.textStyleFor(mediumHeight),
                             )
                         }
+                    }
+                }
+
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ) {
+                        Text(
+                            text =
+                            stringResource(Res.string.channel_apply_accept_notice, CHANNEL_APPLY_RESTART_SECONDS),
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                 }
 
@@ -357,8 +491,17 @@ fun ScannedQrCodeDialog(
                         }
 
                         TextButton(
-                            onClick = { onConfirm(selectedChannelSet) },
-                            enabled = !isApplying && selectedChannelSet.settings.size in 1..effectiveMaxChannels,
+                            onClick = {
+                                // The notice above explains the expected restart before this synchronously claimed
+                                // transaction leaves the dialog and continues acknowledgement/readback in background.
+                                onConfirm(selectedChannelSet)
+                                onDismiss()
+                            },
+                            enabled =
+                            hasCurrentRadioState &&
+                                !isApplying &&
+                                keepsRetainedSlotsStable &&
+                                selectedChannelSet.settings.size in 1..effectiveMaxChannels,
                         ) {
                             Text(
                                 text = stringResource(Res.string.accept),

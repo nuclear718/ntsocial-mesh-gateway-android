@@ -108,6 +108,7 @@ class ChannelReliabilityManagerImpl(
             currentRadioContext()
                 ?: return@withLock unavailableContextResult(serviceRepository.connectionState.value)
         val currentLora = radioConfigRepository.localConfigFlow.first().lora
+        val writeLora = channelSet.lora_config != null
         val desiredLora = channelSet.lora_config ?: currentLora
         val settings = normalizeReliableChannelSettings(channelSet.settings, desiredLora)
         if (settings.isEmpty() || settings.first() == ChannelSettings() || settings.size > context.maxChannels) {
@@ -121,7 +122,7 @@ class ChannelReliabilityManagerImpl(
             return@withLock ChannelReliabilityResult.SESSION_UNAVAILABLE
         }
 
-        val result = applyTransaction(context, desired)
+        val result = applyTransaction(context, desired, writeLora)
         if (result != ChannelReliabilityResult.VERIFIED) return@withLock result
 
         val stableReadback =
@@ -299,7 +300,11 @@ class ChannelReliabilityManagerImpl(
         return false
     }
 
-    private suspend fun applyTransaction(context: RadioContext, desired: ChannelSet): ChannelReliabilityResult {
+    private suspend fun applyTransaction(
+        context: RadioContext,
+        desired: ChannelSet,
+        writeLora: Boolean,
+    ): ChannelReliabilityResult {
         val commands = buildAuthoritativeChannelWrites(desired.settings, context.maxChannels)
         // Firmware can apply begin/channel/config writes before local readback advances the snapshot generation.
         // Close Gateway ingress at the last possible point before the first mutation admission.
@@ -312,12 +317,14 @@ class ChannelReliabilityManagerImpl(
                         return@runEditTransaction result
                     }
                 }
-                val currentLora = radioConfigRepository.localConfigFlow.first().lora
-                if (desired.lora_config != null && desired.lora_config != currentLora) {
-                    val result =
-                        sendVerifiedAdmin(context) { AdminMessage(set_config = Config(lora = desired.lora_config)) }
-                    if (result != AdminCommandResult.ACKNOWLEDGED) {
-                        return@runEditTransaction result
+                if (writeLora) {
+                    val currentLora = radioConfigRepository.localConfigFlow.first().lora
+                    if (desired.lora_config != null && desired.lora_config != currentLora) {
+                        val result =
+                            sendVerifiedAdmin(context) { AdminMessage(set_config = Config(lora = desired.lora_config)) }
+                        if (result != AdminCommandResult.ACKNOWLEDGED) {
+                            return@runEditTransaction result
+                        }
                     }
                 }
                 AdminCommandResult.ACKNOWLEDGED

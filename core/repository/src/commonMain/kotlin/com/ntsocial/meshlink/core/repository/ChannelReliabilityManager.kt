@@ -97,7 +97,13 @@ interface ChannelReliabilityManager {
     /** Whether the currently connected stable radio identity has an explicit protected snapshot. */
     val isProtected: StateFlow<Boolean>
 
-    /** Replaces the local radio's channels and reports success only after a matching full readback. */
+    /**
+     * Replaces the local radio's channels and reports success only after a matching full readback.
+     *
+     * A null [ChannelSet.lora_config] is a channel-only request: the transaction captures the current LoRa value for
+     * normalization and readback verification but never emits `set_config`. A non-null value explicitly requests that
+     * LoRa configuration.
+     */
     suspend fun applyAndVerify(channelSet: ChannelSet): ChannelReliabilityResult
 
     /** Saves the latest complete readback as the user-approved snapshot for this radio. */

@@ -117,6 +117,7 @@
     <string name="buzzer_gpio">蜂鳴器腳位</string>
     <string name="calculating">正在計算……</string>
     <string name="cancel">取消</string>
+    <string name="channel_apply_accept_notice">按下「接受」後，節點通常會重新開機；重新連線與確認約需 %1$d 秒，請耐心等候。返回頻道頁面時，頻道清單可能不會立即更新，設定程序會繼續在背景完成。</string>
     <string name="channel_apply_failed">節點回報的完整頻道設定與要求不一致。請檢查連線後再試一次。</string>
     <string name="channel_apply_failed_title">頻道設定失敗</string>
     <string name="channel_apply_in_progress">正在套用頻道設定。節點通常會重新開機；重新連線與確認約需 %1$d 秒。您可以離開此畫面。</string>
@@ -956,6 +957,7 @@
     <string name="remove_node_text">該節點將從您的列表中移除，直到您的節點再次收到來自該節點的數據。</string>
     <string name="replace">替換</string>
     <string name="replace_channels_and_settings_description">此 QR Code 包含完整的設定檔，這將會覆寫您目前的頻道和無線電設定，所有頻道都會被刪除。</string>
+    <string name="replace_secondary_channels_description">選擇要保留的現有次要頻道與要從 QR Code 新增的頻道。取消勾選現有次要頻道可騰出空間；主要頻道與目前的無線電設定會保留。</string>
     <string name="reply">回覆</string>
     <string name="replying_to">回覆 %1$s</string>
     <string name="report">報告</string>

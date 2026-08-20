@@ -98,6 +98,7 @@
     <string name="channel_6">チャンネル 6</string>
     <string name="channel_7">チャンネル 7</string>
     <string name="channel_8">チャンネル 8</string>
+    <string name="channel_apply_accept_notice">「同意」をタップすると、通常ノードが再起動します。再接続と確認には約 %1$d 秒かかりますので、しばらくお待ちください。戻った直後はチャンネル一覧が更新されていない場合があります。設定処理はバックグラウンドで続行されます。</string>
     <string name="channel_apply_failed">ノードから返されたチャンネル設定が要求した設定と一致しません。接続を確認して、もう一度お試しください。</string>
     <string name="channel_apply_failed_title">チャンネル設定に失敗しました</string>
     <string name="channel_apply_in_progress">チャンネル設定を適用しています。通常、ノードは再起動し、再接続と確認には約 %1$d 秒かかります。この画面を離れてもかまいません。</string>
@@ -536,6 +537,7 @@
     <string name="remove">削除</string>
     <string name="remove_node_text">このノードから再びデータを受信するまで、このノードはリストに表示されなくなります。</string>
     <string name="replace">置き換え</string>
+    <string name="replace_secondary_channels_description">保持する既存のセカンダリチャンネルと、QRコードから追加するチャンネルを選択してください。セカンダリチャンネルの選択を外すと空きができます。プライマリチャンネルと現在の無線設定は保持されます。</string>
     <string name="reply">返信</string>
     <string name="report">報告</string>
     <!-- REQUEST -->

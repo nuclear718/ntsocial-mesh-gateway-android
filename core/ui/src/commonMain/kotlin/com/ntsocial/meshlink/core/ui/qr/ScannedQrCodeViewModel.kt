@@ -28,12 +28,17 @@ import androidx.lifecycle.ViewModel
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.channel_apply_failed_title
+import com.ntsocial.meshlink.core.resources.channel_apply_invalid
+import com.ntsocial.meshlink.core.resources.close
 import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
 import com.ntsocial.meshlink.core.ui.component.showChannelApplyFailure
 import com.ntsocial.meshlink.core.ui.component.toChannelApplyUiState
 import com.ntsocial.meshlink.core.ui.util.AlertManager
 import com.ntsocial.meshlink.core.ui.viewmodel.safeLaunch
 import com.ntsocial.meshlink.core.ui.viewmodel.stateInWhileSubscribed
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,31 +72,45 @@ class ScannedQrCodeViewModel(
             )
 
     /** Applies the complete set and reports success only after a fresh matching radio readback. */
-    fun setChannels(channelSet: ChannelSet) = safeLaunch(tag = "setChannels") {
-        if (_applyState.value == ChannelApplyUiState.Applying) return@safeLaunch
+    fun setChannels(channelSet: ChannelSet): Job? {
+        if (_applyState.value == ChannelApplyUiState.Applying) return null
+        // Claim the request synchronously so the dialog can dismiss only after this ViewModel owns the work.
         _applyState.value = ChannelApplyUiState.Applying
-        try {
-            withContext(NonCancellable) {
-                val result = channelReliabilityManager.applyAndVerify(channelSet)
-                val state = result.toChannelApplyUiState()
-                _applyState.value = if (dialogDismissed) ChannelApplyUiState.Idle else state
-                if (state is ChannelApplyUiState.Failed) {
-                    alertManager.showChannelApplyFailure(result)
+        return safeLaunch(tag = "setChannels") {
+            try {
+                withContext(NonCancellable) {
+                    val result = channelReliabilityManager.applyAndVerify(channelSet)
+                    val state = result.toChannelApplyUiState()
+                    _applyState.value = if (dialogDismissed) ChannelApplyUiState.Idle else state
+                    when {
+                        state is ChannelApplyUiState.Failed -> alertManager.showChannelApplyFailure(result)
+
+                        state == ChannelApplyUiState.InvalidSettings ->
+                            alertManager.showAlert(
+                                titleRes = Res.string.channel_apply_failed_title,
+                                messageRes = Res.string.channel_apply_invalid,
+                                confirmTextRes = Res.string.close,
+                            )
+
+                        else -> Unit
+                    }
                 }
-            }
-        } finally {
-            // safeLaunch reports unexpected failures. An exception is not proof that the node rejected
-            // the write or returned a mismatching readback, so keep it informational.
-            if (_applyState.value == ChannelApplyUiState.Applying) {
-                _applyState.value =
-                    if (dialogDismissed) ChannelApplyUiState.Idle else ChannelApplyUiState.WaitingForReconnect
+            } finally {
+                // safeLaunch reports unexpected failures. An exception is not proof that the node rejected
+                // the write or returned a mismatching readback, so keep it informational.
+                if (_applyState.value == ChannelApplyUiState.Applying) {
+                    _applyState.value =
+                        if (dialogDismissed) ChannelApplyUiState.Idle else ChannelApplyUiState.WaitingForReconnect
+                }
             }
         }
     }
 
     /** Marks an explicit preview presentation without clearing a result retained across radio reconnect. */
     fun onDialogShown() {
-        dialogDismissed = false
+        // A new QR can arrive while a previously dismissed apply is still finishing. Do not attach that new
+        // presentation to the old operation or let the old completion consume it.
+        if (_applyState.value != ChannelApplyUiState.Applying) dialogDismissed = false
     }
 
     /** Explicit dismissal hides later non-terminal completion while allowing an admitted transaction to finish. */
