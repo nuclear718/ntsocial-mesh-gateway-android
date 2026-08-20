@@ -978,7 +978,21 @@
     <string name="power_metrics_update_interval_seconds">Power metrics update interval</string>
     <string name="powered">Powered</string>
     <string name="ppm">ppm</string>
+    <!-- PRECISE -->
     <string name="precise_location">Precise location</string>
+    <string name="precise_location_active_summary">P32 is active on channel index %1$d (%2$s). Mesh coordinate rounding is disabled; phone GPS accuracy still applies.</string>
+    <string name="precise_location_change_channel">Change position channel</string>
+    <string name="precise_location_channel_label">Index %1$d · %2$s</string>
+    <string name="precise_location_choose_channel">Choose a position channel</string>
+    <string name="precise_location_firmware_precision_limited_warning">Meshtastic firmware limits this public channel to P15, so it cannot be used for precise location sharing. Choose a private channel.</string>
+    <string name="precise_location_mqtt_warning">This channel has MQTT uplink enabled. Exact coordinates may leave the local radio mesh.</string>
+    <string name="precise_location_needs_setup">Choose and verify a channel before exact phone location can be shared.</string>
+    <string name="precise_location_no_channels">No active secondary channel is available. Add a private channel first.</string>
+    <string name="precise_location_off_summary">When enabled, MeshLink sets public and other channels to p0, sets the chosen channel to p32, verifies the radio readback, then starts the phone GPS feed.</string>
+    <string name="precise_location_public_acknowledgement">I understand; use this channel</string>
+    <string name="precise_location_public_warning">This channel is not private: its key is built in or publicly known. P32 will expose exact coordinates to anyone with that key.</string>
+    <string name="precise_location_setup_notice">The node normally restarts. Sharing remains off until reconnection and an exact readback are verified.</string>
+    <string name="precise_location_sharing">Share precise phone location</string>
     <string name="preferences_language">Language</string>
     <string name="preferences_system_default">System default</string>
     <string name="preserve_favorites">Preserve Favorites?</string>

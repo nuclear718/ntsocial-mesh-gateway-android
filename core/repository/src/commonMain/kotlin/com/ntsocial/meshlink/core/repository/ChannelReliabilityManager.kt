@@ -26,6 +26,7 @@
 
 package com.ntsocial.meshlink.core.repository
 
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,6 +55,19 @@ enum class ChannelReliabilityResult {
     READBACK_FAILED,
 }
 
+/** Ordering policy for the authoritative per-slot writes inside one verified channel transaction. */
+enum class ChannelWriteOrder {
+    /** Preserve the normal upstream-compatible numeric slot order. */
+    SLOT_INDEX,
+
+    /**
+     * Accept only a p0/p32 position policy with at most one secondary p32 target, then write every p0/disabled slot
+     * before that target. This keeps an interrupted precise-location slot switch from enabling the new p32 slot before
+     * the previous p32 slot has been cleared.
+     */
+    PRECISE_POSITION_TARGET_LAST,
+}
+
 /** Serializes radio-selection, exact command admission, handshake commit, and Gateway route/admission boundaries. */
 class ChannelOperationLock {
     private val mutex = Mutex()
@@ -72,13 +86,33 @@ class ChannelMutationLock {
     }
 
     private val mutex = Mutex()
+    private val pendingOwners = MutableStateFlow(0)
 
-    suspend fun <T> withLock(block: suspend (Lease) -> T): T = mutex.withLock {
-        val lease = Lease(this)
+    /** Number of channel mutations which own the lock or are queued to own it. Zero is the only safe feed state. */
+    val activeOrPendingOwners: StateFlow<Int> = pendingOwners
+
+    suspend fun <T> withLock(block: suspend (Lease) -> T): T {
+        adjustPendingOwners(1)
         try {
-            block(lease)
+            return mutex.withLock {
+                val lease = Lease(this)
+                try {
+                    block(lease)
+                } finally {
+                    lease.active = false
+                }
+            }
         } finally {
-            lease.active = false
+            adjustPendingOwners(-1)
+        }
+    }
+
+    private fun adjustPendingOwners(delta: Int): Int {
+        while (true) {
+            val current = pendingOwners.value
+            val updated = current + delta
+            check(updated >= 0) { "Channel mutation owner count underflow" }
+            if (pendingOwners.compareAndSet(current, updated)) return updated
         }
     }
 
@@ -89,6 +123,27 @@ class ChannelMutationLock {
             "Channel mutation lease is stale or belongs to another lock"
         }
         block(lease)
+    }
+
+    /**
+     * Runs a non-mutating admission only when no channel mutation owns or is waiting for this lock.
+     *
+     * The mutex stays held for the complete [block], so a mutation which registers after this check cannot change the
+     * radio's channel policy until the admitted operation finishes. Once any mutation is queued, later admissions fail
+     * immediately instead of delaying the user's revocation or channel change.
+     */
+    suspend fun tryWithStableChannels(block: suspend () -> Unit): Boolean {
+        if (pendingOwners.value != 0 || !mutex.tryLock()) return false
+        return try {
+            if (pendingOwners.value != 0) {
+                false
+            } else {
+                block()
+                true
+            }
+        } finally {
+            mutex.unlock()
+        }
     }
 }
 
@@ -105,6 +160,20 @@ interface ChannelReliabilityManager {
      * LoRa configuration.
      */
     suspend fun applyAndVerify(channelSet: ChannelSet): ChannelReliabilityResult
+
+    /**
+     * Builds and applies a channel-only mutation from the latest snapshot while holding the shared mutation lock.
+     *
+     * Use this for policy changes that must not overwrite a QR or Channels edit which completed while the caller was
+     * waiting for admission.
+     */
+    suspend fun applyCurrentAndVerify(
+        expectedNodeNum: Int,
+        mutationLease: ChannelMutationLock.Lease? = null,
+        requireStableSlots: Boolean = false,
+        writeOrder: ChannelWriteOrder = ChannelWriteOrder.SLOT_INDEX,
+        transform: (ChannelSet) -> ChannelSet,
+    ): ChannelReliabilityResult
 
     /** Saves the latest complete readback as the user-approved snapshot for this radio. */
     suspend fun protectCurrentChannelSet(): ChannelReliabilityResult

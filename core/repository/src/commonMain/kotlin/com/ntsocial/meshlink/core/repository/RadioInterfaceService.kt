@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * @see ServiceRepository.connectionState
  */
+@Suppress("TooManyFunctions")
 interface RadioInterfaceService : RadioTransportCallback {
     /** The device types supported by this platform's radio interface. */
     val supportedDeviceTypes: List<DeviceType>
@@ -115,6 +116,13 @@ interface RadioInterfaceService : RadioTransportCallback {
      * Implementations that cannot linearize this check with transport replacement must fail closed.
      */
     fun sendToRadioForSession(bytes: ByteArray, expectedRadioSessionEpoch: Long): Boolean = false
+
+    /**
+     * Runs one synchronous local projection only while [expectedRadioSessionEpoch] is still the configured active
+     * transport session. Implementations must linearize this check and [block] with selection/session rotation using
+     * the same lock as [sendToRadioForSession].
+     */
+    fun runIfCurrentRadioSession(expectedRadioSessionEpoch: Long, block: () -> Unit): Boolean = false
 
     /** Initiates the connection to the radio. */
     fun connect()

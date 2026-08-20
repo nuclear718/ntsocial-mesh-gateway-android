@@ -729,6 +729,52 @@ class SharedRadioInterfaceServiceLivenessTest {
     }
 
     @Test
+    fun `exact local projection is serialized before same-node radio selection rotates the epoch`() =
+        runTest(testDispatcher) {
+            val service = createConnectedService(RADIO_A)
+            val projectionStarted = CompletableDeferred<Unit>()
+            val releaseProjection = CompletableDeferred<Unit>()
+            try {
+                assertTrue(service.markCurrentSessionConfigured(service.radioSessionState.value.epoch))
+                val retiredEpoch = service.radioSessionState.value.epoch
+                var projectedEpoch: Long? = null
+
+                val exactProjection =
+                    backgroundScope.async(Dispatchers.Default) {
+                        service.runIfCurrentRadioSession(retiredEpoch) {
+                            runBlocking {
+                                projectionStarted.complete(Unit)
+                                releaseProjection.await()
+                            }
+                            projectedEpoch = service.radioSessionState.value.epoch
+                        }
+                    }
+                projectionStarted.await()
+                val selectionStarted = CompletableDeferred<Unit>()
+                val replacement =
+                    backgroundScope.async(Dispatchers.Default) {
+                        selectionStarted.complete(Unit)
+                        service.setDeviceAddress(RADIO_B)
+                    }
+                selectionStarted.await()
+                assertFalse(replacement.isCompleted)
+
+                releaseProjection.complete(Unit)
+                assertTrue(exactProjection.await())
+                assertTrue(replacement.await())
+
+                assertEquals(retiredEpoch, projectedEpoch)
+                assertTrue(service.radioSessionState.value.epoch > retiredEpoch)
+                assertFalse(service.radioSessionState.value.isConfiguredReady)
+            } finally {
+                releaseProjection.complete(Unit)
+                advanceTimeBy(1_000L)
+                service.disconnect()
+                advanceTimeBy(1_000L)
+            }
+        }
+
+    @Test
     fun `disconnect and reconnect callbacks rotate session and require configuration again`() =
         runTest(testDispatcher) {
             val service = createConnectedService("xAA:BB:CC:DD:EE:FF")

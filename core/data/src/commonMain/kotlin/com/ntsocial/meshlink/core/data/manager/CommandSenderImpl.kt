@@ -34,12 +34,15 @@ import com.ntsocial.meshlink.core.model.Position
 import com.ntsocial.meshlink.core.model.TelemetryType
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.isWithinSizeLimit
+import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.GatewayPacketDispatchResult
 import com.ntsocial.meshlink.core.repository.NeighborInfoHandler
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.PacketHandler
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioSessionState
 import com.ntsocial.meshlink.core.repository.SessionManager
 import com.ntsocial.meshlink.core.repository.TracerouteHandler
 import kotlinx.atomicfu.atomic
@@ -82,6 +85,8 @@ class CommandSenderImpl(
     private val tracerouteHandler: TracerouteHandler,
     private val neighborInfoHandler: NeighborInfoHandler,
     private val sessionManager: SessionManager,
+    private val radioInterfaceService: RadioInterfaceService,
+    private val channelOperationLock: ChannelOperationLock,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : CommandSender {
     private val currentPacketId = atomic(Random(nowMillis).nextLong().absoluteValue)
@@ -256,18 +261,66 @@ class CommandSenderImpl(
         )
     }
 
-    override fun requestPosition(destNum: Int, currentPosition: Position) {
-        val meshPosition =
-            ProtoPosition(
-                latitude_i = Position.degI(currentPosition.latitude),
-                longitude_i = Position.degI(currentPosition.longitude),
-                altitude = currentPosition.altitude,
-                time = (nowMillis / 1000L).toInt(),
+    override suspend fun sendPhonePositionForSession(
+        pos: ProtoPosition,
+        expectedNodeNum: Int,
+        expectedRadioSessionEpoch: Long,
+    ): Boolean = channelOperationLock.withLock {
+        val expectedSession = radioInterfaceService.radioSessionState.value
+        if (!isExpectedPhoneSessionCurrent(expectedNodeNum, expectedRadioSessionEpoch, expectedSession)) {
+            return@withLock false
+        }
+
+        Logger.d { "Sending phone position/time update to exact radio session $expectedRadioSessionEpoch" }
+        val accepted =
+            packetHandler.sendToRadioAndAwaitForSession(
+                buildMeshPacket(
+                    to = expectedNodeNum,
+                    channel = 0,
+                    priority = MeshPacket.Priority.BACKGROUND,
+                    decoded = Data(portnum = PortNum.POSITION_APP, payload = pos.encode().toByteString()),
+                ),
+                expectedRadioSessionEpoch,
             )
+        if (!accepted) return@withLock false
+        var projected = false
+        val sessionStillCurrent =
+            radioInterfaceService.runIfCurrentRadioSession(expectedRadioSessionEpoch) {
+                if (
+                    nodeManager.myNodeNum.value == expectedNodeNum &&
+                    localConfig.value.position?.fixed_position != true
+                ) {
+                    nodeManager.handleReceivedPosition(expectedNodeNum, expectedNodeNum, pos, nowMillis)
+                    projected = true
+                }
+            }
+        sessionStillCurrent && projected
+    }
+
+    private fun isExpectedPhoneSessionCurrent(
+        expectedNodeNum: Int,
+        expectedRadioSessionEpoch: Long,
+        expectedSession: RadioSessionState,
+    ): Boolean = expectedSession.epoch == expectedRadioSessionEpoch &&
+        expectedSession.isConfiguredReady &&
+        radioInterfaceService.radioSessionState.value == expectedSession &&
+        nodeManager.myNodeNum.value == expectedNodeNum &&
+        localConfig.value.position?.fixed_position != true
+
+    override fun requestPosition(destNum: Int, currentPosition: Position) {
+        requestPositionOnChannel(destNum, currentPosition, getChannelIndex(destNum))
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    override fun requestPositionOnChannel(destNum: Int, currentPosition: Position, channelIndex: Int) {
+        // A position request is a query, not a location-sharing packet. Keeping latitude, longitude, and altitude
+        // absent prevents a stale admission or legacy 0,0 sentinel from disclosing or manufacturing coordinates.
+        // Firmware returns the requested node's position on this same channel.
+        val meshPosition = ProtoPosition(time = (nowMillis / 1000L).toInt())
         packetHandler.sendToRadio(
             buildMeshPacket(
                 to = destNum,
-                channel = getChannelIndex(destNum),
+                channel = channelIndex,
                 priority = MeshPacket.Priority.BACKGROUND,
                 decoded =
                 Data(

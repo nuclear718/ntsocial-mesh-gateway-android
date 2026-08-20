@@ -32,6 +32,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.prefs.cachedFlow
+import com.ntsocial.meshlink.core.repository.PreciseLocationAdmission
 import com.ntsocial.meshlink.core.repository.UiPrefs
 import kotlinx.atomicfu.atomic
 import kotlinx.collections.immutable.persistentMapOf
@@ -39,6 +40,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -55,6 +57,13 @@ class UiPrefsImpl(
 
     // Maps nodeNum to a flow for the for the "provide-location-nodeNum" pref
     private val provideNodeLocationFlows = atomic(persistentMapOf<Int, Lazy<StateFlow<Boolean>>>())
+
+    // Maps nodeNum to the exact-position radio channel selected for that node.
+    private val preciseLocationChannelFlows = atomic(persistentMapOf<Int, Lazy<StateFlow<Int>>>())
+
+    // Maps nodeNum to the atomic consent + selected-channel admission snapshot.
+    private val preciseLocationAdmissionFlows =
+        atomic(persistentMapOf<Int, Lazy<StateFlow<PreciseLocationAdmission>>>())
 
     override val appIntroCompleted: StateFlow<Boolean> =
         dataStore.data.map { it[KEY_APP_INTRO_COMPLETED] ?: false }.stateIn(scope, SharingStarted.Eagerly, false)
@@ -179,17 +188,105 @@ class UiPrefsImpl(
 
     override fun shouldProvideNodeLocation(nodeNum: Int): StateFlow<Boolean> =
         cachedFlow(provideNodeLocationFlows, nodeNum) {
-            val key = booleanPreferencesKey(provideLocationKey(nodeNum))
-            dataStore.data.map { it[key] ?: false }.stateIn(scope, SharingStarted.Eagerly, false)
+            dataStore.data
+                .map { preferences -> preferences.readPreciseLocationAdmission(nodeNum).enabled }
+                .stateIn(scope, SharingStarted.Eagerly, false)
         }
 
+    @Suppress("UNUSED_PARAMETER")
     override fun setShouldProvideNodeLocation(nodeNum: Int, provide: Boolean) {
-        scope.launch { dataStore.edit { it[booleanPreferencesKey(provideLocationKey(nodeNum))] = provide } }
+        // Legacy callers may revoke consent, but they cannot admit a GPS feed without the verified channel identity.
+        scope.launch {
+            dataStore.edit { preferences ->
+                val current = preferences.readPreciseLocationAdmission(nodeNum)
+                preferences[booleanPreferencesKey(provideLocationKey(nodeNum))] = false
+                if (current.enabled || current.cleanupPending) {
+                    preferences[booleanPreferencesKey(preciseLocationCleanupPendingKey(nodeNum))] = true
+                }
+            }
+        }
+    }
+
+    override fun preciseLocationChannelIndex(nodeNum: Int): StateFlow<Int> =
+        cachedFlow(preciseLocationChannelFlows, nodeNum) {
+            val key = intPreferencesKey(preciseLocationChannelKey(nodeNum))
+            dataStore.data
+                .map { it[key] ?: NO_PRECISE_LOCATION_CHANNEL }
+                .stateIn(scope, SharingStarted.Eagerly, NO_PRECISE_LOCATION_CHANNEL)
+        }
+
+    override fun setPreciseLocationChannelIndex(nodeNum: Int, channelIndex: Int) {
+        scope.launch {
+            dataStore.edit { preferences ->
+                val current = preferences.readPreciseLocationAdmission(nodeNum)
+                preferences[intPreferencesKey(preciseLocationChannelKey(nodeNum))] = channelIndex
+                preferences[booleanPreferencesKey(provideLocationKey(nodeNum))] = false
+                preferences[stringPreferencesKey(preciseLocationChannelIdentityKey(nodeNum))] = ""
+                preferences[booleanPreferencesKey(preciseLocationCleanupPendingKey(nodeNum))] =
+                    current.enabled || current.cleanupPending
+            }
+        }
+    }
+
+    override fun preciseLocationAdmission(nodeNum: Int): StateFlow<PreciseLocationAdmission> =
+        cachedFlow(preciseLocationAdmissionFlows, nodeNum) {
+            dataStore.data
+                .map { preferences -> preferences.readPreciseLocationAdmission(nodeNum) }
+                .stateIn(scope, SharingStarted.Eagerly, PreciseLocationAdmission())
+        }
+
+    override suspend fun readPreciseLocationAdmission(nodeNum: Int): PreciseLocationAdmission =
+        dataStore.data.first().readPreciseLocationAdmission(nodeNum)
+
+    override suspend fun setPreciseLocationSharing(
+        nodeNum: Int,
+        provide: Boolean,
+        channelIndex: Int,
+        channelIdentity: String,
+        cleanupPending: Boolean,
+    ) {
+        dataStore.edit { preferences ->
+            preferences[booleanPreferencesKey(provideLocationKey(nodeNum))] = provide && !cleanupPending
+            preferences[intPreferencesKey(preciseLocationChannelKey(nodeNum))] = channelIndex
+            preferences[stringPreferencesKey(preciseLocationChannelIdentityKey(nodeNum))] = channelIdentity
+            preferences[booleanPreferencesKey(preciseLocationCleanupPendingKey(nodeNum))] = cleanupPending
+        }
+    }
+
+    override suspend fun clearPreciseLocationCleanupPending(nodeNum: Int) {
+        dataStore.edit { preferences ->
+            preferences[booleanPreferencesKey(provideLocationKey(nodeNum))] = false
+            preferences[booleanPreferencesKey(preciseLocationCleanupPendingKey(nodeNum))] = false
+        }
+    }
+
+    private fun Preferences.readPreciseLocationAdmission(nodeNum: Int): PreciseLocationAdmission {
+        val provide = this[booleanPreferencesKey(provideLocationKey(nodeNum))] == true
+        val channelIndex = this[intPreferencesKey(preciseLocationChannelKey(nodeNum))] ?: NO_PRECISE_LOCATION_CHANNEL
+        val channelIdentity = this[stringPreferencesKey(preciseLocationChannelIdentityKey(nodeNum))].orEmpty()
+        val hasVerifiedChannelSelection = channelIndex > 0 && channelIdentity.isNotBlank()
+        val cleanupPending =
+            this[booleanPreferencesKey(preciseLocationCleanupPendingKey(nodeNum))]
+                ?: (provide != hasVerifiedChannelSelection)
+        return PreciseLocationAdmission(
+            enabled = provide && hasVerifiedChannelSelection && !cleanupPending,
+            channelIndex = channelIndex,
+            channelIdentity = channelIdentity,
+            cleanupPending = cleanupPending,
+        )
     }
 
     private fun provideLocationKey(nodeNum: Int) = "provide-location-$nodeNum"
 
+    private fun preciseLocationChannelKey(nodeNum: Int) = "precise-location-channel-$nodeNum"
+
+    private fun preciseLocationChannelIdentityKey(nodeNum: Int) = "precise-location-channel-identity-$nodeNum"
+
+    private fun preciseLocationCleanupPendingKey(nodeNum: Int) = "precise-location-cleanup-pending-$nodeNum"
+
     companion object {
+        const val NO_PRECISE_LOCATION_CHANNEL = -1
+
         val KEY_HAS_SHOWN_NOT_PAIRED_WARNING_PREF = booleanPreferencesKey("has_shown_not_paired_warning")
         val KEY_SHOW_QUICK_CHAT_PREF = booleanPreferencesKey("show-quick-chat")
 

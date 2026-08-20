@@ -31,6 +31,7 @@ import com.ntsocial.meshlink.core.domain.usecase.session.EnsureRemoteAdminSessio
 import com.ntsocial.meshlink.core.domain.usecase.session.EnsureSessionResult
 import com.ntsocial.meshlink.core.model.ChannelSnapshotDrift
 import com.ntsocial.meshlink.core.model.ConnectionState
+import com.ntsocial.meshlink.core.model.PreciseLocationChannelSetPlanner
 import com.ntsocial.meshlink.core.model.buildAuthoritativeChannelWrites
 import com.ntsocial.meshlink.core.model.buildMissingSecondaryWrites
 import com.ntsocial.meshlink.core.model.classifyChannelSnapshotDrift
@@ -41,6 +42,7 @@ import com.ntsocial.meshlink.core.repository.ChannelProtectionSnapshot
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.ChannelSnapshotRepository
+import com.ntsocial.meshlink.core.repository.ChannelWriteOrder
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MeshConfigFlowManager
 import com.ntsocial.meshlink.core.repository.NodeRepository
@@ -65,6 +67,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
@@ -107,28 +110,77 @@ class ChannelReliabilityManagerImpl(
         val context =
             currentRadioContext()
                 ?: return@withLock unavailableContextResult(serviceRepository.connectionState.value)
-        val currentLora = radioConfigRepository.localConfigFlow.first().lora
-        val writeLora = channelSet.lora_config != null
-        val desiredLora = channelSet.lora_config ?: currentLora
-        val settings = normalizeReliableChannelSettings(channelSet.settings, desiredLora)
-        if (settings.isEmpty() || settings.first() == ChannelSettings() || settings.size > context.maxChannels) {
-            return@withLock ChannelReliabilityResult.INVALID_CHANNEL_SET
+        applyAndVerifyLocked(channelSet, context)
+    }
+
+    override suspend fun applyCurrentAndVerify(
+        expectedNodeNum: Int,
+        mutationLease: ChannelMutationLock.Lease?,
+        requireStableSlots: Boolean,
+        writeOrder: ChannelWriteOrder,
+        transform: (ChannelSet) -> ChannelSet,
+    ): ChannelReliabilityResult = mutationLock.withLease(mutationLease) { _ ->
+        val context =
+            currentRadioContext()
+                ?: return@withLease unavailableContextResult(serviceRepository.connectionState.value)
+        if (context.nodeNum != expectedNodeNum) {
+            return@withLease ChannelReliabilityResult.SESSION_UNAVAILABLE
         }
-        val desired = ChannelSet(settings = settings, lora_config = desiredLora)
+        val sourceReadbackGeneration = radioConfigRepository.channelReadbackGeneration.value
+        val desired =
+            try {
+                transform(radioConfigRepository.channelSetFlow.first())
+            } catch (_: IllegalArgumentException) {
+                return@withLease ChannelReliabilityResult.INVALID_CHANNEL_SET
+            }
+        if (!isCurrentSourceSnapshot(context, sourceReadbackGeneration)) {
+            return@withLease ChannelReliabilityResult.SESSION_UNAVAILABLE
+        }
+        applyAndVerifyLocked(
+            channelSet = desired,
+            context = context,
+            sourceReadbackGeneration = sourceReadbackGeneration,
+            requireStableSlots = requireStableSlots,
+            writeOrder = writeOrder,
+        )
+    }
+
+    private suspend fun applyAndVerifyLocked(
+        channelSet: ChannelSet,
+        context: RadioContext,
+        sourceReadbackGeneration: Long? = null,
+        requireStableSlots: Boolean = false,
+        writeOrder: ChannelWriteOrder = ChannelWriteOrder.SLOT_INDEX,
+    ): ChannelReliabilityResult {
+        if (!isCurrentSourceSnapshot(context, sourceReadbackGeneration)) {
+            return ChannelReliabilityResult.SESSION_UNAVAILABLE
+        }
+        val prepared =
+            prepareChannelApply(channelSet, context.maxChannels, requireStableSlots, writeOrder)
+                ?: return ChannelReliabilityResult.INVALID_CHANNEL_SET
+        val desired = prepared.desired
         val currentSnapshot = channelSnapshotRepository.get(context.identity)
-        if (!isCurrentRadioContext(context)) return@withLock ChannelReliabilityResult.SESSION_UNAVAILABLE
+        if (!isCurrentSourceSnapshot(context, sourceReadbackGeneration)) {
+            return ChannelReliabilityResult.SESSION_UNAVAILABLE
+        }
         val sessionResult = ensureRemoteAdminSession(context.nodeNum, context.radioSessionEpoch)
-        if (!sessionResult.isAvailable() || !isCurrentRadioContext(context)) {
-            return@withLock ChannelReliabilityResult.SESSION_UNAVAILABLE
+        if (!sessionResult.isAvailable() || !isCurrentSourceSnapshot(context, sourceReadbackGeneration)) {
+            return ChannelReliabilityResult.SESSION_UNAVAILABLE
         }
 
-        val result = applyTransaction(context, desired, writeLora)
-        if (result != ChannelReliabilityResult.VERIFIED) return@withLock result
+        val result =
+            applyTransaction(
+                context = context,
+                desired = desired,
+                commands = prepared.commands,
+                writeLora = prepared.writeLora,
+                sourceReadbackGeneration = sourceReadbackGeneration,
+            )
+        if (result != ChannelReliabilityResult.VERIFIED) return result
 
-        val stableReadback =
-            captureStableReadback(context) ?: return@withLock ChannelReliabilityResult.VERIFICATION_PENDING
+        val stableReadback = captureStableReadback(context) ?: return ChannelReliabilityResult.VERIFICATION_PENDING
         if (!stableReadback.channelSet.matches(desired)) {
-            return@withLock if (isStableReadbackCurrent(context, stableReadback.generation)) {
+            return if (isStableReadbackCurrent(context, stableReadback.generation)) {
                 ChannelReliabilityResult.READBACK_FAILED
             } else {
                 ChannelReliabilityResult.VERIFICATION_PENDING
@@ -140,24 +192,45 @@ class ChannelReliabilityManagerImpl(
                     context = context,
                     readbackGeneration = stableReadback.generation,
                     previous = currentSnapshot,
-                    replacement = ChannelProtectionSnapshot(
-                        maxChannels = context.maxChannels,
-                        channelSet = desired,
-                    ),
+                    replacement = ChannelProtectionSnapshot(maxChannels = context.maxChannels, channelSet = desired),
                 )
-            if (!persisted) return@withLock ChannelReliabilityResult.VERIFICATION_PENDING
+            if (!persisted) return ChannelReliabilityResult.VERIFICATION_PENDING
             _isProtected.value = true
         }
         if (
             !isCurrentRadioContext(context) ||
             radioConfigRepository.channelReadbackGeneration.value != stableReadback.generation
         ) {
-            return@withLock ChannelReliabilityResult.VERIFICATION_PENDING
+            return ChannelReliabilityResult.VERIFICATION_PENDING
         }
         if (!activateInboundSession(context)) {
             Logger.w { "Gateway ingress remains closed after verified channel apply because activation was stale" }
         }
-        ChannelReliabilityResult.VERIFIED
+        return ChannelReliabilityResult.VERIFIED
+    }
+
+    private suspend fun prepareChannelApply(
+        channelSet: ChannelSet,
+        maxChannels: Int,
+        requireStableSlots: Boolean,
+        writeOrder: ChannelWriteOrder,
+    ): PreparedChannelApply? {
+        val currentLora = radioConfigRepository.localConfigFlow.first().lora
+        val writeLora = channelSet.lora_config != null
+        val desiredLora = channelSet.lora_config ?: currentLora
+        val settings = normalizeReliableChannelSettings(channelSet.settings, desiredLora)
+        if (
+            (requireStableSlots && settings != channelSet.settings) ||
+            settings.isEmpty() ||
+            settings.first() == ChannelSettings() ||
+            settings.size > maxChannels
+        ) {
+            return null
+        }
+        val desired = ChannelSet(settings = settings, lora_config = desiredLora)
+        val commands =
+            buildAuthoritativeChannelWrites(desired.settings, maxChannels).orderedFor(writeOrder) ?: return null
+        return PreparedChannelApply(desired = desired, commands = commands, writeLora = writeLora)
     }
 
     override suspend fun protectCurrentChannelSet(): ChannelReliabilityResult = mutationLock.withLock { _ ->
@@ -303,12 +376,15 @@ class ChannelReliabilityManagerImpl(
     private suspend fun applyTransaction(
         context: RadioContext,
         desired: ChannelSet,
+        commands: List<Channel>,
         writeLora: Boolean,
+        sourceReadbackGeneration: Long?,
     ): ChannelReliabilityResult {
-        val commands = buildAuthoritativeChannelWrites(desired.settings, context.maxChannels)
         // Firmware can apply begin/channel/config writes before local readback advances the snapshot generation.
         // Close Gateway ingress at the last possible point before the first mutation admission.
-        if (!closeIngressForMutation(context)) return ChannelReliabilityResult.SESSION_UNAVAILABLE
+        if (!closeIngressForMutation(context, sourceReadbackGeneration)) {
+            return ChannelReliabilityResult.SESSION_UNAVAILABLE
+        }
         val transactionResult =
             runEditTransaction(context) {
                 for (channel in commands) {
@@ -542,8 +618,11 @@ class ChannelReliabilityManagerImpl(
             ntsocialGatewayRepository.activateInboundSession(context.radioSessionEpoch)
     }
 
-    private suspend fun closeIngressForMutation(context: RadioContext): Boolean = operationLock.withLock {
-        if (!isCurrentRadioContext(context)) return@withLock false
+    private suspend fun closeIngressForMutation(
+        context: RadioContext,
+        sourceReadbackGeneration: Long? = null,
+    ): Boolean = operationLock.withLock {
+        if (!isCurrentSourceSnapshot(context, sourceReadbackGeneration)) return@withLock false
         ntsocialGatewayRepository.invalidateInboundSession()
         true
     }
@@ -579,12 +658,22 @@ class ChannelReliabilityManagerImpl(
 
     private fun isCurrentRadioContext(expected: RadioContext): Boolean = currentRadioContext() == expected
 
+    private fun isCurrentSourceSnapshot(expected: RadioContext, readbackGeneration: Long?): Boolean =
+        isCurrentRadioContext(expected) &&
+            (readbackGeneration == null || radioConfigRepository.channelReadbackGeneration.value == readbackGeneration)
+
     private data class RadioContext(
         val nodeNum: Int,
         val identity: String,
         val maxChannels: Int,
         val radioSessionEpoch: Long,
         val radioAddress: String,
+    )
+
+    private data class PreparedChannelApply(
+        val desired: ChannelSet,
+        val commands: List<Channel>,
+        val writeLora: Boolean,
     )
 
     private data class StableReadback(val generation: Long, val channelSet: ChannelSet)
@@ -625,3 +714,25 @@ private fun ChannelSet.matches(expected: ChannelSet): Boolean {
     val normalizedExpected = expected.normalizedReadback()
     return actual.settings == normalizedExpected.settings && actual.lora_config == normalizedExpected.lora_config
 }
+
+private fun List<Channel>.orderedFor(writeOrder: ChannelWriteOrder): List<Channel>? = when (writeOrder) {
+    ChannelWriteOrder.SLOT_INDEX -> this
+
+    ChannelWriteOrder.PRECISE_POSITION_TARGET_LAST -> {
+        val (preciseTargets, zeroPrecisionWrites) =
+            partition { channel ->
+                channel.positionPrecision == PreciseLocationChannelSetPlanner.PRECISE_POSITION_BITS
+            }
+        val isExactPolicy =
+            all { channel ->
+                channel.positionPrecision == 0 ||
+                    channel.positionPrecision == PreciseLocationChannelSetPlanner.PRECISE_POSITION_BITS
+            } &&
+                preciseTargets.size <= 1 &&
+                preciseTargets.all { channel -> channel.role == Channel.Role.SECONDARY }
+        if (isExactPolicy) zeroPrecisionWrites + preciseTargets else null
+    }
+}
+
+private val Channel.positionPrecision: Int
+    get() = settings?.module_settings?.position_precision ?: 0

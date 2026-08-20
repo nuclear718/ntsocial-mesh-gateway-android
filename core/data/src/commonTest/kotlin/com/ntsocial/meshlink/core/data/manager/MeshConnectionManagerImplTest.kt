@@ -29,11 +29,13 @@ import com.ntsocial.meshlink.core.data.ntsocial.NtsocialChannelProvisioner
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Node
+import com.ntsocial.meshlink.core.model.PreciseLocationChannelSetPlanner
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
 import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
+import com.ntsocial.meshlink.core.repository.ChannelWriteOrder
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.HistoryManager
 import com.ntsocial.meshlink.core.repository.MeshLocationManager
@@ -45,6 +47,7 @@ import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketHandler
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
+import com.ntsocial.meshlink.core.repository.PreciseLocationAdmission
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.RadioSessionState
@@ -68,21 +71,27 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.LocalConfig
 import org.meshtastic.proto.LocalModuleConfig
 import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.ModuleSettings
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MeshConnectionManagerImplTest {
@@ -122,9 +131,11 @@ class MeshConnectionManagerImplTest {
             ),
         )
     private val connectionStateFlow = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    private val channelSetFlow = MutableStateFlow(ChannelSet())
     private val localConfigFlow = MutableStateFlow(LocalConfig())
     private val moduleConfigFlow = MutableStateFlow(LocalModuleConfig())
     private val nodeLocationPrefs = mutableMapOf<Int, MutableStateFlow<Boolean>>()
+    private val preciseLocationAdmissions = mutableMapOf<Int, MutableStateFlow<PreciseLocationAdmission>>()
 
     private val testDispatcher = UnconfinedTestDispatcher()
 
@@ -154,9 +165,45 @@ class MeshConnectionManagerImplTest {
             }
         every { radioConfigRepository.localConfigFlow } returns localConfigFlow
         every { radioConfigRepository.moduleConfigFlow } returns moduleConfigFlow
+        every { radioConfigRepository.channelSetFlow } returns channelSetFlow
         every { uiPrefs.shouldProvideNodeLocation(any()) } calls
             { call ->
                 nodeLocationPrefs.getOrPut(call.arg(0)) { MutableStateFlow(false) }
+            }
+        every { uiPrefs.preciseLocationChannelIndex(any()) } calls
+            { call ->
+                preciseLocationAdmissions
+                    .getOrPut(call.arg(0)) { MutableStateFlow(PreciseLocationAdmission()) }
+                    .let { admission -> MutableStateFlow(admission.value.channelIndex) }
+            }
+        every { uiPrefs.preciseLocationAdmission(any()) } calls
+            { call ->
+                preciseLocationAdmissions.getOrPut(call.arg(0)) { MutableStateFlow(PreciseLocationAdmission()) }
+            }
+        everySuspend { uiPrefs.readPreciseLocationAdmission(any()) } calls
+            { call ->
+                preciseLocationAdmissions.getOrPut(call.arg(0)) { MutableStateFlow(PreciseLocationAdmission()) }.value
+            }
+        everySuspend { uiPrefs.setPreciseLocationSharing(any(), any(), any(), any(), any()) } calls
+            { call ->
+                val nodeNum = call.arg<Int>(0)
+                val provide = call.arg<Boolean>(1)
+                val channelIndex = call.arg<Int>(2)
+                val channelIdentity = call.arg<String>(3)
+                val cleanupPending = call.arg<Boolean>(4)
+                preciseLocationAdmissions.getOrPut(nodeNum) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+                    PreciseLocationAdmission(
+                        enabled = provide && !cleanupPending,
+                        channelIndex = channelIndex,
+                        channelIdentity = channelIdentity,
+                        cleanupPending = cleanupPending,
+                    )
+            }
+        everySuspend { uiPrefs.clearPreciseLocationCleanupPending(any()) } calls
+            { call ->
+                val admission =
+                    preciseLocationAdmissions.getOrPut(call.arg(0)) { MutableStateFlow(PreciseLocationAdmission()) }
+                admission.value = admission.value.copy(enabled = false, cleanupPending = false)
             }
         every { serviceRepository.connectionState } returns connectionStateFlow
         every { serviceRepository.setConnectionState(any()) } calls
@@ -166,6 +213,7 @@ class MeshConnectionManagerImplTest {
         every { serviceNotifications.updateServiceStateNotification(any(), any()) } returns Unit
         every { commandSender.sendAdmin(any(), any(), any(), any()) } returns Unit
         everySuspend { commandSender.sendAdminAwaitForSession(any(), any(), any(), any(), any()) } returns true
+        everySuspend { commandSender.sendPhonePositionForSession(any(), any(), any()) } returns true
         everySuspend { commandSender.requestTelemetryForSession(any(), any(), any(), any()) } returns true
         everySuspend { packetHandler.stopPacketQueueAndAwait() } returns Unit
         every { locationManager.stop() } returns Unit
@@ -196,6 +244,7 @@ class MeshConnectionManagerImplTest {
         meshLocationManager: MeshLocationManager = locationManager,
         channelOperationLock: ChannelOperationLock = ChannelOperationLock(),
         channelMutationLock: ChannelMutationLock = ChannelMutationLock(),
+        reliabilityManager: ChannelReliabilityManager = channelReliabilityManager,
     ): MeshConnectionManagerImpl = MeshConnectionManagerImpl(
         radioInterfaceService,
         serviceRepository,
@@ -218,7 +267,7 @@ class MeshConnectionManagerImplTest {
         DataLayerHeartbeatSender(packetHandler),
         ntsocialChannelProvisioner,
         ntsocialGatewayRepository,
-        channelReliabilityManager,
+        reliabilityManager,
         channelOperationLock,
         channelMutationLock,
         scope,
@@ -356,8 +405,12 @@ class MeshConnectionManagerImplTest {
     fun `location feed follows preference connection fixed position reconnect and node switch`() =
         runTest(testDispatcher) {
             val recordingLocationManager = RecordingLocationManager()
-            nodeLocationPrefs.getOrPut(1) { MutableStateFlow(false) }.value = true
-            nodeLocationPrefs.getOrPut(2) { MutableStateFlow(false) }.value = true
+            preciseLocationAdmissions.getOrPut(1) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+                preciseLocationAdmission()
+            preciseLocationAdmissions.getOrPut(2) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+                preciseLocationAdmission()
+            channelSetFlow.value = preciseLocationChannelSet()
+            radioSessionState.value = radioSessionState.value.copy(configured = true)
             manager = createManager(backgroundScope, recordingLocationManager)
             advanceUntilIdle()
             recordingLocationManager.events.clear()
@@ -400,7 +453,8 @@ class MeshConnectionManagerImplTest {
     @Test
     fun `manual location reconcile cannot bypass a disabled per-node preference`() = runTest(testDispatcher) {
         val recordingLocationManager = RecordingLocationManager()
-        nodeLocationPrefs.getOrPut(1) { MutableStateFlow(false) }.value = false
+        preciseLocationAdmissions.getOrPut(1) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            PreciseLocationAdmission(enabled = false, channelIndex = 1)
         manager = createManager(backgroundScope, recordingLocationManager)
         nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = 1))
         connectionStateFlow.value = ConnectionState.Connected
@@ -413,6 +467,138 @@ class MeshConnectionManagerImplTest {
         assertEquals(false, manager.locationSharingRequested.value)
         assertEquals(false, manager.shouldProvideLocation.value)
         assertEquals(0, recordingLocationManager.events.count { it == "start" || it == "restart" })
+    }
+
+    @Test
+    fun `location feed stops when the verified precise channel policy changes`() = runTest(testDispatcher) {
+        val recordingLocationManager = RecordingLocationManager()
+        preciseLocationAdmissions.getOrPut(1) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            preciseLocationAdmission()
+        channelSetFlow.value = preciseLocationChannelSet()
+        radioSessionState.value = radioSessionState.value.copy(configured = true)
+        manager = createManager(backgroundScope, recordingLocationManager)
+        nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = 1))
+        connectionStateFlow.value = ConnectionState.Connected
+        advanceUntilIdle()
+
+        assertEquals(true, manager.shouldProvideLocation.value)
+
+        channelSetFlow.value =
+            preciseLocationChannelSet()
+                .copy(
+                    settings =
+                    preciseLocationChannelSet().settings.map { settings ->
+                        settings.copy(module_settings = settings.module_settings?.copy(position_precision = 13))
+                    },
+                )
+        advanceUntilIdle()
+
+        assertEquals(true, manager.locationSharingRequested.value)
+        assertEquals(false, manager.shouldProvideLocation.value)
+        assertEquals("stop", recordingLocationManager.events.last())
+    }
+
+    @Test
+    fun `channel mutation blocks an already queued location callback while preserving explicit request`() =
+        runTest(testDispatcher) {
+            val mutationLock = ChannelMutationLock()
+            val recordingLocationManager = RecordingLocationManager()
+            preciseLocationAdmissions.getOrPut(1) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+                preciseLocationAdmission()
+            channelSetFlow.value = preciseLocationChannelSet()
+            radioSessionState.value = radioSessionState.value.copy(configured = true)
+            manager = createManager(backgroundScope, recordingLocationManager, channelMutationLock = mutationLock)
+            nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = 1))
+            connectionStateFlow.value = ConnectionState.Connected
+            advanceUntilIdle()
+            assertEquals(true, manager.shouldProvideLocation.value)
+
+            val releaseMutation = CompletableDeferred<Unit>()
+            backgroundScope.launch { mutationLock.withLock { releaseMutation.await() } }
+            runCurrent()
+            assertEquals(1, mutationLock.activeOrPendingOwners.value)
+
+            recordingLocationManager.emit(org.meshtastic.proto.Position(latitude_i = 250_000_000))
+            runCurrent()
+            verifySuspend(mode = VerifyMode.not) { commandSender.sendPhonePositionForSession(any(), any(), any()) }
+
+            advanceUntilIdle()
+            assertEquals(true, manager.locationSharingRequested.value)
+            assertEquals(false, manager.shouldProvideLocation.value)
+
+            releaseMutation.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(true, manager.locationSharingRequested.value)
+            assertEquals(true, manager.shouldProvideLocation.value)
+        }
+
+    @Test
+    fun `admitted phone position completes before a later channel mutation can enter`() = runTest(testDispatcher) {
+        val mutationLock = ChannelMutationLock()
+        val recordingLocationManager = RecordingLocationManager()
+        val positionSendEntered = CompletableDeferred<Unit>()
+        val releasePositionSend = CompletableDeferred<Unit>()
+        val mutationEntered = CompletableDeferred<Unit>()
+        preciseLocationAdmissions.getOrPut(1) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            preciseLocationAdmission()
+        channelSetFlow.value = preciseLocationChannelSet()
+        radioSessionState.value = radioSessionState.value.copy(configured = true)
+        everySuspend { commandSender.sendPhonePositionForSession(any(), any(), any()) } calls
+            {
+                positionSendEntered.complete(Unit)
+                releasePositionSend.await()
+                true
+            }
+        manager = createManager(backgroundScope, recordingLocationManager, channelMutationLock = mutationLock)
+        nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = 1))
+        connectionStateFlow.value = ConnectionState.Connected
+        advanceUntilIdle()
+
+        recordingLocationManager.emit(org.meshtastic.proto.Position(latitude_i = 250_000_001))
+        runCurrent()
+        positionSendEntered.await()
+
+        backgroundScope.launch { mutationLock.withLock { mutationEntered.complete(Unit) } }
+        runCurrent()
+        assertEquals(1, mutationLock.activeOrPendingOwners.value)
+        assertFalse(mutationEntered.isCompleted)
+
+        releasePositionSend.complete(Unit)
+        advanceUntilIdle()
+        mutationEntered.await()
+        verifySuspend {
+            commandSender.sendPhonePositionForSession(
+                org.meshtastic.proto.Position(latitude_i = 250_000_001),
+                1,
+                SESSION_EPOCH,
+            )
+        }
+    }
+
+    @Test
+    fun `retired location callback cannot feed a replacement radio session`() = runTest(testDispatcher) {
+        val recordingLocationManager = RecordingLocationManager()
+        preciseLocationAdmissions.getOrPut(1) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            preciseLocationAdmission()
+        channelSetFlow.value = preciseLocationChannelSet()
+        radioSessionState.value = radioSessionState.value.copy(configured = true)
+        manager = createManager(backgroundScope, recordingLocationManager)
+        nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = 1))
+        connectionStateFlow.value = ConnectionState.Connected
+        advanceUntilIdle()
+        assertEquals(1, recordingLocationManager.callbackCount)
+
+        connectionStateFlow.value = ConnectionState.Disconnected
+        radioSessionState.value = radioSessionState.value.copy(epoch = SESSION_EPOCH + 1, configured = true)
+        advanceUntilIdle()
+
+        recordingLocationManager.emitFrom(
+            callbackIndex = 0,
+            position = org.meshtastic.proto.Position(latitude_i = 250_000_002),
+        )
+        advanceUntilIdle()
+
+        verifySuspend(mode = VerifyMode.not) { commandSender.sendPhonePositionForSession(any(), any(), any()) }
     }
 
     @Test
@@ -503,6 +689,118 @@ class MeshConnectionManagerImplTest {
         verify { mqttManager.startProxy(true, true) }
         verify { historyManager.requestHistoryReplay(any(), any(), any(), any()) }
         verifySuspend { ntsocialChannelProvisioner.ensureDefaultChannelForSession(123, 8, SESSION_EPOCH, any()) }
+    }
+
+    @Test
+    fun `Stage 2 retries durable cleanup against cached slot 4 p32 before gateway activation`() =
+        runTest(testDispatcher) {
+            val cachedChannelSet = cleanupPendingChannelSet()
+            val cleanupReliability =
+                RecordingCleanupReliabilityManager(
+                    currentChannelSet = { channelSetFlow.value },
+                    publishReadback = { channelSetFlow.value = it },
+                    result = ChannelReliabilityResult.VERIFIED,
+                )
+            every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+            every { nodeManager.getMyNodeInfo() } returns null
+            preciseLocationAdmissions.getOrPut(123) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+                PreciseLocationAdmission(
+                    enabled = false,
+                    channelIndex = 4,
+                    channelIdentity = "retired-slot-4",
+                    cleanupPending = true,
+                )
+            channelSetFlow.value = cachedChannelSet
+            manager = createManager(backgroundScope, reliabilityManager = cleanupReliability)
+
+            assertTrue(manager.onNodeDbReady(SESSION_EPOCH))
+            advanceUntilIdle()
+
+            assertEquals(1, cleanupReliability.applyCount)
+            assertEquals(123, cleanupReliability.expectedNodeNum)
+            assertTrue(cleanupReliability.mutationLeaseProvided)
+            assertTrue(cleanupReliability.requireStableSlots)
+            assertEquals(ChannelWriteOrder.PRECISE_POSITION_TARGET_LAST, cleanupReliability.writeOrder)
+            assertNull(cleanupReliability.desiredChannelSet.lora_config)
+            assertEquals(
+                listOf(0, 0, 0, 0, 0),
+                cleanupReliability.desiredChannelSet.settings.map { it.module_settings?.position_precision ?: 0 },
+            )
+            assertFalse(preciseLocationAdmissions.getValue(123).value.enabled)
+            assertFalse(preciseLocationAdmissions.getValue(123).value.cleanupPending)
+            assertEquals(1, cleanupReliability.reconcileCount)
+            verifySuspend(mode = VerifyMode.exactly(1)) {
+                ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH)
+            }
+        }
+
+    @Test
+    fun `Stage 2 clears durable cleanup without rewriting an already all-p0 radio`() = runTest(testDispatcher) {
+        val cachedChannelSet = cleanupPendingChannelSet()
+        val allP0ChannelSet =
+            PreciseLocationChannelSetPlanner.disable(cachedChannelSet)
+                .copy(lora_config = cachedChannelSet.lora_config)
+        val cleanupReliability =
+            RecordingCleanupReliabilityManager(
+                currentChannelSet = { channelSetFlow.value },
+                publishReadback = { channelSetFlow.value = it },
+                result = ChannelReliabilityResult.SESSION_UNAVAILABLE,
+            )
+        every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+        every { nodeManager.getMyNodeInfo() } returns null
+        preciseLocationAdmissions.getOrPut(123) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            PreciseLocationAdmission(
+                enabled = false,
+                channelIndex = 4,
+                channelIdentity = "retired-slot-4",
+                cleanupPending = true,
+            )
+        channelSetFlow.value = allP0ChannelSet
+        manager = createManager(backgroundScope, reliabilityManager = cleanupReliability)
+
+        assertTrue(manager.onNodeDbReady(SESSION_EPOCH))
+        advanceUntilIdle()
+
+        assertEquals(0, cleanupReliability.applyCount)
+        assertFalse(preciseLocationAdmissions.getValue(123).value.cleanupPending)
+        assertEquals(1, cleanupReliability.reconcileCount)
+        verifySuspend(mode = VerifyMode.exactly(1)) {
+            ntsocialGatewayRepository.activateInboundSession(SESSION_EPOCH)
+        }
+    }
+
+    @Test
+    fun `failed durable cleanup remains pending and keeps Stage 2 ingress closed`() = runTest(testDispatcher) {
+        val cleanupReliability =
+            RecordingCleanupReliabilityManager(
+                currentChannelSet = ::cleanupPendingChannelSet,
+                publishReadback = {},
+                result = ChannelReliabilityResult.SESSION_UNAVAILABLE,
+            )
+        every { nodeManager.myNodeNum } returns MutableStateFlow(123)
+        every { nodeManager.getMyNodeInfo() } returns null
+        preciseLocationAdmissions.getOrPut(123) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            PreciseLocationAdmission(
+                enabled = false,
+                channelIndex = 4,
+                channelIdentity = "retired-slot-4",
+                cleanupPending = true,
+            )
+        channelSetFlow.value = cleanupPendingChannelSet()
+        manager = createManager(backgroundScope, reliabilityManager = cleanupReliability)
+
+        assertTrue(manager.onNodeDbReady(SESSION_EPOCH))
+        advanceUntilIdle()
+
+        assertEquals(1, cleanupReliability.applyCount)
+        assertTrue(preciseLocationAdmissions.getValue(123).value.cleanupPending)
+        assertFalse(preciseLocationAdmissions.getValue(123).value.enabled)
+        assertEquals(0, cleanupReliability.reconcileCount)
+        verifySuspend { ntsocialGatewayRepository.invalidateInboundSession() }
+        verifySuspend(mode = VerifyMode.not) { ntsocialGatewayRepository.activateInboundSession(any()) }
+        verifySuspend(mode = VerifyMode.not) {
+            ntsocialChannelProvisioner.ensureDefaultChannelForSession(any(), any(), any(), any())
+        }
     }
 
     @Test
@@ -804,12 +1102,82 @@ class MeshConnectionManagerImplTest {
         }
     }
 
+    private class RecordingCleanupReliabilityManager(
+        private val currentChannelSet: () -> ChannelSet,
+        private val publishReadback: (ChannelSet) -> Unit,
+        private val result: ChannelReliabilityResult,
+    ) : ChannelReliabilityManager {
+        override val isProtected = MutableStateFlow(false)
+
+        var applyCount = 0
+            private set
+
+        var reconcileCount = 0
+            private set
+
+        var expectedNodeNum: Int? = null
+            private set
+
+        var mutationLeaseProvided = false
+            private set
+
+        var requireStableSlots = false
+            private set
+
+        var writeOrder = ChannelWriteOrder.SLOT_INDEX
+            private set
+
+        lateinit var desiredChannelSet: ChannelSet
+            private set
+
+        override suspend fun applyAndVerify(channelSet: ChannelSet): ChannelReliabilityResult = result
+
+        override suspend fun applyCurrentAndVerify(
+            expectedNodeNum: Int,
+            mutationLease: ChannelMutationLock.Lease?,
+            requireStableSlots: Boolean,
+            writeOrder: ChannelWriteOrder,
+            transform: (ChannelSet) -> ChannelSet,
+        ): ChannelReliabilityResult {
+            applyCount += 1
+            this.expectedNodeNum = expectedNodeNum
+            mutationLeaseProvided = mutationLease != null
+            this.requireStableSlots = requireStableSlots
+            this.writeOrder = writeOrder
+            val current = currentChannelSet()
+            desiredChannelSet = transform(current)
+            if (result == ChannelReliabilityResult.VERIFIED) {
+                publishReadback(desiredChannelSet.copy(lora_config = current.lora_config))
+            }
+            return result
+        }
+
+        override suspend fun protectCurrentChannelSet(): ChannelReliabilityResult = ChannelReliabilityResult.PROTECTED
+
+        override suspend fun disableProtection(): ChannelReliabilityResult =
+            ChannelReliabilityResult.PROTECTION_DISABLED
+
+        override suspend fun reconcileProtectedChannelSet(): ChannelReliabilityResult {
+            reconcileCount += 1
+            return ChannelReliabilityResult.NO_SNAPSHOT
+        }
+    }
+
     private class RecordingLocationManager : MeshLocationManager {
         val events = mutableListOf<String>()
+        private val callbacks = mutableListOf<(org.meshtastic.proto.Position) -> Unit>()
+        val callbackCount: Int
+            get() = callbacks.size
 
         override fun start(scope: CoroutineScope, sendPositionFn: (org.meshtastic.proto.Position) -> Unit) {
             events += "start"
+            callbacks += sendPositionFn
         }
+
+        fun emit(position: org.meshtastic.proto.Position) = callbacks.last().invoke(position)
+
+        fun emitFrom(callbackIndex: Int, position: org.meshtastic.proto.Position) =
+            callbacks[callbackIndex].invoke(position)
 
         override fun restart() {
             events += "restart"
@@ -821,6 +1189,33 @@ class MeshConnectionManagerImplTest {
             events += "stop"
         }
     }
+
+    private fun preciseLocationChannelSet(): ChannelSet = ChannelSet(
+        settings =
+        listOf(
+            ChannelSettings(name = "Primary", module_settings = ModuleSettings(position_precision = 0)),
+            ChannelSettings(name = "Private", module_settings = ModuleSettings(position_precision = 32)),
+        ),
+    )
+
+    private fun cleanupPendingChannelSet(): ChannelSet = ChannelSet(
+        settings =
+        listOf(
+            ChannelSettings(name = "Primary", module_settings = ModuleSettings(position_precision = 15)),
+            ChannelSettings(name = "Private 1", module_settings = ModuleSettings(position_precision = 13)),
+            ChannelSettings(name = "Private 2", module_settings = ModuleSettings(position_precision = 13)),
+            ChannelSettings(name = "Private 3", module_settings = ModuleSettings(position_precision = 13)),
+            ChannelSettings(name = "NTsocial", module_settings = ModuleSettings(position_precision = 32)),
+        ),
+        lora_config = Config.LoRaConfig(region = Config.LoRaConfig.RegionCode.TW),
+    )
+
+    private fun preciseLocationAdmission(): PreciseLocationAdmission = PreciseLocationAdmission(
+        enabled = true,
+        channelIndex = 1,
+        channelIdentity =
+        requireNotNull(PreciseLocationChannelSetPlanner.channelIdentity(preciseLocationChannelSet(), 1)),
+    )
 
     private companion object {
         const val SESSION_EPOCH = 42L

@@ -902,6 +902,8 @@ class NtsocialGatewayRepositoryImplTest {
 
         override fun requestPosition(destNum: Int, currentPosition: Position) = Unit
 
+        override fun requestPositionOnChannel(destNum: Int, currentPosition: Position, channelIndex: Int) = Unit
+
         override fun setFixedPosition(destNum: Int, pos: Position) = Unit
 
         override fun requestUserInfo(destNum: Int) = Unit

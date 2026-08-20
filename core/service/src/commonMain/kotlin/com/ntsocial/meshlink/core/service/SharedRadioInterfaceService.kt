@@ -597,6 +597,16 @@ class SharedRadioInterfaceService(
                 .isSuccess
         }
 
+    override fun runIfCurrentRadioSession(expectedRadioSessionEpoch: Long, block: () -> Unit): Boolean =
+        synchronized(transportCallbackLock) {
+            val session = _radioSessionState.value
+            if (session.epoch != expectedRadioSessionEpoch || !session.isConfiguredReady) {
+                return@synchronized false
+            }
+            block()
+            true
+        }
+
     private fun enqueueTransportSend(transport: RadioTransport, bytes: ByteArray) {
         _serviceScope.handledLaunch {
             transport.handleSendToRadio(bytes)

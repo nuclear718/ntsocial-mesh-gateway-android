@@ -34,8 +34,10 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MeshUser
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Position
+import com.ntsocial.meshlink.core.model.PreciseLocationChannelSetPlanner
 import com.ntsocial.meshlink.core.model.Reaction
 import com.ntsocial.meshlink.core.model.service.ServiceAction
+import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.DataPair
 import com.ntsocial.meshlink.core.repository.MeshActionHandler
@@ -51,6 +53,8 @@ import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.UiPrefs
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okio.ByteString
@@ -59,6 +63,7 @@ import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.OTAMode
@@ -80,11 +85,14 @@ class MeshActionHandlerImpl(
     private val notificationManager: NotificationManager,
     private val messageProcessor: Lazy<MeshMessageProcessor>,
     private val radioConfigRepository: RadioConfigRepository,
+    private val channelMutationLock: ChannelMutationLock,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) : MeshActionHandler {
 
     private val deviceSwitchMutex = Mutex()
     private val deviceSwitchGeneration = atomic(0L)
+    private val channelSetSnapshot =
+        radioConfigRepository.channelSetFlow.stateIn(scope, SharingStarted.Eagerly, ChannelSet())
 
     companion object {
         private const val DEFAULT_REBOOT_DELAY = 5
@@ -227,20 +235,26 @@ class MeshActionHandlerImpl(
         analytics.track("data_send", DataPair("num_bytes", bytes.size), DataPair("type", p.dataType))
     }
 
+    @Suppress("UNUSED_PARAMETER")
     override fun handleRequestPosition(destNum: Int, position: Position, myNodeNum: Int) {
         if (destNum != myNodeNum) {
-            val provideLocation = uiPrefs.shouldProvideNodeLocation(myNodeNum).value
-            val currentPosition =
-                when {
-                    provideLocation && position.isValid() -> position
-
-                    provideLocation ->
-                        nodeManager.nodeDBbyNodeNum[myNodeNum]?.position?.let { Position(it) }?.takeIf { it.isValid() }
-                            ?: Position(0.0, 0.0, 0)
-
-                    else -> Position(0.0, 0.0, 0)
-                }
-            commandSender.requestPosition(destNum, currentPosition)
+            val admission = uiPrefs.preciseLocationAdmission(myNodeNum).value
+            val preciseRouteVerified =
+                admission.enabled &&
+                    channelMutationLock.activeOrPendingOwners.value == 0 &&
+                    PreciseLocationChannelSetPlanner.matchesPolicy(
+                        channelSetSnapshot.value,
+                        admission.channelIndex,
+                        admission.channelIdentity,
+                    )
+            // Requests never piggyback our coordinate. The verified channel selects where the remote node replies;
+            // phone GPS sharing is handled independently by the local-radio feed.
+            val emptyRequest = Position(0.0, 0.0, 0)
+            if (preciseRouteVerified) {
+                commandSender.requestPositionOnChannel(destNum, emptyRequest, admission.channelIndex)
+            } else {
+                commandSender.requestPosition(destNum, emptyRequest)
+            }
         }
     }
 

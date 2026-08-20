@@ -29,12 +29,14 @@ import com.ntsocial.meshlink.core.domain.usecase.session.EnsureSessionResult
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Position
+import com.ntsocial.meshlink.core.model.PreciseLocationChannelSetPlanner
 import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelProtectionSnapshot
 import com.ntsocial.meshlink.core.repository.ChannelReadbackCompletion
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
 import com.ntsocial.meshlink.core.repository.ChannelSnapshotRepository
+import com.ntsocial.meshlink.core.repository.ChannelWriteOrder
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MeshConfigFlowManager
 import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
@@ -61,12 +63,14 @@ import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.decodeHex
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.LocalConfig
 import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.ModuleSettings
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Routing
 import kotlin.test.Test
@@ -188,6 +192,154 @@ class ChannelReliabilityManagerImplTest {
         assertEquals(listOf("begin", "channel:0", "channel:1", "commit"), fixture.commandSender.events())
         assertTrue("config" !in fixture.commandSender.events())
         assertEquals(1, fixture.readbackRequests)
+    }
+
+    @Test
+    fun `stable-slot apply rejects an internal hole before any admin write`() = runTest {
+        val fixture = Fixture(backgroundScope, maxChannels = 3)
+        fixture.channelSetFlow.value = fixture.channelSet(fixture.primary, ChannelSettings(), fixture.secondary)
+
+        val result =
+            fixture.manager.applyCurrentAndVerify(expectedNodeNum = NODE_NUM, requireStableSlots = true) { current ->
+                PreciseLocationChannelSetPlanner.plan(current, targetIndex = 2)
+            }
+
+        assertEquals(ChannelReliabilityResult.INVALID_CHANNEL_SET, result)
+        assertTrue(fixture.commandSender.messages.isEmpty())
+        assertEquals(0, fixture.readbackRequests)
+        assertTrue(fixture.gatewayLifecycle.isEmpty())
+    }
+
+    @Test
+    fun `stable-slot apply rejects a duplicate before the target before any admin write`() = runTest {
+        val fixture = Fixture(backgroundScope, maxChannels = 4)
+        fixture.channelSetFlow.value =
+            fixture.channelSet(fixture.primary, fixture.secondary, fixture.secondary, fixture.changedSecondary)
+
+        val result =
+            fixture.manager.applyCurrentAndVerify(expectedNodeNum = NODE_NUM, requireStableSlots = true) { current ->
+                PreciseLocationChannelSetPlanner.plan(current, targetIndex = 3)
+            }
+
+        assertEquals(ChannelReliabilityResult.INVALID_CHANNEL_SET, result)
+        assertTrue(fixture.commandSender.messages.isEmpty())
+        assertEquals(0, fixture.readbackRequests)
+        assertTrue(fixture.gatewayLifecycle.isEmpty())
+    }
+
+    @Test
+    fun `same-node epoch rotation after current snapshot capture cannot write the replacement session`() = runTest {
+        val fixture = Fixture(backgroundScope)
+
+        val result =
+            fixture.manager.applyCurrentAndVerify(expectedNodeNum = NODE_NUM) { current ->
+                fixture.reconnectSameRadio()
+                current.copy(lora_config = null)
+            }
+
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
+        assertTrue(fixture.commandSender.messages.isEmpty())
+        assertEquals(0, fixture.readbackRequests)
+        assertTrue(fixture.gatewayLifecycle.isEmpty())
+    }
+
+    @Test
+    fun `readback generation rotation after current snapshot capture rejects stale policy writes`() = runTest {
+        val fixture = Fixture(backgroundScope)
+
+        val result =
+            fixture.manager.applyCurrentAndVerify(expectedNodeNum = NODE_NUM) { current ->
+                fixture.readbackGeneration.value += 1
+                current.copy(lora_config = null)
+            }
+
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
+        assertTrue(fixture.commandSender.messages.isEmpty())
+        assertEquals(0, fixture.readbackRequests)
+        assertTrue(fixture.gatewayLifecycle.isEmpty())
+    }
+
+    @Test
+    fun `precise slot switch clears every p0 slot before writing the sole p32 target`() = runTest {
+        val fixture = Fixture(backgroundScope, maxChannels = 5)
+        val current = fixture.highSlotPreciseSet()
+        val desired = PreciseLocationChannelSetPlanner.plan(current, targetIndex = 1).copy(lora_config = fixture.lora)
+        fixture.channelSetFlow.value = current
+        fixture.nextReadback = desired
+
+        val result =
+            fixture.manager.applyCurrentAndVerify(
+                expectedNodeNum = NODE_NUM,
+                requireStableSlots = true,
+                writeOrder = ChannelWriteOrder.PRECISE_POSITION_TARGET_LAST,
+            ) { snapshot ->
+                PreciseLocationChannelSetPlanner.plan(snapshot, targetIndex = 1)
+            }
+
+        assertEquals(ChannelReliabilityResult.VERIFIED, result)
+        val writes = fixture.commandSender.channelWrites()
+        assertEquals(listOf(0, 2, 3, 4, 1), writes.map(Channel::index))
+        assertTrue(writes.dropLast(1).all { channel -> channel.positionPrecision == 0 })
+        assertEquals(PreciseLocationChannelSetPlanner.PRECISE_POSITION_BITS, writes.last().positionPrecision)
+        assertAtMostOnePrecisePositionInEveryPrefix(current, writes)
+    }
+
+    @Test
+    fun `intermediate p0 NAK never reaches the new p32 target`() = runTest {
+        val fixture = Fixture(backgroundScope, maxChannels = 5)
+        val current = fixture.highSlotPreciseSet()
+        fixture.channelSetFlow.value = current
+        fixture.commandSender.outcomes += AdminOutcome() // begin
+        fixture.commandSender.outcomes += AdminOutcome() // p0 slot 0
+        fixture.commandSender.outcomes += AdminOutcome() // p0 slot 2
+        fixture.commandSender.outcomes += AdminOutcome() // p0 slot 3
+        fixture.commandSender.outcomes += AdminOutcome(routingError = Routing.Error.NO_ROUTE) // p0 old slot 4
+        fixture.commandSender.outcomes += AdminOutcome() // cleanup commit
+
+        val result =
+            fixture.manager.applyCurrentAndVerify(
+                expectedNodeNum = NODE_NUM,
+                requireStableSlots = true,
+                writeOrder = ChannelWriteOrder.PRECISE_POSITION_TARGET_LAST,
+            ) { snapshot ->
+                PreciseLocationChannelSetPlanner.plan(snapshot, targetIndex = 1)
+            }
+
+        assertEquals(ChannelReliabilityResult.RADIO_REJECTED, result)
+        val writes = fixture.commandSender.channelWrites()
+        assertEquals(listOf(0, 2, 3, 4), writes.map(Channel::index))
+        assertTrue(writes.all { channel -> channel.positionPrecision == 0 })
+        assertAtMostOnePrecisePositionInEveryPrefix(current, writes)
+        assertEquals(0, fixture.readbackRequests)
+    }
+
+    @Test
+    fun `intermediate p0 timeout never reaches the new p32 target`() = runTest {
+        val fixture = Fixture(backgroundScope, maxChannels = 5)
+        val current = fixture.highSlotPreciseSet()
+        fixture.channelSetFlow.value = current
+        fixture.commandSender.outcomes += AdminOutcome() // begin
+        fixture.commandSender.outcomes += AdminOutcome() // p0 slot 0
+        fixture.commandSender.outcomes += AdminOutcome() // p0 slot 2
+        fixture.commandSender.outcomes += AdminOutcome() // p0 slot 3
+        fixture.commandSender.outcomes += AdminOutcome(emitRoutingResponse = false) // p0 old slot 4
+        fixture.commandSender.outcomes += AdminOutcome() // cleanup commit
+
+        val result =
+            fixture.manager.applyCurrentAndVerify(
+                expectedNodeNum = NODE_NUM,
+                requireStableSlots = true,
+                writeOrder = ChannelWriteOrder.PRECISE_POSITION_TARGET_LAST,
+            ) { snapshot ->
+                PreciseLocationChannelSetPlanner.plan(snapshot, targetIndex = 1)
+            }
+
+        assertEquals(ChannelReliabilityResult.SESSION_UNAVAILABLE, result)
+        val writes = fixture.commandSender.channelWrites()
+        assertEquals(listOf(0, 2, 3, 4), writes.map(Channel::index))
+        assertTrue(writes.all { channel -> channel.positionPrecision == 0 })
+        assertAtMostOnePrecisePositionInEveryPrefix(current, writes)
+        assertEquals(0, fixture.readbackRequests)
     }
 
     @Test
@@ -411,9 +563,8 @@ class ChannelReliabilityManagerImplTest {
         assertEquals(0, fixture.readbackRequests)
     }
 
-    private class Fixture(scope: CoroutineScope) {
+    private class Fixture(scope: CoroutineScope, val maxChannels: Int = 2) {
         val identity = "0011223344556677"
-        val maxChannels = 2
         val lora = Config.LoRaConfig(region = Config.LoRaConfig.RegionCode.TW)
         val primary = channel("primary", "01")
         val secondary = channel("secondary", "02")
@@ -513,6 +664,18 @@ class ChannelReliabilityManagerImplTest {
         fun channelSet(vararg settings: ChannelSettings): ChannelSet =
             ChannelSet(settings = settings.toList(), lora_config = lora)
 
+        fun highSlotPreciseSet(): ChannelSet = channelSet(
+            positionedChannel("primary", "01010101010101010101010101010101", positionPrecision = 0),
+            positionedChannel("new-low-target", "02020202020202020202020202020202", positionPrecision = 0),
+            positionedChannel("middle-two", "03030303030303030303030303030303", positionPrecision = 0),
+            positionedChannel("middle-three", "04040404040404040404040404040404", positionPrecision = 0),
+            positionedChannel(
+                "old-high-target",
+                "05050505050505050505050505050505",
+                positionPrecision = PreciseLocationChannelSetPlanner.PRECISE_POSITION_BITS,
+            ),
+        )
+
         fun switchRadio() {
             radioSessionState.value = readySession(epoch = radioSessionState.value.epoch + 1, address = RADIO_B)
             nodeRepository.setMyNodeInfo(
@@ -531,6 +694,9 @@ class ChannelReliabilityManagerImplTest {
 
         private fun channel(name: String, psk: String): ChannelSettings =
             ChannelSettings(name = name, psk = psk.decodeHex())
+
+        private fun positionedChannel(name: String, psk: String, positionPrecision: Int): ChannelSettings =
+            channel(name, psk).copy(module_settings = ModuleSettings(position_precision = positionPrecision))
 
         private fun readySession(epoch: Long, address: String): RadioSessionState = RadioSessionState(
             epoch = epoch,
@@ -622,6 +788,8 @@ class ChannelReliabilityManagerImplTest {
 
         override fun requestPosition(destNum: Int, currentPosition: Position) = Unit
 
+        override fun requestPositionOnChannel(destNum: Int, currentPosition: Position, channelIndex: Int) = Unit
+
         override fun setFixedPosition(destNum: Int, pos: Position) = Unit
 
         override fun requestUserInfo(destNum: Int) = Unit
@@ -641,6 +809,8 @@ class ChannelReliabilityManagerImplTest {
                 else -> "other"
             }
         }
+
+        fun channelWrites(): List<Channel> = messages.mapNotNull { message -> message.set_channel }
     }
 
     private class InMemoryChannelSnapshotRepository : ChannelSnapshotRepository {
@@ -675,3 +845,22 @@ class ChannelReliabilityManagerImplTest {
         const val NODE_NUM = 123
     }
 }
+
+private fun assertAtMostOnePrecisePositionInEveryPrefix(initial: ChannelSet, writes: List<Channel>) {
+    val liveSettings = initial.settings.toMutableList()
+    assertTrue(liveSettings.count(ChannelSettings::isPrecisePosition) <= 1)
+    writes.forEach { write ->
+        while (liveSettings.size <= write.index) liveSettings += ChannelSettings()
+        liveSettings[write.index] = assertNotNull(write.settings)
+        assertTrue(
+            liveSettings.count(ChannelSettings::isPrecisePosition) <= 1,
+            "Write prefix through slot ${write.index} exposed more than one p32 channel",
+        )
+    }
+}
+
+private val Channel.positionPrecision: Int
+    get() = settings?.module_settings?.position_precision ?: 0
+
+private fun ChannelSettings.isPrecisePosition(): Boolean =
+    module_settings?.position_precision == PreciseLocationChannelSetPlanner.PRECISE_POSITION_BITS

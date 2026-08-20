@@ -93,8 +93,23 @@ interface CommandSender {
     /** Sends our current position to the mesh. */
     fun sendPosition(pos: org.meshtastic.proto.Position, destNum: Int? = null, wantResponse: Boolean = false)
 
+    /**
+     * Feeds one phone position to the exact configured local-radio session and awaits firmware queue admission.
+     *
+     * Implementations must address [expectedNodeNum] directly rather than resolving a possibly replaced current node,
+     * and must not update the local app database unless that exact packet was accepted.
+     */
+    suspend fun sendPhonePositionForSession(
+        pos: org.meshtastic.proto.Position,
+        expectedNodeNum: Int,
+        expectedRadioSessionEpoch: Long,
+    ): Boolean = false
+
     /** Requests the position of a specific node. */
     fun requestPosition(destNum: Int, currentPosition: Position)
+
+    /** Requests position over an explicitly verified shared channel. */
+    fun requestPositionOnChannel(destNum: Int, currentPosition: Position, channelIndex: Int)
 
     /** Sets a fixed position for a node. */
     fun setFixedPosition(destNum: Int, pos: Position)

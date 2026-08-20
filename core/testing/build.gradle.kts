@@ -43,6 +43,7 @@ kotlin {
             implementation(projects.core.ble)
             implementation(projects.core.datastore)
             implementation(libs.androidx.room.runtime)
+            implementation(libs.kotlinx.atomicfu)
             api(libs.kermit)
 
             // Testing libraries - these are public API for all test consumers

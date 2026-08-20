@@ -146,8 +146,42 @@ interface UiPrefs {
 
     fun shouldProvideNodeLocation(nodeNum: Int): StateFlow<Boolean>
 
+    /** Legacy compatibility setter. It may revoke sharing but must never enable a feed without verified admission. */
     fun setShouldProvideNodeLocation(nodeNum: Int, provide: Boolean)
+
+    /** Selected radio channel index for exact phone-location sharing, or `-1` when none has been selected. */
+    fun preciseLocationChannelIndex(nodeNum: Int): StateFlow<Int>
+
+    /** One atomic preference snapshot used to admit exact phone-location forwarding. */
+    fun preciseLocationAdmission(nodeNum: Int): StateFlow<PreciseLocationAdmission>
+
+    /** Reads persisted admission authoritatively instead of trusting a StateFlow's cold-start initial value. */
+    suspend fun readPreciseLocationAdmission(nodeNum: Int): PreciseLocationAdmission =
+        preciseLocationAdmission(nodeNum).value
+
+    /** Legacy preselection setter. Changing only an index must revoke admission and clear its channel identity. */
+    fun setPreciseLocationChannelIndex(nodeNum: Int, channelIndex: Int)
+
+    /** Atomically changes exact-location admission, cleanup state, and its selected channel. */
+    suspend fun setPreciseLocationSharing(
+        nodeNum: Int,
+        provide: Boolean,
+        channelIndex: Int,
+        channelIdentity: String = "",
+        cleanupPending: Boolean = false,
+    )
+
+    /** Clears cleanup only after a verified all-p0 radio readback; this operation can never restore consent. */
+    suspend fun clearPreciseLocationCleanupPending(nodeNum: Int)
 }
+
+/** Atomic user-consent, radio cleanup, and channel selection state for exact phone-location forwarding. */
+data class PreciseLocationAdmission(
+    val enabled: Boolean = false,
+    val channelIndex: Int = -1,
+    val channelIdentity: String = "",
+    val cleanupPending: Boolean = false,
+)
 
 /** Reactive interface for notification preferences. */
 interface NotificationPrefs {

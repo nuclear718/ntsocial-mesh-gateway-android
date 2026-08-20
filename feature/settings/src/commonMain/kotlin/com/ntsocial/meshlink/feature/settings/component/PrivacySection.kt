@@ -25,65 +25,38 @@
 package com.ntsocial.meshlink.feature.settings.component
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.app_settings
-import com.ntsocial.meshlink.core.resources.location_disabled
-import com.ntsocial.meshlink.core.resources.provide_location_to_mesh
-import com.ntsocial.meshlink.core.ui.component.SwitchListItem
+import com.ntsocial.meshlink.core.resources.precise_location_change_channel
+import com.ntsocial.meshlink.core.resources.precise_location_off_summary
+import com.ntsocial.meshlink.core.resources.precise_location_sharing
+import com.ntsocial.meshlink.core.ui.component.ListItem
 import com.ntsocial.meshlink.core.ui.icon.LocationOn
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
-import com.ntsocial.meshlink.core.ui.util.isGpsDisabled
-import com.ntsocial.meshlink.core.ui.util.isLocationPermissionGranted
-import com.ntsocial.meshlink.core.ui.util.rememberRequestLocationPermission
-import com.ntsocial.meshlink.core.ui.util.rememberShowToastResource
 import org.jetbrains.compose.resources.stringResource
 
 /** Section managing local privacy settings such as optional phone-location forwarding. */
 @Composable
+@Suppress("ModifierMissing")
 fun PrivacySection(
     provideLocation: Boolean,
-    onToggleLocation: (Boolean) -> Unit,
+    onOpenPreciseLocationSettings: () -> Unit,
     homoglyphEnabled: Boolean,
     onToggleHomoglyph: () -> Unit,
-    startProvideLocation: () -> Unit,
-    stopProvideLocation: () -> Unit,
 ) {
-    val showToast = rememberShowToastResource()
-    val isLocationGranted = isLocationPermissionGranted()
-    val isGpsOff = isGpsDisabled()
-    val requestLocationPermission =
-        rememberRequestLocationPermission(
-            onGranted = { startProvideLocation() },
-            onDenied = {
-                onToggleLocation(false)
-                stopProvideLocation()
-            },
-        )
-
-    LaunchedEffect(provideLocation, isLocationGranted, isGpsOff) {
-        if (provideLocation) {
-            if (isLocationGranted) {
-                if (!isGpsOff) {
-                    startProvideLocation()
-                } else {
-                    showToast(Res.string.location_disabled)
-                }
-            } else {
-                requestLocationPermission()
-            }
-        } else {
-            stopProvideLocation()
-        }
-    }
-
     ExpressiveSection(title = stringResource(Res.string.app_settings)) {
-        SwitchListItem(
-            text = stringResource(Res.string.provide_location_to_mesh),
+        ListItem(
+            text = stringResource(Res.string.precise_location_sharing),
+            supportingText =
+            stringResource(
+                if (provideLocation) {
+                    Res.string.precise_location_change_channel
+                } else {
+                    Res.string.precise_location_off_summary
+                },
+            ),
             leadingIcon = MeshtasticIcons.LocationOn,
-            enabled = !isGpsOff || provideLocation,
-            checked = provideLocation,
-            onClick = { onToggleLocation(!provideLocation) },
+            onClick = onOpenPreciseLocationSettings,
         )
 
         HomoglyphSetting(homoglyphEncodingEnabled = homoglyphEnabled, onToggle = onToggleHomoglyph)

@@ -29,7 +29,9 @@ import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MeshUser
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.model.Position
+import com.ntsocial.meshlink.core.model.PreciseLocationChannelSetPlanner
 import com.ntsocial.meshlink.core.model.service.ServiceAction
+import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MeshDataHandler
 import com.ntsocial.meshlink.core.repository.MeshMessageProcessor
@@ -38,6 +40,7 @@ import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.NotificationManager
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
+import com.ntsocial.meshlink.core.repository.PreciseLocationAdmission
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.UiPrefs
@@ -51,17 +54,22 @@ import dev.mokkery.mock
 import dev.mokkery.verify
 import dev.mokkery.verify.VerifyMode.Companion.not
 import dev.mokkery.verifySuspend
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.ModuleSettings
 import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import kotlin.test.BeforeTest
@@ -84,8 +92,11 @@ class MeshActionHandlerImplTest {
     private val notificationManager = mock<NotificationManager>(MockMode.autofill)
     private val messageProcessor = mock<MeshMessageProcessor>(MockMode.autofill)
     private val radioConfigRepository = mock<RadioConfigRepository>(MockMode.autofill)
+    private val channelMutationLock = ChannelMutationLock()
 
     private val myNodeNumFlow = MutableStateFlow<Int?>(MY_NODE_NUM)
+    private val channelSetFlow = MutableStateFlow(preciseLocationChannelSet())
+    private val preciseLocationAdmissions = mutableMapOf<Int, MutableStateFlow<PreciseLocationAdmission>>()
 
     private lateinit var handler: MeshActionHandlerImpl
 
@@ -102,6 +113,11 @@ class MeshActionHandlerImplTest {
         every { nodeManager.myNodeNum } returns myNodeNumFlow
         every { nodeManager.getMyId() } returns "!12345678"
         every { nodeManager.nodeDBbyNodeNum } returns emptyMap()
+        every { radioConfigRepository.channelSetFlow } returns channelSetFlow
+        every { uiPrefs.preciseLocationAdmission(any()) } calls
+            { call ->
+                preciseLocationAdmissions.getOrPut(call.arg(0)) { MutableStateFlow(PreciseLocationAdmission()) }
+            }
     }
 
     private fun createHandler(scope: CoroutineScope): MeshActionHandlerImpl = MeshActionHandlerImpl(
@@ -117,6 +133,7 @@ class MeshActionHandlerImplTest {
         notificationManager = notificationManager,
         messageProcessor = lazy { messageProcessor },
         radioConfigRepository = radioConfigRepository,
+        channelMutationLock = channelMutationLock,
         scope = scope,
     )
 
@@ -407,33 +424,36 @@ class MeshActionHandlerImplTest {
     }
 
     @Test
-    fun handleRequestPosition_provideLocation_validPosition_usesGivenPosition() {
+    fun handleRequestPosition_preciseRoute_neverPiggybacksLocalPosition() {
         handler = createHandler(testScope)
-        every { uiPrefs.shouldProvideNodeLocation(MY_NODE_NUM) } returns MutableStateFlow(true)
+        preciseLocationAdmissions.getOrPut(MY_NODE_NUM) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            preciseLocationAdmission()
 
         val validPosition = Position(37.7749, -122.4194, 10)
         handler.handleRequestPosition(REMOTE_NODE_NUM, validPosition, MY_NODE_NUM)
 
-        verify { commandSender.requestPosition(REMOTE_NODE_NUM, validPosition) }
+        verify { commandSender.requestPositionOnChannel(REMOTE_NODE_NUM, Position(0.0, 0.0, 0), 1) }
     }
 
     @Test
     fun handleRequestPosition_provideLocation_invalidPosition_fallsBackToNodeDB() {
         handler = createHandler(testScope)
-        every { uiPrefs.shouldProvideNodeLocation(MY_NODE_NUM) } returns MutableStateFlow(true)
+        preciseLocationAdmissions.getOrPut(MY_NODE_NUM) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            preciseLocationAdmission()
         every { nodeManager.nodeDBbyNodeNum } returns emptyMap()
 
         val invalidPosition = Position(0.0, 0.0, 0)
         handler.handleRequestPosition(REMOTE_NODE_NUM, invalidPosition, MY_NODE_NUM)
 
         // Falls back to Position(0.0, 0.0, 0) when node has no position in DB
-        verify { commandSender.requestPosition(any(), any()) }
+        verify { commandSender.requestPositionOnChannel(any(), any(), 1) }
     }
 
     @Test
     fun handleRequestPosition_doNotProvide_sendsZeroPosition() {
         handler = createHandler(testScope)
-        every { uiPrefs.shouldProvideNodeLocation(MY_NODE_NUM) } returns MutableStateFlow(false)
+        preciseLocationAdmissions.getOrPut(MY_NODE_NUM) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            PreciseLocationAdmission(enabled = false, channelIndex = 1)
 
         val validPosition = Position(37.7749, -122.4194, 10)
         handler.handleRequestPosition(REMOTE_NODE_NUM, validPosition, MY_NODE_NUM)
@@ -441,6 +461,41 @@ class MeshActionHandlerImplTest {
         // Should send zero position regardless of valid input
         verify { commandSender.requestPosition(any(), any()) }
     }
+
+    @Test
+    fun handleRequestPosition_channelMutationNeverUsesPreciseRoute() = runTest(testDispatcher) {
+        handler = createHandler(backgroundScope)
+        preciseLocationAdmissions.getOrPut(MY_NODE_NUM) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            preciseLocationAdmission()
+        val releaseMutation = CompletableDeferred<Unit>()
+        backgroundScope.launch { channelMutationLock.withLock { releaseMutation.await() } }
+        advanceUntilIdle()
+
+        handler.handleRequestPosition(
+            REMOTE_NODE_NUM,
+            Position(latitude = 25.1234567, longitude = 121.7654321, altitude = 42),
+            MY_NODE_NUM,
+        )
+
+        verify { commandSender.requestPosition(REMOTE_NODE_NUM, Position(0.0, 0.0, 0)) }
+        verify(not) { commandSender.requestPositionOnChannel(any(), any(), any()) }
+        releaseMutation.complete(Unit)
+    }
+
+    private fun preciseLocationChannelSet(): ChannelSet = ChannelSet(
+        settings =
+        listOf(
+            ChannelSettings(name = "Primary", module_settings = ModuleSettings(position_precision = 0)),
+            ChannelSettings(name = "Private", module_settings = ModuleSettings(position_precision = 32)),
+        ),
+    )
+
+    private fun preciseLocationAdmission(): PreciseLocationAdmission = PreciseLocationAdmission(
+        enabled = true,
+        channelIndex = 1,
+        channelIdentity =
+        requireNotNull(PreciseLocationChannelSetPlanner.channelIdentity(preciseLocationChannelSet(), 1)),
+    )
 
     // ---- handleSetConfig: optimistic persist ----
 

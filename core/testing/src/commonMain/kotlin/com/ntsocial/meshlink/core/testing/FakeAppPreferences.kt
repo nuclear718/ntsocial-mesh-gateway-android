@@ -30,6 +30,7 @@ import com.ntsocial.meshlink.core.repository.FilterPrefs
 import com.ntsocial.meshlink.core.repository.HomoglyphPrefs
 import com.ntsocial.meshlink.core.repository.MapConsentPrefs
 import com.ntsocial.meshlink.core.repository.MeshPrefs
+import com.ntsocial.meshlink.core.repository.PreciseLocationAdmission
 import com.ntsocial.meshlink.core.repository.RadioPrefs
 import com.ntsocial.meshlink.core.repository.UiPrefs
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -170,12 +171,66 @@ class FakeUiPrefs : UiPrefs {
     }
 
     private val nodeLocationEnabled = mutableMapOf<Int, MutableStateFlow<Boolean>>()
+    private val preciseLocationChannels = mutableMapOf<Int, MutableStateFlow<Int>>()
+    private val preciseLocationAdmissions = mutableMapOf<Int, MutableStateFlow<PreciseLocationAdmission>>()
 
     override fun shouldProvideNodeLocation(nodeNum: Int): StateFlow<Boolean> =
-        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(true) }
+        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(false) }
 
+    @Suppress("UNUSED_PARAMETER")
     override fun setShouldProvideNodeLocation(nodeNum: Int, provide: Boolean) {
-        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(provide) }.value = provide
+        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(false) }.value = false
+        val admission = preciseLocationAdmissions.getOrPut(nodeNum) { MutableStateFlow(PreciseLocationAdmission()) }
+        admission.value =
+            admission.value.copy(
+                enabled = false,
+                cleanupPending = admission.value.enabled || admission.value.cleanupPending,
+            )
+    }
+
+    override fun preciseLocationChannelIndex(nodeNum: Int): StateFlow<Int> =
+        preciseLocationChannels.getOrPut(nodeNum) { MutableStateFlow(-1) }
+
+    override fun setPreciseLocationChannelIndex(nodeNum: Int, channelIndex: Int) {
+        preciseLocationChannels.getOrPut(nodeNum) { MutableStateFlow(channelIndex) }.value = channelIndex
+        val admission = preciseLocationAdmissions.getOrPut(nodeNum) { MutableStateFlow(PreciseLocationAdmission()) }
+        admission.value =
+            PreciseLocationAdmission(
+                enabled = false,
+                channelIndex = channelIndex,
+                cleanupPending = admission.value.enabled || admission.value.cleanupPending,
+            )
+        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(false) }.value = false
+    }
+
+    override fun preciseLocationAdmission(nodeNum: Int): StateFlow<PreciseLocationAdmission> =
+        preciseLocationAdmissions.getOrPut(nodeNum) { MutableStateFlow(PreciseLocationAdmission()) }
+
+    override suspend fun readPreciseLocationAdmission(nodeNum: Int): PreciseLocationAdmission =
+        preciseLocationAdmission(nodeNum).value
+
+    override suspend fun setPreciseLocationSharing(
+        nodeNum: Int,
+        provide: Boolean,
+        channelIndex: Int,
+        channelIdentity: String,
+        cleanupPending: Boolean,
+    ) {
+        preciseLocationAdmissions.getOrPut(nodeNum) { MutableStateFlow(PreciseLocationAdmission()) }.value =
+            PreciseLocationAdmission(
+                enabled = provide && !cleanupPending,
+                channelIndex = channelIndex,
+                channelIdentity = channelIdentity,
+                cleanupPending = cleanupPending,
+            )
+        preciseLocationChannels.getOrPut(nodeNum) { MutableStateFlow(channelIndex) }.value = channelIndex
+        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(provide) }.value = provide && !cleanupPending
+    }
+
+    override suspend fun clearPreciseLocationCleanupPending(nodeNum: Int) {
+        val admission = preciseLocationAdmissions.getOrPut(nodeNum) { MutableStateFlow(PreciseLocationAdmission()) }
+        admission.value = admission.value.copy(enabled = false, cleanupPending = false)
+        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(false) }.value = false
     }
 }
 

@@ -50,6 +50,7 @@ import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.LocalConfig
+import org.meshtastic.proto.ModuleSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -101,7 +102,7 @@ class NtsocialChannelProvisionerTest {
     }
 
     @Test
-    fun `does nothing when canonical NTsocial channel already exists`() = runTest {
+    fun `preserves p32 when canonical NTsocial channel already exists`() = runTest {
         val fixture = fixture()
         fixture.repository.setChannelSet(ChannelSet(settings = listOf(canonicalSettings), lora_config = defaultLora))
         fixture.repository.setLocalConfigDirect(configuredLocalConfig)
@@ -109,7 +110,45 @@ class NtsocialChannelProvisionerTest {
         val result = fixture.provisioner.ensureDefaultChannel(MY_NODE_NUM, maxChannels = 8)
 
         assertEquals(NtsocialChannelProvisionResult.AlreadyPresent, result)
+        assertEquals(32, fixture.repository.currentChannelSet.settings.single().positionPrecision)
         assertEquals(emptyList(), fixture.commandSender.events)
+    }
+
+    @Test
+    fun `preserves p0 when other canonical NTsocial fields already match`() = runTest {
+        val fixture = fixture()
+        val existingNtsocial = canonicalSettings.withPositionPrecision(0)
+        fixture.repository.setChannelSet(ChannelSet(settings = listOf(existingNtsocial), lora_config = defaultLora))
+        fixture.repository.setLocalConfigDirect(configuredLocalConfig)
+
+        val result = fixture.provisioner.ensureDefaultChannel(MY_NODE_NUM, maxChannels = 8)
+
+        assertEquals(NtsocialChannelProvisionResult.AlreadyPresent, result)
+        assertEquals(0, fixture.repository.currentChannelSet.settings.single().positionPrecision)
+        assertEquals(emptyList(), fixture.commandSender.events)
+    }
+
+    @Test
+    fun `preserves p0 while repairing other canonical NTsocial fields`() = runTest {
+        val fixture = fixture()
+        val existingNtsocial =
+            canonicalSettings.copy(
+                psk = ByteString.of(9),
+                uplink_enabled = false,
+                downlink_enabled = false,
+                module_settings = ModuleSettings(position_precision = 0, is_muted = true),
+            )
+        val expected = canonicalSettings.withPositionPrecision(0)
+        fixture.repository.setChannelSet(ChannelSet(settings = listOf(otherSettings("Primary"), existingNtsocial)))
+        fixture.repository.setLocalConfigDirect(configuredLocalConfig)
+
+        val result = fixture.provisioner.ensureDefaultChannel(MY_NODE_NUM, maxChannels = 8)
+
+        val provisioned = assertIs<NtsocialChannelProvisionResult.Provisioned>(result)
+        assertEquals(NtsocialChannelChange.UPDATED, provisioned.channelChange)
+        assertEquals(1, provisioned.channelIndex)
+        assertEquals(expected, fixture.repository.currentChannelSet.settings[1])
+        assertEquals(expected, fixture.commandSender.setChannels.single().settings)
     }
 
     @Test
@@ -270,6 +309,12 @@ class NtsocialChannelProvisionerTest {
     private fun otherSettings(name: String): ChannelSettings =
         ChannelSettings(name = name, psk = ByteArray(32) { index -> (name.hashCode() + index).toByte() }.toByteString())
 
+    private fun ChannelSettings.withPositionPrecision(positionPrecision: Int): ChannelSettings =
+        copy(module_settings = (module_settings ?: ModuleSettings()).copy(position_precision = positionPrecision))
+
+    private val ChannelSettings.positionPrecision: Int
+        get() = module_settings?.position_precision ?: 0
+
     private data class Fixture(
         val repository: FakeRadioConfigRepository,
         val commandSender: RecordingCommandSender,
@@ -385,6 +430,8 @@ class NtsocialChannelProvisionerTest {
         override fun sendPosition(pos: org.meshtastic.proto.Position, destNum: Int?, wantResponse: Boolean) = Unit
 
         override fun requestPosition(destNum: Int, currentPosition: Position) = Unit
+
+        override fun requestPositionOnChannel(destNum: Int, currentPosition: Position, channelIndex: Int) = Unit
 
         override fun setFixedPosition(destNum: Int, pos: Position) = Unit
 

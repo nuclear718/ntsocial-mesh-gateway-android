@@ -102,11 +102,12 @@ class SettingsViewModel(
     val provideLocation: StateFlow<Boolean> =
         myNodeInfo
             .flatMapLatest { myNodeEntity ->
-                // When myNodeInfo changes, set up emissions for the "provide-location-nodeNum" pref.
+                // A legacy boolean alone is not an admission. Only the atomic consent + verified-channel tuple may
+                // make the main Settings summary report precise location sharing as enabled.
                 if (myNodeEntity == null) {
                     flowOf(false)
                 } else {
-                    uiPrefs.shouldProvideNodeLocation(myNodeEntity.myNodeNum)
+                    uiPrefs.preciseLocationAdmission(myNodeEntity.myNodeNum).map { admission -> admission.enabled }
                 }
             }
             .stateInWhileSubscribed(initialValue = false)

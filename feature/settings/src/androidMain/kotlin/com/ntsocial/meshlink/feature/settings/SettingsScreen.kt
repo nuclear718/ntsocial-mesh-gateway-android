@@ -233,11 +233,9 @@ fun SettingsScreen(
             if (state.isLocal) {
                 PrivacySection(
                     provideLocation = settingsViewModel.provideLocation.collectAsStateWithLifecycle().value,
-                    onToggleLocation = { settingsViewModel.setProvideLocation(it) },
+                    onOpenPreciseLocationSettings = { onNavigate(SettingsRoute.Position) },
                     homoglyphEnabled = viewModel.homoglyphEncodingEnabledFlow.collectAsStateWithLifecycle(false).value,
                     onToggleHomoglyph = { viewModel.toggleHomoglyphCharactersEncodingEnabled() },
-                    startProvideLocation = { settingsViewModel.startProvidingLocation() },
-                    stopProvideLocation = { settingsViewModel.stopProvidingLocation() },
                 )
 
                 AppearanceSection(

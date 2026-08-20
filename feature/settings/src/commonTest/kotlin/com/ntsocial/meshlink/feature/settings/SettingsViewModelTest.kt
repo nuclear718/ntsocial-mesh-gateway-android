@@ -201,17 +201,27 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `provideLocation flows based on current node`() = runTest {
+    fun `provideLocation requires atomic precise-channel admission for current node`() = runTest {
         val myNodeNum = 456
         nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = myNodeNum))
         runCurrent()
 
         viewModel.provideLocation.test {
-            expectMostRecentItem() shouldBe true // Default in FakeUiPrefs is true
+            awaitItem() shouldBe false
 
-            appPreferences.ui.setShouldProvideNodeLocation(myNodeNum, false)
+            appPreferences.ui.setShouldProvideNodeLocation(myNodeNum, true)
             runCurrent()
-            expectMostRecentItem() shouldBe false
+            viewModel.provideLocation.value shouldBe false
+            expectNoEvents()
+
+            appPreferences.ui.setPreciseLocationSharing(
+                nodeNum = myNodeNum,
+                provide = true,
+                channelIndex = 1,
+                channelIdentity = "test-channel-identity",
+            )
+            runCurrent()
+            awaitItem() shouldBe true
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -252,12 +262,12 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `setProvideLocation updates prefs for current node`() = runTest {
+    fun `legacy setProvideLocation cannot enable unverified location sharing`() = runTest {
         val myNodeNum = 123
         nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = myNodeNum))
 
         viewModel.setProvideLocation(true)
-        appPreferences.ui.shouldProvideNodeLocation(myNodeNum).value shouldBe true
+        appPreferences.ui.shouldProvideNodeLocation(myNodeNum).value shouldBe false
 
         viewModel.setProvideLocation(false)
         appPreferences.ui.shouldProvideNodeLocation(myNodeNum).value shouldBe false

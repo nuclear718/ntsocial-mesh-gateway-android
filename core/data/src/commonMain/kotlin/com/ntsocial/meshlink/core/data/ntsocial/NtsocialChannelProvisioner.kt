@@ -49,6 +49,7 @@ import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
+import org.meshtastic.proto.ModuleSettings
 import kotlin.time.Duration.Companion.seconds
 
 /** Ensures every connected MeshLink-managed radio has the canonical NTsocial channel installed. */
@@ -153,14 +154,18 @@ open class NtsocialChannelProvisioner(
         maxChannels: Int,
     ): ChannelPlanResult {
         val existingIndex = currentSettings.indexOfFirst { it.matchesNtsocial(defaultSettings) }
+        val existingSettings = currentSettings.getOrNull(existingIndex)
+        val desiredSettings =
+            existingSettings?.let { current -> defaultSettings.preservingPositionPrecisionFrom(current) }
+                ?: defaultSettings
         return when {
-            existingIndex >= 0 && currentSettings[existingIndex] == defaultSettings -> ChannelPlanResult()
+            existingSettings == desiredSettings -> ChannelPlanResult()
 
-            existingIndex >= 0 ->
+            existingSettings != null ->
                 ChannelPlanResult(
                     channel =
                     ChannelPlan(
-                        channel = defaultSettings.toChannel(index = existingIndex),
+                        channel = desiredSettings.toChannel(index = existingIndex),
                         change = NtsocialChannelChange.UPDATED,
                     ),
                 )
@@ -177,6 +182,14 @@ open class NtsocialChannelProvisioner(
                 )
         }
     }
+
+    /** Restores canonical channel fields without undoing the user's independently verified location-sharing policy. */
+    private fun ChannelSettings.preservingPositionPrecisionFrom(current: ChannelSettings): ChannelSettings = copy(
+        module_settings =
+        (module_settings ?: ModuleSettings()).copy(
+            position_precision = current.module_settings?.position_precision ?: 0,
+        ),
+    )
 
     private fun ChannelSettings.matchesNtsocial(defaultSettings: ChannelSettings): Boolean =
         name.equals(NtsocialDefaultChannel.CHANNEL_NAME, ignoreCase = true) ||

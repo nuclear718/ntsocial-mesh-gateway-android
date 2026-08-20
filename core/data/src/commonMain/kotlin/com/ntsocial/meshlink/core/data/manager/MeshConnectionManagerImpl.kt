@@ -35,12 +35,14 @@ import com.ntsocial.meshlink.core.data.ntsocial.NtsocialChannelProvisioner
 import com.ntsocial.meshlink.core.data.ntsocial.toDefaultChannelStatus
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DeviceType
+import com.ntsocial.meshlink.core.model.PreciseLocationChannelSetPlanner
 import com.ntsocial.meshlink.core.model.TelemetryType
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
 import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
+import com.ntsocial.meshlink.core.repository.ChannelWriteOrder
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.DataPair
 import com.ntsocial.meshlink.core.repository.HandshakeConstants
@@ -143,6 +145,9 @@ class MeshConnectionManagerImpl(
     /** The node whose desired location callback is currently installed in [locationManager]. */
     @Volatile private var activeLocationNodeNum: Int? = null
 
+    /** Invalidates callbacks retained by a platform provider after stop/reconnect. */
+    @Volatile private var locationCallbackGeneration: Long = 0L
+
     init {
         // Bridge transport-level state into the canonical app-level state.
         // This is the ONLY consumer of RadioInterfaceService.connectionState — it applies
@@ -165,22 +170,38 @@ class MeshConnectionManagerImpl(
                 if (myNodeEntity == null) {
                     flowOf(NodeLocationPreference())
                 } else {
-                    uiPrefs.shouldProvideNodeLocation(myNodeEntity.myNodeNum).map { enabled ->
-                        NodeLocationPreference(myNodeEntity.myNodeNum, enabled)
+                    uiPrefs.preciseLocationAdmission(myNodeEntity.myNodeNum).map { admission ->
+                        NodeLocationPreference(
+                            nodeNum = myNodeEntity.myNodeNum,
+                            enabled = admission.enabled && !admission.cleanupPending,
+                            channelIndex = admission.channelIndex,
+                            channelIdentity = admission.channelIdentity,
+                        )
                     }
                 }
             }
 
-        combine(nodeLocationPreference, serviceRepository.connectionState, radioConfigRepository.localConfigFlow) {
-                preference,
-                connectionState,
-                localConfig,
-            ->
+        combine(
+            nodeLocationPreference,
+            serviceRepository.connectionState,
+            radioConfigRepository.localConfigFlow,
+            radioConfigRepository.channelSetFlow,
+            channelMutationLock.activeOrPendingOwners,
+        ) { preference, connectionState, localConfig, channelSet, channelMutationOwnerCount ->
             LocationRequest(
                 nodeNum = preference.nodeNum,
                 preferenceEnabled = preference.enabled,
                 connected = connectionState == ConnectionState.Connected,
                 fixedPosition = localConfig.position?.fixed_position == true,
+                channelPolicyVerified =
+                preference.channelIndex >= 0 &&
+                    preference.channelIdentity.isNotBlank() &&
+                    PreciseLocationChannelSetPlanner.matchesPolicy(
+                        channelSet,
+                        preference.channelIndex,
+                        preference.channelIdentity,
+                    ),
+                channelMutationInProgress = channelMutationOwnerCount > 0,
             )
         }
             .distinctUntilChanged()
@@ -202,15 +223,47 @@ class MeshConnectionManagerImpl(
         locationReconcileMutex.withLock {
             val nodeNum = request.nodeNum
             if (!request.shouldRun || nodeNum == null) {
+                locationCallbackGeneration += 1
                 activeLocationNodeNum = null
                 locationManager.stop()
                 return
             }
 
             if (activeLocationNodeNum != nodeNum) {
-                if (activeLocationNodeNum != null) locationManager.stop()
-                locationManager.start(scope) { position -> commandSender.sendPosition(position) }
+                if (activeLocationNodeNum != null) {
+                    locationCallbackGeneration += 1
+                    locationManager.stop()
+                }
+                val expectedRadioSessionEpoch = radioInterfaceService.radioSessionState.value.epoch
+                if (!isCurrentActiveSession(expectedRadioSessionEpoch, requireConfigured = true)) {
+                    locationCallbackGeneration += 1
+                    activeLocationNodeNum = null
+                    locationManager.stop()
+                    return
+                }
+                val callbackGeneration = locationCallbackGeneration + 1
+                locationCallbackGeneration = callbackGeneration
                 activeLocationNodeNum = nodeNum
+                locationManager.start(scope) { position ->
+                    scope.handledLaunch {
+                        channelMutationLock.tryWithStableChannels {
+                            val latestRequest = latestLocationRequest.value
+                            val requestIsCurrent = latestRequest.shouldRun && latestRequest.nodeNum == nodeNum
+                            val callbackIsCurrent =
+                                activeLocationNodeNum == nodeNum && locationCallbackGeneration == callbackGeneration
+                            val nodeIsCurrent = nodeRepository.myNodeInfo.value?.myNodeNum == nodeNum
+                            val sessionIsCurrent =
+                                isCurrentActiveSession(expectedRadioSessionEpoch, requireConfigured = true)
+                            if (requestIsCurrent && callbackIsCurrent && nodeIsCurrent && sessionIsCurrent) {
+                                commandSender.sendPhonePositionForSession(
+                                    pos = position,
+                                    expectedNodeNum = nodeNum,
+                                    expectedRadioSessionEpoch = expectedRadioSessionEpoch,
+                                )
+                            }
+                        }
+                    }
+                }
             } else {
                 // Permission grants and Android foreground-service promotion do not change the shared request tuple.
                 // An explicit reconcile must still retry the saved callback without installing a second listener.
@@ -331,6 +384,7 @@ class MeshConnectionManagerImpl(
         packetHandler.stopPacketQueueAndAwait()
         sessionManager.clearAll() // Prevent stale per-node passkeys on reconnect.
         locationReconcileMutex.withLock {
+            locationCallbackGeneration += 1
             activeLocationNodeNum = null
             locationManager.stop()
         }
@@ -493,6 +547,33 @@ class MeshConnectionManagerImpl(
                         true
                     }
                 if (!ingressClosed) return@withLock
+                val preciseLocationAdmission = uiPrefs.readPreciseLocationAdmission(myNodeNum)
+                if (preciseLocationAdmission.cleanupPending) {
+                    val currentChannelSet = radioConfigRepository.channelSetFlow.first()
+                    val cleanupResult =
+                        if (PreciseLocationChannelSetPlanner.isDisabled(currentChannelSet)) {
+                            ChannelReliabilityResult.VERIFIED
+                        } else {
+                            channelReliabilityManager.applyCurrentAndVerify(
+                                expectedNodeNum = myNodeNum,
+                                mutationLease = mutationLease,
+                                requireStableSlots = true,
+                                writeOrder = ChannelWriteOrder.PRECISE_POSITION_TARGET_LAST,
+                                transform = PreciseLocationChannelSetPlanner::disable,
+                            )
+                        }
+                    if (cleanupResult != ChannelReliabilityResult.VERIFIED) {
+                        Logger.w {
+                            "Precise-location cleanup remains pending; Gateway ingress stays closed " +
+                                "result=$cleanupResult"
+                        }
+                        return@withLock
+                    }
+                    if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@withLock
+                    uiPrefs.clearPreciseLocationCleanupPending(myNodeNum)
+                    if (!isCurrentActiveSession(radioSessionEpoch, requireConfigured = true)) return@withLock
+                    Logger.i { "Verified all-p0 precise-location cleanup for node ${myNodeNum.toUInt()}" }
+                }
                 // Reconcile the user-approved snapshot before the built-in channel provisioner can occupy a secondary
                 // slot that is only temporarily missing. This keeps missing-only drift provable and conflict-safe.
                 val repairResult =
@@ -607,19 +688,26 @@ class MeshConnectionManagerImpl(
         )
     }
 
-    private data class NodeLocationPreference(val nodeNum: Int? = null, val enabled: Boolean = false)
+    private data class NodeLocationPreference(
+        val nodeNum: Int? = null,
+        val enabled: Boolean = false,
+        val channelIndex: Int = -1,
+        val channelIdentity: String = "",
+    )
 
     private data class LocationRequest(
         val nodeNum: Int? = null,
         val preferenceEnabled: Boolean = false,
         val connected: Boolean = false,
         val fixedPosition: Boolean = false,
+        val channelPolicyVerified: Boolean = false,
+        val channelMutationInProgress: Boolean = false,
     ) {
         val requested: Boolean
             get() = nodeNum != null && preferenceEnabled && !fixedPosition
 
         val shouldRun: Boolean
-            get() = requested && connected
+            get() = requested && connected && channelPolicyVerified && !channelMutationInProgress
     }
 
     override fun updateTelemetry(t: Telemetry) {

@@ -30,6 +30,8 @@ import com.ntsocial.meshlink.core.model.InterfaceId
 import com.ntsocial.meshlink.core.model.MeshActivity
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.RadioSessionState
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.channels.Channel
@@ -50,6 +52,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
  */
 @Suppress("TooManyFunctions")
 class FakeRadioInterfaceService(override val serviceScope: CoroutineScope = MainScope()) : RadioInterfaceService {
+    private val sessionLock = SynchronizedObject()
 
     override val supportedDeviceTypes: List<DeviceType> = emptyList()
 
@@ -92,41 +95,58 @@ class FakeRadioInterfaceService(override val serviceScope: CoroutineScope = Main
         sentToRadio.add(bytes)
     }
 
-    override fun sendToRadioForSession(bytes: ByteArray, expectedRadioSessionEpoch: Long): Boolean {
-        val session = radioSessionState.value
-        return if (session.epoch == expectedRadioSessionEpoch && session.isConfiguredReady) {
-            sendToRadio(bytes)
-            true
-        } else {
-            false
+    override fun sendToRadioForSession(bytes: ByteArray, expectedRadioSessionEpoch: Long): Boolean =
+        synchronized(sessionLock) {
+            val session = radioSessionState.value
+            if (session.epoch == expectedRadioSessionEpoch && session.isConfiguredReady) {
+                sendToRadio(bytes)
+                true
+            } else {
+                false
+            }
         }
-    }
+
+    override fun runIfCurrentRadioSession(expectedRadioSessionEpoch: Long, block: () -> Unit): Boolean =
+        synchronized(sessionLock) {
+            val session = radioSessionState.value
+            if (session.epoch != expectedRadioSessionEpoch || !session.isConfiguredReady) {
+                return@synchronized false
+            }
+            block()
+            true
+        }
 
     override fun connect() {
         connectCalled = true
-        nextSession(activeDeviceAddress = getDeviceAddress(), connectionState = ConnectionState.Connecting)
+        synchronized(sessionLock) {
+            nextSession(activeDeviceAddress = getDeviceAddress(), connectionState = ConnectionState.Connecting)
+        }
     }
 
     override suspend fun disconnect() {
         connectCalled = false
-        nextSession(activeDeviceAddress = null, connectionState = ConnectionState.Disconnected)
+        synchronized(sessionLock) {
+            nextSession(activeDeviceAddress = null, connectionState = ConnectionState.Disconnected)
+        }
     }
 
     override fun getDeviceAddress(): String? = _currentDeviceAddressFlow.value
 
     override fun setDeviceAddress(deviceAddr: String?): Boolean {
-        _currentDeviceAddressFlow.value = deviceAddr
-        nextSession(
-            selectedDeviceAddress = deviceAddr,
-            activeDeviceAddress = null,
-            connectionState = ConnectionState.Disconnected,
-        )
+        synchronized(sessionLock) {
+            _currentDeviceAddressFlow.value = deviceAddr
+            nextSession(
+                selectedDeviceAddress = deviceAddr,
+                activeDeviceAddress = null,
+                connectionState = ConnectionState.Disconnected,
+            )
+        }
         return true
     }
 
-    override fun markCurrentSessionConfigured(expectedEpoch: Long): Boolean {
+    override fun markCurrentSessionConfigured(expectedEpoch: Long): Boolean = synchronized(sessionLock) {
         val current = _radioSessionState.value
-        return if (
+        if (
             current.epoch == expectedEpoch &&
             current.selectedDeviceAddress != null &&
             current.selectedDeviceAddress == current.activeDeviceAddress &&
@@ -142,16 +162,20 @@ class FakeRadioInterfaceService(override val serviceScope: CoroutineScope = Main
     override fun toInterfaceAddress(interfaceId: InterfaceId, rest: String): String = "$interfaceId:$rest"
 
     override fun onConnect() {
-        _connectionState.value = ConnectionState.Connected
-        nextSession(activeDeviceAddress = getDeviceAddress(), connectionState = ConnectionState.Connected)
+        synchronized(sessionLock) {
+            _connectionState.value = ConnectionState.Connected
+            nextSession(activeDeviceAddress = getDeviceAddress(), connectionState = ConnectionState.Connected)
+        }
     }
 
     override fun onDisconnect(isPermanent: Boolean, errorMessage: String?) {
-        _connectionState.value = ConnectionState.Disconnected
-        nextSession(
-            activeDeviceAddress = _radioSessionState.value.activeDeviceAddress,
-            connectionState = if (isPermanent) ConnectionState.Disconnected else ConnectionState.DeviceSleep,
-        )
+        synchronized(sessionLock) {
+            _connectionState.value = ConnectionState.Disconnected
+            nextSession(
+                activeDeviceAddress = _radioSessionState.value.activeDeviceAddress,
+                connectionState = if (isPermanent) ConnectionState.Disconnected else ConnectionState.DeviceSleep,
+            )
+        }
     }
 
     override fun handleFromRadio(bytes: ByteArray) {
