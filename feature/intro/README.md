@@ -1,14 +1,20 @@
 # `:feature:intro`
 
 ## Overview
-The `:feature:intro` module provides the onboarding experience for new users. It handles the initial welcome flow and requests mandatory permissions (Location, Bluetooth, Notifications).
+The `:feature:intro` module provides the Android onboarding experience for new users. A fresh install first presents
+the NTsocial three-flag language selector (English, Traditional Chinese, and Japanese), then continues into the
+existing welcome and permission flow. Returning installs bypass the selector and preserve their existing startup
+behavior.
 
 ## Key Components
 
 ### 1. `AppIntroductionScreen`
 Orchestrates the multi-step onboarding process.
 
-### 2. Permission Screens
+### 2. `LanguageSelectScreen`
+Uses the released NTsocial Android flag assets and layout before the existing introduction flow.
+
+### 3. Permission Screens
 Dedicated screens for explaining and requesting specific permissions:
 - `LocationScreen`: Necessary for mapping and BLE scanning (on older Android versions).
 - `BluetoothScreen`: Necessary for connecting to radios.

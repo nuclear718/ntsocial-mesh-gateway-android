@@ -47,6 +47,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
+import androidx.core.os.LocaleListCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -59,6 +60,7 @@ import com.ntsocial.meshlink.core.barcode.rememberBarcodeScanner
 import com.ntsocial.meshlink.core.navigation.DEEP_LINK_BASE_URI
 import com.ntsocial.meshlink.core.network.repository.UsbRepository
 import com.ntsocial.meshlink.core.nfc.NfcScannerEffect
+import com.ntsocial.meshlink.core.repository.UiPrefs
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.channel_invalid
 import com.ntsocial.meshlink.core.service.MeshServiceClient
@@ -73,6 +75,8 @@ import com.ntsocial.meshlink.core.ui.util.showToast
 import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
 import com.ntsocial.meshlink.feature.intro.AppIntroductionScreen
 import com.ntsocial.meshlink.feature.intro.IntroViewModel
+import com.ntsocial.meshlink.feature.intro.LanguageSelectScreen
+import com.ntsocial.meshlink.feature.intro.requiresInitialLanguageSelection
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.get
 import org.koin.android.ext.android.inject
@@ -84,6 +88,10 @@ class MainActivity : AppCompatActivity() {
     private val model: UIViewModel by viewModel()
 
     private val usbRepository: UsbRepository by inject()
+
+    private val uiPrefs: UiPrefs by inject()
+
+    private var applyingInitialLanguage = false
 
     /**
      * Activity-lifecycle-aware client that binds to the mesh service. Note: This is used implicitly as it registers
@@ -136,17 +144,32 @@ class MainActivity : AppCompatActivity() {
 
             AppCompositionLocals {
                 AppTheme(dynamicColor = dynamic, darkTheme = dark) {
-                    val appIntroCompleted by model.appIntroCompleted.collectAsStateWithLifecycle()
+                    val appLaunchPreferences by uiPrefs.appLaunchPreferences.collectAsStateWithLifecycle()
+                    val launchPreferences = appLaunchPreferences
 
                     // Signal to the system that the initial UI is "fully drawn"
-                    // once we've decided whether to show the intro or the main screen.
-                    ReportDrawnWhen { true }
+                    // only after the authoritative launch preferences have been loaded.
+                    ReportDrawnWhen { launchPreferences != null }
 
-                    if (appIntroCompleted) {
-                        MainScreen()
-                    } else {
-                        val introViewModel = koinViewModel<IntroViewModel>()
-                        AppIntroductionScreen(onDone = { model.onAppIntroCompleted() }, viewModel = introViewModel)
+                    when {
+                        launchPreferences == null -> Unit
+
+                        launchPreferences.appIntroCompleted -> MainScreen()
+
+                        requiresInitialLanguageSelection(
+                            appIntroCompleted = launchPreferences.appIntroCompleted,
+                            persistedLocale = launchPreferences.locale,
+                        ) -> {
+                            LanguageSelectScreen(
+                                currentTag = launchPreferences.locale,
+                                onSelect = ::selectInitialLanguage,
+                            )
+                        }
+
+                        else -> {
+                            val introViewModel = koinViewModel<IntroViewModel>()
+                            AppIntroductionScreen(onDone = { model.onAppIntroCompleted() }, viewModel = introViewModel)
+                        }
                     }
                 }
             }
@@ -272,5 +295,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun showConnectionsPage() {
         createConnectionsIntent().send()
+    }
+
+    private fun selectInitialLanguage(languageTag: String) {
+        if (applyingInitialLanguage || languageTag !in INITIAL_LANGUAGE_TAGS) return
+
+        applyingInitialLanguage = true
+        lifecycleScope.launch {
+            try {
+                uiPrefs.setLocaleAndAwait(languageTag)
+                AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageTag))
+            } finally {
+                applyingInitialLanguage = false
+            }
+        }
+    }
+
+    private companion object {
+        val INITIAL_LANGUAGE_TAGS = setOf("en", "zh-TW", "ja")
     }
 }

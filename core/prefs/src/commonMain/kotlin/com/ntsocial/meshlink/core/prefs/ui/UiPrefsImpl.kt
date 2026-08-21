@@ -32,6 +32,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.prefs.cachedFlow
+import com.ntsocial.meshlink.core.repository.AppLaunchPreferences
 import com.ntsocial.meshlink.core.repository.PreciseLocationAdmission
 import com.ntsocial.meshlink.core.repository.UiPrefs
 import kotlinx.atomicfu.atomic
@@ -65,6 +66,16 @@ class UiPrefsImpl(
     private val preciseLocationAdmissionFlows =
         atomic(persistentMapOf<Int, Lazy<StateFlow<PreciseLocationAdmission>>>())
 
+    override val appLaunchPreferences: StateFlow<AppLaunchPreferences?> =
+        dataStore.data
+            .map<Preferences, AppLaunchPreferences?> { preferences ->
+                AppLaunchPreferences(
+                    appIntroCompleted = preferences[KEY_APP_INTRO_COMPLETED] ?: false,
+                    locale = preferences[KEY_LOCALE].orEmpty(),
+                )
+            }
+            .stateIn(scope, SharingStarted.Eagerly, null)
+
     override val appIntroCompleted: StateFlow<Boolean> =
         dataStore.data.map { it[KEY_APP_INTRO_COMPLETED] ?: false }.stateIn(scope, SharingStarted.Eagerly, false)
 
@@ -84,6 +95,10 @@ class UiPrefsImpl(
 
     override fun setLocale(languageTag: String) {
         scope.launch { dataStore.edit { it[KEY_LOCALE] = languageTag } }
+    }
+
+    override suspend fun setLocaleAndAwait(languageTag: String) {
+        dataStore.edit { it[KEY_LOCALE] = languageTag }
     }
 
     override val nodeSort: StateFlow<Int> =

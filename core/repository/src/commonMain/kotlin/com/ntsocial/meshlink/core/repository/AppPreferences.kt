@@ -71,6 +71,12 @@ interface CustomEmojiPrefs {
 /** Reactive interface for general UI preferences. */
 @Suppress("TooManyFunctions")
 interface UiPrefs {
+    /**
+     * Authoritative launch preferences. A null value means DataStore has not completed its first read yet, so hosts
+     * must not infer that a returning user is on a fresh install from the individual flows' fallback values.
+     */
+    val appLaunchPreferences: StateFlow<AppLaunchPreferences?>
+
     val appIntroCompleted: StateFlow<Boolean>
 
     fun setAppIntroCompleted(completed: Boolean)
@@ -82,6 +88,11 @@ interface UiPrefs {
     val locale: StateFlow<String>
 
     fun setLocale(languageTag: String)
+
+    /** Persists a locale before a host applies it and allows Android to recreate the current Activity. */
+    suspend fun setLocaleAndAwait(languageTag: String) {
+        setLocale(languageTag)
+    }
 
     val nodeSort: StateFlow<Int>
 
@@ -174,6 +185,9 @@ interface UiPrefs {
     /** Clears cleanup only after a verified all-p0 radio readback; this operation can never restore consent. */
     suspend fun clearPreciseLocationCleanupPending(nodeNum: Int)
 }
+
+/** The two preferences needed to choose the Android app's first rendered surface without a cold-start race. */
+data class AppLaunchPreferences(val appIntroCompleted: Boolean, val locale: String)
 
 /** Atomic user-consent, radio cleanup, and channel selection state for exact phone-location forwarding. */
 data class PreciseLocationAdmission(

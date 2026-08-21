@@ -43,10 +43,44 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class UiPrefsImplTest {
+    @Test
+    fun `launch preferences remain unknown until the first authoritative read`() = runTest {
+        val releaseData = CompletableDeferred<Unit>()
+        val persisted =
+            mutablePreferencesOf(UiPrefsImpl.KEY_APP_INTRO_COMPLETED to true, UiPrefsImpl.KEY_LOCALE to "zh-TW")
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val prefs =
+            UiPrefsImpl(
+                GatedPreferencesDataStore(releaseData, persisted),
+                CoroutineDispatchers(dispatcher, dispatcher, dispatcher),
+            )
+
+        assertNull(prefs.appLaunchPreferences.value)
+
+        releaseData.complete(Unit)
+        runCurrent()
+
+        assertEquals(true, prefs.appLaunchPreferences.value?.appIntroCompleted)
+        assertEquals("zh-TW", prefs.appLaunchPreferences.value?.locale)
+    }
+
+    @Test
+    fun `awaited locale write is durable before returning`() = runTest {
+        val dataStore = InMemoryPreferencesDataStore()
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val prefs = UiPrefsImpl(dataStore, CoroutineDispatchers(dispatcher, dispatcher, dispatcher))
+
+        prefs.setLocaleAndAwait("ja")
+
+        val restarted = UiPrefsImpl(dataStore, CoroutineDispatchers(dispatcher, dispatcher, dispatcher))
+        assertEquals("ja", restarted.appLaunchPreferences.value?.locale)
+    }
+
     @Test
     fun `cleanup pending is durable and clearing it cannot restore consent`() = runTest {
         val dataStore = InMemoryPreferencesDataStore()

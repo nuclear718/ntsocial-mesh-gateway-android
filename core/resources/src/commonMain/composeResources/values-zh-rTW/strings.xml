@@ -82,6 +82,7 @@
     <string name="analytics_okay">允許傳送分析及崩潰報告。</string>
     <string name="analytics_platforms">分析平台：</string>
     <string name="any">所有</string>
+    <string name="app_language">App 語言</string>
     <string name="app_notifications">應用程式通知</string>
     <string name="app_settings">App</string>
     <string name="app_version">版本</string>
@@ -574,6 +575,9 @@
     <string name="label_short_slow">Short - Slow</string>
     <string name="label_short_turbo">Short - Turbo</string>
     <string name="label_very_long_slow">Very Long - Slow</string>
+    <string name="language_english">English</string>
+    <string name="language_japanese">日本語</string>
+    <string name="language_traditional_chinese">繁體中文</string>
     <string name="last_heard_filter_label">依最後收到時間篩選：%1$s</string>
     <string name="last_position_update">最後位置更新</string>
     <string name="latest_alpha_firmware">最新測試版韌體</string>

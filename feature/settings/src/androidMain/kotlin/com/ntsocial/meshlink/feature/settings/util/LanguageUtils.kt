@@ -29,100 +29,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.core.os.LocaleListCompat
 import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.fr_HT
-import com.ntsocial.meshlink.core.resources.preferences_system_default
-import com.ntsocial.meshlink.core.resources.pt_BR
-import com.ntsocial.meshlink.core.resources.zh_CN
-import com.ntsocial.meshlink.core.resources.zh_TW
+import com.ntsocial.meshlink.core.resources.language_english
+import com.ntsocial.meshlink.core.resources.language_japanese
+import com.ntsocial.meshlink.core.resources.language_traditional_chinese
 import org.jetbrains.compose.resources.stringResource
-import java.util.Locale
 
 object LanguageUtils {
-
-    const val SYSTEM_DEFAULT = "zz"
+    val supportedLanguageTags = listOf("en", "zh-TW", "ja")
 
     /**
      * Sets the application locale using AppCompatDelegate. Note: This is the modern standard for per-app language
      * support, providing a backport for API levels below 33.
      */
     fun setAppLocale(languageTag: String) {
-        AppCompatDelegate.setApplicationLocales(
-            if (languageTag == SYSTEM_DEFAULT) {
-                LocaleListCompat.getEmptyLocaleList()
-            } else {
-                LocaleListCompat.forLanguageTags(languageTag)
-            },
-        )
+        require(languageTag in supportedLanguageTags) { "Unsupported app language tag" }
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageTag))
     }
 
-    /** Using a hardcoded list, maps language tags to their localized language names (e.g.: "en" -> "English") */
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
+    /** The same three explicit choices offered by the released NTsocial Android App. */
     @Composable
     fun languageMap(): Map<String, String> {
-        val languageTags = remember {
-            listOf(
-                SYSTEM_DEFAULT,
-                "en",
-                "ar",
-                "bg",
-                "ca",
-                "cs",
-                "de",
-                "el",
-                "es",
-                "et",
-                "fi",
-                "fr",
-                "ga",
-                "gl",
-                "hr",
-                "ht",
-                "hu",
-                "is",
-                "it",
-                "iw",
-                "ja",
-                "ko",
-                "lt",
-                "nl",
-                "nb",
-                "pl",
-                "pt",
-                "pt-BR",
-                "ro",
-                "ru",
-                "sk",
-                "sl",
-                "sq",
-                "sr",
-                "srp",
-                "sv",
-                "tr",
-                "uk",
-                "zh-CN",
-                "zh-TW",
-            )
-        }
-
+        val languageTags = remember { supportedLanguageTags }
         return languageTags.associateWith { languageTag ->
             when (languageTag) {
-                SYSTEM_DEFAULT -> stringResource(Res.string.preferences_system_default)
-
-                "ht" -> stringResource(Res.string.fr_HT)
-
-                "pt-BR" -> stringResource(Res.string.pt_BR)
-
-                "zh-CN" -> stringResource(Res.string.zh_CN)
-
-                "zh-TW" -> stringResource(Res.string.zh_TW)
-
-                else -> {
-                    Locale.forLanguageTag(languageTag).let { locale ->
-                        locale.getDisplayLanguage(locale).replaceFirstChar { char ->
-                            if (char.isLowerCase()) char.titlecase(locale) else char.toString()
-                        }
-                    }
-                }
+                "en" -> stringResource(Res.string.language_english)
+                "zh-TW" -> stringResource(Res.string.language_traditional_chinese)
+                else -> stringResource(Res.string.language_japanese)
             }
         }
     }

@@ -58,6 +58,7 @@
     <string name="ambient_lighting_config">環境照明設定</string>
     <string name="analytics_okay">分析とクラッシュレポートを許可する。</string>
     <string name="any">すべて</string>
+    <string name="app_language">アプリの言語</string>
     <string name="apply">適用</string>
     <string name="are_you_sure">よろしいですか？</string>
     <string name="are_you_sure_change_default">デフォルトチャンネルに変更しますか？</string>
@@ -314,6 +315,9 @@
     <string name="ipv4_mode">IPv4 モード</string>
     <string name="json_output_enabled">JSON出力の有効化</string>
     <!-- LABEL -->
+    <string name="language_english">English</string>
+    <string name="language_japanese">日本語</string>
+    <string name="language_traditional_chinese">繁体字中国語</string>
     <string name="last_heard_filter_label">最後に受信した時間でフィルター: %1$s</string>
     <string name="latitude">緯度</string>
     <string name="led_state">LEDの状態</string>

@@ -24,18 +24,11 @@
  */
 package com.ntsocial.meshlink.feature.settings.component
 
-import android.content.Intent
-import android.os.Build
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.core.net.toUri
 import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.app_language
 import com.ntsocial.meshlink.core.resources.app_settings
-import com.ntsocial.meshlink.core.resources.preferences_language
 import com.ntsocial.meshlink.core.resources.theme
 import com.ntsocial.meshlink.core.ui.component.ListItem
 import com.ntsocial.meshlink.core.ui.icon.ChevronRight
@@ -48,31 +41,13 @@ import org.jetbrains.compose.resources.stringResource
 /** Section for app appearance settings like language and theme. */
 @Composable
 fun AppearanceSection(onShowLanguagePicker: () -> Unit, onShowThemePicker: () -> Unit) {
-    val context = LocalContext.current
-    val settingsLauncher =
-        rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult()) {}
-
-    // On Android 12 and below, system app settings for language are not available. Use the in-app language
-    // picker for these devices.
-    val useInAppLangPicker = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-
     ExpressiveSection(title = stringResource(Res.string.app_settings)) {
         ListItem(
-            text = stringResource(Res.string.preferences_language),
+            text = stringResource(Res.string.app_language),
             leadingIcon = MeshtasticIcons.Language,
-            trailingIcon = if (useInAppLangPicker) null else MeshtasticIcons.ChevronRight,
+            trailingIcon = MeshtasticIcons.ChevronRight,
         ) {
-            if (useInAppLangPicker) {
-                onShowLanguagePicker()
-            } else {
-                val intent = Intent(Settings.ACTION_APP_LOCALE_SETTINGS, "package:${context.packageName}".toUri())
-                if (intent.resolveActivity(context.packageManager) != null) {
-                    settingsLauncher.launch(intent)
-                } else {
-                    // Fall back to the in-app picker
-                    onShowLanguagePicker()
-                }
-            }
+            onShowLanguagePicker()
         }
 
         ListItem(

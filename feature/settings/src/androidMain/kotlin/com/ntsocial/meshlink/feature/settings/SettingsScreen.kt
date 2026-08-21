@@ -28,19 +28,31 @@ import android.app.Activity
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eygraber.uri.toKmpUri
@@ -51,12 +63,12 @@ import com.ntsocial.meshlink.core.navigation.Route
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.core.navigation.WifiProvisionRoute
 import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.app_language
 import com.ntsocial.meshlink.core.resources.bottom_nav_settings
 import com.ntsocial.meshlink.core.resources.device_links
 import com.ntsocial.meshlink.core.resources.export_configuration
 import com.ntsocial.meshlink.core.resources.filter_settings
 import com.ntsocial.meshlink.core.resources.import_configuration
-import com.ntsocial.meshlink.core.resources.preferences_language
 import com.ntsocial.meshlink.core.resources.remotely_administrating
 import com.ntsocial.meshlink.core.resources.wifi_devices
 import com.ntsocial.meshlink.core.ui.component.ListItem
@@ -159,6 +171,7 @@ fun SettingsScreen(
     var showLanguagePickerDialog by rememberSaveable { mutableStateOf(false) }
     if (showLanguagePickerDialog) {
         LanguagePickerDialog(
+            currentTag = AppCompatDelegate.getApplicationLocales().toLanguageTags().substringBefore(','),
             onDismiss = { showLanguagePickerDialog = false },
             onSelect = { languageTag -> settingsViewModel.setLocale(languageTag) },
         )
@@ -284,17 +297,31 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun LanguagePickerDialog(onDismiss: () -> Unit, onSelect: (String) -> Unit) {
+private fun LanguagePickerDialog(currentTag: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
     MeshtasticDialog(
-        title = stringResource(Res.string.preferences_language),
+        title = stringResource(Res.string.app_language),
         onDismiss = onDismiss,
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()).selectableGroup()) {
                 languageMap().forEach { (languageTag, languageName) ->
-                    ListItem(text = languageName, trailingIcon = null) {
-                        LanguageUtils.setAppLocale(languageTag)
-                        onSelect(languageTag)
-                        onDismiss()
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier =
+                        Modifier.fillMaxWidth()
+                            .selectable(
+                                selected = currentTag.equals(languageTag, ignoreCase = true),
+                                onClick = {
+                                    onSelect(languageTag)
+                                    LanguageUtils.setAppLocale(languageTag)
+                                    onDismiss()
+                                },
+                                role = Role.RadioButton,
+                            )
+                            .padding(vertical = 4.dp),
+                    ) {
+                        RadioButton(selected = currentTag.equals(languageTag, ignoreCase = true), onClick = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = languageName, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }

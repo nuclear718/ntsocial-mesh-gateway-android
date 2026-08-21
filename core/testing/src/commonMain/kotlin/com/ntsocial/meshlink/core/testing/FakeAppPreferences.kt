@@ -24,6 +24,7 @@
  */
 package com.ntsocial.meshlink.core.testing
 
+import com.ntsocial.meshlink.core.repository.AppLaunchPreferences
 import com.ntsocial.meshlink.core.repository.AppPreferences
 import com.ntsocial.meshlink.core.repository.CustomEmojiPrefs
 import com.ntsocial.meshlink.core.repository.FilterPrefs
@@ -68,10 +69,14 @@ class FakeCustomEmojiPrefs : CustomEmojiPrefs {
 
 @Suppress("TooManyFunctions")
 class FakeUiPrefs : UiPrefs {
+    override val appLaunchPreferences =
+        MutableStateFlow<AppLaunchPreferences?>(AppLaunchPreferences(appIntroCompleted = false, locale = "en"))
+
     override val appIntroCompleted = MutableStateFlow(false)
 
     override fun setAppIntroCompleted(completed: Boolean) {
         appIntroCompleted.value = completed
+        appLaunchPreferences.value = appLaunchPreferences.value?.copy(appIntroCompleted = completed)
     }
 
     override val theme = MutableStateFlow(0)
@@ -84,6 +89,7 @@ class FakeUiPrefs : UiPrefs {
 
     override fun setLocale(languageTag: String) {
         locale.value = languageTag
+        appLaunchPreferences.value = appLaunchPreferences.value?.copy(locale = languageTag)
     }
 
     override val nodeSort = MutableStateFlow(0)

@@ -86,6 +86,7 @@
     <string name="analytics_okay">Allow analytics and crash reporting.</string>
     <string name="analytics_platforms">Analytics platforms:</string>
     <string name="any">Any</string>
+    <string name="app_language">App language</string>
     <string name="app_notifications">App Notifications</string>
     <string name="app_settings">App</string>
     <string name="app_version">Version</string>
@@ -598,6 +599,9 @@
     <string name="label_short_slow">Short Range - Slow</string>
     <string name="label_short_turbo">Short Range - Turbo</string>
     <string name="label_very_long_slow">Very Long Range - Slow</string>
+    <string name="language_english">English</string>
+    <string name="language_japanese">日本語</string>
+    <string name="language_traditional_chinese">繁體中文</string>
     <string name="last_heard_filter_label">Filter by Last Heard time: %1$s</string>
     <string name="last_position_update">Last position update</string>
     <string name="latest_alpha_firmware">Latest alpha</string>

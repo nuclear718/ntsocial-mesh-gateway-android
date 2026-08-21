@@ -1,5 +1,33 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+## 2026-08-21 - Android English, Traditional Chinese, and Japanese first-launch selection
+- From clean base `3d7befff2a4db14f2d0c42b95f3406f479857abe`, the Android host now puts an exact
+  three-choice language screen before the existing MeshLink introduction only when the introduction is unfinished and
+  no language was previously persisted. Returning Taiwanese installs that completed the introduction bypass it, while
+  an interrupted first run that already chose a language resumes the original introduction. A combined nullable
+  `AppLaunchPreferences` DataStore snapshot prevents the individual flows' fallback values from treating a returning
+  install as fresh. Selection awaits the locale write before AppCompat recreation.
+- The authorized parent source at `C:\Users\cth\Documents\GitHub\NTsocial_release` was inspected read-only at
+  `bd51abd40f0ad2442e8fd6de370166da8867ac92`; its pre-existing dirty `app/build.gradle.kts` was not modified. MeshLink's
+  existing US, Taiwan, Japan, and background PNGs are byte-identical to the parent assets (SHA-256 respectively
+  `8156FBD2...ECAB`, `6C7F505D...7438`, `2D1B499F...0595`, and `9BA147A3...177D`), so no binary asset was copied. The
+  Android Compose implementation preserves the parent screen's exact placement, dimensions, spacing, blue radio
+  colors, native-language labels, and select-and-advance behavior.
+- Android `locales_config.xml` and the in-App picker expose exactly `en`, `zh-TW`, and `ja`. The local Settings surface
+  always contains `App language`, including API 33+, and its radio dialog mirrors the same three options. Existing
+  shared translations and non-Android locale behavior are otherwise unchanged. New base/zh-rTW/ja labels are indexed
+  through the repository string-sorting workflow.
+- Focused `:core:prefs:jvmTest` and `:feature:intro:jvmTest` cover the authoritative cold-start read, awaited durable
+  locale write, fresh install, completed Taiwanese upgrade, and interrupted persisted-locale paths; Android compilation,
+  Spotless, and changed-module Detekt pass. The full JDK-21/en-US gate
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile :app:lintFdroidDebug
+  :app:lintGoogleDebug --continue --no-configuration-cache` completed 1,960 actionable tasks (614 executed, 3 from
+  cache, 1,343 up-to-date) in 22m55s. Tests, both Android Debug assemblies and lints, Desktop/JVM, shared KMP, and iOS
+  Simulator compilation passed. The command was nonzero only for six findings in unmodified BLE (3), domain
+  `SetPreciseLocationSharingUseCase` (1), model (1), and network (1) files; the domain `LongMethod` is an existing source
+  finding omitted from the prior five-finding inventory. No physical-device or emulator visual/locale smoke test was
+  performed.
+
 ## 2026-08-20 - QR secondary replacement and immediate background apply
 - The shared scanned-channel dialog now has three explicit behaviors. Add remains additive and keeps all existing
   channels. An `add=true` QR may be switched to secondary replacement only after a complete current primary and LoRa
