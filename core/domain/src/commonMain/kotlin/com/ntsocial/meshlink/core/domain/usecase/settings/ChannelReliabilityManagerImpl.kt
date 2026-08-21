@@ -705,7 +705,9 @@ private fun com.ntsocial.meshlink.core.model.MyNodeInfo.stableDeviceIdentity(): 
 
 private fun ChannelSet.normalizedReadback(): ChannelSet {
     val trimmed = settings.toMutableList()
-    while (trimmed.size > 1 && trimmed.last() == ChannelSettings()) trimmed.removeLast()
+    while (trimmed.size > 1 && trimmed.last() == ChannelSettings()) {
+        trimmed.removeAt(trimmed.lastIndex)
+    }
     return copy(settings = trimmed)
 }
 

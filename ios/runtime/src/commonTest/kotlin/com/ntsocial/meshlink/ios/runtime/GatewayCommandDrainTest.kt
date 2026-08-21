@@ -41,8 +41,8 @@ class GatewayCommandDrainTest {
         repeat(2) { outcomes += accepted }
         outcomes += AppleGatewayProcessOutcome.NoCommand
 
-        val firstPass = drainGatewayCommands(maxCommands = 2) { outcomes.removeFirst() }
-        val continuation = drainGatewayCommands(maxCommands = 2) { outcomes.removeFirst() }
+        val firstPass = drainGatewayCommands(maxCommands = 2) { outcomes.removeAt(0) }
+        val continuation = drainGatewayCommands(maxCommands = 2) { outcomes.removeAt(0) }
 
         assertTrue(firstPass)
         assertFalse(continuation)

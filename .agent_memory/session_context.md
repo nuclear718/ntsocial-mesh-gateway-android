@@ -1,5 +1,28 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+## 2026-08-21 - Google Play Kotlin list compatibility remediation
+- From clean base `956bca67bd989063d6b128a0163de99432385ffe`, the Google Play-reported Android 15
+  compatibility path was traced to `ChannelSetDataSource.updateChannelSettings`: compiling against API 35+ can bind
+  Kotlin-looking `removeLast()` calls to the new Java `List.removeLast()` API, producing `NoSuchMethodError` below API
+  35. Both production commonMain tail-removal sites now use `removeAt(lastIndex)`, preserving their existing guarded
+  semantics, and the only remaining source occurrence in an iOS runtime JVM test queue now uses `removeAt(0)`. No
+  Kotlin source call to `removeFirst()` or `removeLast()` remains.
+- Focused `:core:datastore:jvmTest`, `:core:domain:jvmTest`, and `:ios:runtime:jvmTest` pass, including all affected
+  channel trimming/reliability and Gateway drain tests. Changed-source formatting is clean. The JDK-21/en-US full gate
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile :app:lintFdroidDebug
+  :app:lintGoogleDebug :app:verifyGoogleReleaseNoCloudRuntimeDependencies :app:bundleGoogleRelease --continue
+  --no-configuration-cache` completed 2,137 actionable tasks (376 executed, 1,761 up-to-date) in 15m46s. Tests, both
+  Debug assemblies/lints, shared KMP, Desktop/JVM, iOS Simulator compilation, cloud-runtime checks, Lint Vital/R8, and
+  Google Release bundling passed. Root Detekt remains nonzero only for six pre-existing findings in unmodified BLE (3),
+  domain precise-location sharing (1), model (1), and network (1) sources.
+- Android release metadata is now `versionCode=7` / `versionName=1.0.6`. The final 24,462,232-byte Google Release AAB
+  has SHA-256 `A188B65F5EEEF7C37E923610745E2B28A77EC72FF3089D7865BE1A73D35E10D0` and passes official bundletool 1.18.3
+  validation. Direct `dexdump` inspection of all three bundled DEX files found no
+  `java.util.List.removeFirst/removeLast` method reference, and the exact Play-reported
+  `ChannelSetDataSource...ExternalSyntheticApiModelOutline0` class is absent. The AAB is locally unsigned because no
+  upload keystore is present; it is not itself Play-uploadable and no Play acceptance or new physical-device run was
+  claimed.
+
 ## 2026-08-21 - Android English, Traditional Chinese, and Japanese first-launch selection
 - From clean base `3d7befff2a4db14f2d0c42b95f3406f479857abe`, the Android host now puts an exact
   three-choice language screen before the existing MeshLink introduction only when the introduction is unfinished and

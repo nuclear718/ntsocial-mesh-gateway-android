@@ -71,7 +71,9 @@ class ChannelSetDataSource(@Named("CoreChannelSetDataStore") private val channel
             if (channel.role == Channel.Role.DISABLED) {
                 if (channel.index in settings.indices) {
                     settings[channel.index] = ChannelSettings()
-                    while (settings.size > 1 && settings.last() == ChannelSettings()) settings.removeLast()
+                    while (settings.size > 1 && settings.last() == ChannelSettings()) {
+                        settings.removeAt(settings.lastIndex)
+                    }
                 }
             } else {
                 // Resize to fit channel.
