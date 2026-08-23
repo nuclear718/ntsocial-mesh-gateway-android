@@ -1,5 +1,20 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+
+## 2026-08-23 - Android multi-radio and multi-protocol architecture proposal
+- Audited Android main at `e4c97badf810cbe5088a5ad9a3e72c853a72a2a7` and the DIY node repository at
+  `76219cd7562f76d1543f12944efc4379f788a233`, plus current Android BLE, Meshtastic Client API, and MeshCore 1.17.1
+  companion-protocol constraints.
+- Confirmed the product is technically feasible, but current transport-above state is single-radio: one active
+  transport/session/address, global BLE pointer, active database, radio-owned singleton graph, unscoped WorkManager
+  packet IDs, and Gateway v2 routes without endpoint identity.
+- Added `ANDROID_MULTI_RADIO_MULTI_PROTOCOL_ARCHITECTURE_PROPOSAL_2026-08-23.md` at the repository root in commit
+  `31e280d066045180f12be4fd47e53ac7afa694f8`. The recommended order is endpoint-scoped Meshtastic isolation,
+  four-radio fleet validation, endpoint-aware outbox/Gateway v3, MeshCore transport, custom adapter, then opt-in
+  overlay-only bridging.
+- This task changed documentation only. No production source, Gradle configuration, schema, firmware, or runtime
+  behavior was changed, and no build or device/RF test was claimed.
+
 ## 2026-08-21 - Google Play Kotlin list compatibility remediation
 - From clean base `956bca67bd989063d6b128a0163de99432385ffe`, the Google Play-reported Android 15
   compatibility path was traced to `ChannelSetDataSource.updateChannelSettings`: compiling against API 35+ can bind
