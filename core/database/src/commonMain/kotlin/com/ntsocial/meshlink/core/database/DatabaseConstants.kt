@@ -85,6 +85,7 @@ internal fun selectEvictionVictims(
     activeDbName: String,
     limit: Int,
     lastUsedMsByDb: Map<String, Long>,
+    protectedDbNames: Set<String> = emptySet(),
 ): List<String> {
     val deviceDbNames =
         dbNames.filterNot { it == DatabaseConstants.LEGACY_DB_NAME || it == DatabaseConstants.DEFAULT_DB_NAME }
@@ -92,7 +93,7 @@ internal fun selectEvictionVictims(
         if (limit < 1 || deviceDbNames.size <= limit) {
             emptyList()
         } else {
-            val candidates = deviceDbNames.filter { it != activeDbName }
+            val candidates = deviceDbNames.filter { it != activeDbName && it !in protectedDbNames }
             if (candidates.isEmpty()) {
                 emptyList()
             } else {

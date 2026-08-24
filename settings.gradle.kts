@@ -106,6 +106,7 @@ include(
     ":core:network",
     ":core:nfc",
     ":core:prefs",
+    ":core:radio-fleet",
     ":core:proto",
     ":core:repository",
     ":core:service",

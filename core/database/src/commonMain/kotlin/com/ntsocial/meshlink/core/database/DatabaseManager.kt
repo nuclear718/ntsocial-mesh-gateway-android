@@ -58,14 +58,15 @@ import kotlin.concurrent.Volatile
 import com.ntsocial.meshlink.core.common.database.DatabaseManager as SharedDatabaseManager
 
 /** Manages per-device Room database instances for node data, with LRU eviction. */
-@Single(binds = [DatabaseProvider::class, SharedDatabaseManager::class])
+@Single(binds = [DatabaseProvider::class, SharedDatabaseManager::class, EndpointDatabaseCatalog::class])
 @Suppress("TooManyFunctions")
 @OptIn(ExperimentalCoroutinesApi::class)
 open class DatabaseManager(
     @Named("DatabaseDataStore") private val datastore: DataStore<Preferences>,
     private val dispatchers: CoroutineDispatchers,
 ) : DatabaseProvider,
-    SharedDatabaseManager {
+    SharedDatabaseManager,
+    EndpointDatabaseCatalog {
 
     private val managerScope = CoroutineScope(SupervisorJob() + dispatchers.default)
     private val mutex = Mutex()
@@ -98,6 +99,7 @@ open class DatabaseManager(
     }
 
     private val dbCache = mutableMapOf<String, MeshtasticDatabase>()
+    private val pinnedDatabaseCounts = mutableMapOf<String, Int>()
 
     private val _currentDb = MutableStateFlow<MeshtasticDatabase?>(null)
 
@@ -125,6 +127,37 @@ open class DatabaseManager(
      */
     private fun getOrOpenDatabase(dbName: String): MeshtasticDatabase =
         dbCache.getOrPut(dbName) { getDatabaseBuilder(dbName).build() }
+
+    override suspend fun openEndpointDatabase(address: String): EndpointDatabaseHandle {
+        require(address.isNotBlank() && address != "n") { "Endpoint database requires a selected radio address" }
+        val dbName = buildDbName(address)
+        val database =
+            mutex.withLock {
+                val opened = withContext(dispatchers.io) { getOrOpenDatabase(dbName) }
+                pinnedDatabaseCounts[dbName] = (pinnedDatabaseCounts[dbName] ?: 0) + 1
+                markLastUsed(dbName)
+                opened
+            }
+        return FixedEndpointDatabaseHandle(
+            address = address,
+            database = database,
+            dispatchers = dispatchers,
+            cacheLimit = cacheLimit,
+            readCacheLimit = ::getCurrentCacheLimit,
+            writeCacheLimit = ::setCacheLimit,
+            onClose = { releaseEndpointDatabase(dbName) },
+        )
+    }
+
+    private suspend fun releaseEndpointDatabase(dbName: String) = mutex.withLock {
+        val remaining = (pinnedDatabaseCounts[dbName] ?: 1) - 1
+        if (remaining <= 0) {
+            pinnedDatabaseCounts.remove(dbName)
+        } else {
+            pinnedDatabaseCounts[dbName] = remaining
+        }
+        markLastUsed(dbName)
+    }
 
     /** Switch active database to the one associated with [address]. Serialized via mutex. */
     override suspend fun switchActiveDatabase(address: String?) = mutex.withLock {
@@ -289,7 +322,14 @@ open class DatabaseManager(
 
         if (deviceDbs.size <= limit) return@withLock
         val usageSnapshot = deviceDbs.associateWith { lastUsed(it) }
-        val victims = selectEvictionVictims(deviceDbs, activeDbName, limit, usageSnapshot)
+        val victims =
+            selectEvictionVictims(
+                dbNames = deviceDbs,
+                activeDbName = activeDbName,
+                limit = limit,
+                lastUsedMsByDb = usageSnapshot,
+                protectedDbNames = pinnedDatabaseCounts.keys,
+            )
 
         victims.forEach { name ->
             runCatching {
@@ -367,6 +407,49 @@ open class DatabaseManager(
         managerScope.cancel()
         dbCache.values.forEach { it.close() }
         dbCache.clear()
+        pinnedDatabaseCounts.clear()
         _currentDb.value = null
+    }
+}
+
+private class FixedEndpointDatabaseHandle(
+    override val address: String,
+    database: MeshtasticDatabase,
+    private val dispatchers: CoroutineDispatchers,
+    override val cacheLimit: StateFlow<Int>,
+    private val readCacheLimit: () -> Int,
+    private val writeCacheLimit: (Int) -> Unit,
+    private val onClose: suspend () -> Unit,
+) : EndpointDatabaseHandle {
+    private val closeMutex = Mutex()
+    private var closed = false
+    override val currentDb: StateFlow<MeshtasticDatabase> = MutableStateFlow(database)
+    override val currentAddress: StateFlow<String?> = MutableStateFlow(address)
+
+    override fun getCurrentCacheLimit(): Int = readCacheLimit()
+
+    override fun setCacheLimit(limit: Int) = writeCacheLimit(limit)
+
+    override suspend fun switchActiveDatabase(address: String?) {
+        require(address == null || buildDbName(address) == buildDbName(this.address)) {
+            "A fixed endpoint database cannot switch radio identity"
+        }
+    }
+
+    override fun hasDatabaseFor(address: String?): Boolean =
+        address != null && buildDbName(address) == buildDbName(this.address)
+
+    override suspend fun <T> withDb(block: suspend (MeshtasticDatabase) -> T): T? {
+        check(!closed) { "Endpoint database handle is closed" }
+        return withContext(dispatchers.io) { block(currentDb.value) }
+    }
+
+    override suspend fun close() {
+        closeMutex.withLock {
+            if (!closed) {
+                closed = true
+                onClose()
+            }
+        }
     }
 }

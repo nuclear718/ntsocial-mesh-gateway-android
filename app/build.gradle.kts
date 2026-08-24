@@ -241,9 +241,7 @@ val verifyGoogleReleaseNoCloudRuntimeDependencies =
                     val id = component.id as? ModuleComponentIdentifier ?: return@mapNotNull null
                     val group = id.group
                     val blocked =
-                        forbiddenCloudRuntimeGroups.any { prefix ->
-                            group == prefix || group.startsWith("$prefix.")
-                        }
+                        forbiddenCloudRuntimeGroups.any { prefix -> group == prefix || group.startsWith("$prefix.") }
                     if (blocked) {
                         "${id.group}:${id.module}:${id.version}"
                     } else {
@@ -275,6 +273,7 @@ dependencies {
     implementation(projects.core.nfc)
     implementation(projects.core.prefs)
     implementation(projects.core.proto)
+    implementation(projects.core.radioFleet)
     implementation(projects.core.service)
     implementation(projects.core.resources)
     implementation(projects.core.ui)

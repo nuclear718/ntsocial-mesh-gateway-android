@@ -37,6 +37,21 @@ class DatabaseManagerEvictionTest {
     private val defaultDb = DatabaseConstants.DEFAULT_DB_NAME // "meshtastic_database_default"
 
     @Test
+    fun `pinned endpoint databases are never selected for eviction`() {
+        val names = listOf(a, b, c, d)
+        val victims =
+            selectEvictionVictims(
+                dbNames = names,
+                activeDbName = a,
+                limit = 1,
+                lastUsedMsByDb = mapOf(a to 4L, b to 1L, c to 2L, d to 3L),
+                protectedDbNames = setOf(b, c),
+            )
+
+        assertEquals(listOf(d), victims)
+    }
+
+    @Test
     fun `does not evict when count equals limit`() {
         val names = listOf(a, b, c)
         val victims =

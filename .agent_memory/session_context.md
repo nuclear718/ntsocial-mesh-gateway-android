@@ -1,6 +1,63 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
 
+## 2026-08-24 - Android multi-node build and three-phone single-node hardware soak
+- On branch `multi_nodes_` at HEAD `d3aa2eebf16cf5e5f7f44803b17e7a68594c2b59` plus the dirty worktree,
+  built `:app:assembleGoogleDebug --rerun-tasks` with JDK 21/en-US. The build passed in 5m28s (450 executed tasks),
+  including the no-cloud guard. The arm64 Debug APK is 51,377,431 bytes, version `1.0.6 (7)`, SHA-256
+  `402FFFA26535344AD6B404753000E73CAE6DE41656715ABBDFF07E1E9B7BAB92`, and passes 16 KiB zipalign. This run did
+  not repeat the full root test/lint/Detekt/KMP gate.
+- Installed with data preservation on three Android 16/API-36 phones. The final installed base APK hash matched on
+  all three. One phone had no selected radio; the other two each reconnected to one existing Meshtastic BLE node,
+  completed Stage 2, negotiated 244-byte writes, rendered the `1 / 4` fleet UI, and passed read-only Messages,
+  Nodes, Settings, and Channels checks. Composer input/clear was tested without sending.
+- A formal 20:14:46-22:14:53 +08:00 soak produced all 363/363 expected rows (121/device). All three PIDs stayed
+  fixed; the two connected phones retained MeshService/connected-device FGS for 121/121 samples and remained
+  connected after two screen-off phases plus Messages -> Nodes -> Settings -> Connections navigation. Continuous
+  app/system logs showed no new crash, ANR, OOM, navigation/Koin failure, liveness timeout, forced reconnect, or radio
+  disconnect. Threads stayed fixed at 41/41/47 and memory was non-monotonic. USB charging kept device-idle ACTIVE,
+  so this is background/screen-off evidence, not Doze or battery-life evidence.
+- Four confirmed Android P1 issues remain: (1) nested `/channels` deep link sets `currentTabRoute` to a non-top-level
+  graph and crashes `MultiBackstack`; (2) `MY_PACKAGE_REPLACED` is manifest-declared but rejected by
+  `BootCompleteReceiver`, with an additional cold DataStore hydration race; (3) an authorized parent cold query can
+  reach `NtsocialGatewayProvider` before Koin is started; (4) persisted auto-scan keeps Connections rendering near
+  120 Hz at roughly 0.65-0.70 core and the package-specific scan remains active across Activity STOP/screen-off.
+- D3 screen-off CPU averaged 8.91% one-core across six windows while observed GATT event counts matched D2; this is
+  a P1 candidate, not a proven allocation/GC root cause until a Profile/Perfetto A/B controls payload/handler paths.
+  OPPO navigation latency is a P2 candidate because the D2 scan animation biases cross-device frame statistics.
+- Detailed evidence, root causes, specific fixes, tests, limits, and the privacy cleanup record are in
+  `ANDROID_MULTI_NODE_THREE_PHONE_HARDWARE_TEST_REPORT_2026-08-24.md`. No product source was modified. The raw
+  83-file/685,054,491-byte temporary evidence directory was deleted after aggregation because it contained device,
+  BLE, node, message, and UI metadata.
+
+
+## 2026-08-24 - Android four-Meshtastic endpoint isolation and per-node UI phase 1
+- On branch `multi_nodes_`, added the `core:radio-fleet` KMP contracts and default manager for a durable, deduplicated,
+  maximum-four Meshtastic endpoint catalog with exactly one immutable legacy-primary profile, independent lifecycle
+  state/generation, serialized full bootstrap, deferred registration, and failure projection. MeshCore multi-node support
+  remains explicitly out of scope.
+- Android retains the existing root Meshtastic graph as the Gateway v1/v2 and host-integration compatibility facade.
+  Each secondary BLE endpoint now owns a fixed-address connection plus an independent Room handle, channel/local/module
+  DataStores, Koin scope, config/repository/service/packet graph, and queued-message drain. Secondary Gateway access fails
+  closed; host phone-location, widgets, and endpointless broadcasts remain primary-owned or aggregate-only.
+- Replaced the process-global BLE pointer with address-keyed, ownership-checked active BLE connections. Database handles
+  are pinned while endpoint sessions are alive, and scoped DataStores/coroutines are released when the session closes.
+- Connections now exposes up to four radio cards. Android Messages/channel history, Nodes, Settings, Channels, and
+  Firmware surfaces use address-last-four endpoint tabs and scope-aware ViewModel keys. Switching an endpoint resets
+  that feature to its root destination to prevent a child route from being rendered against the wrong graph. The
+  existing Desktop and iOS interfaces remain single-radio; iOS receives a no-op actual for the shared fleet panel.
+- Focused fleet, endpoint-store migration/deduplication/capacity, database pinning, stale BLE ownership, Android
+  compilation, and root/secondary Koin graph tests pass; modified sources add no Detekt finding. The final JDK-21/en-US root
+  `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile --continue` run completed 1,685 tasks
+  (251 executed, 1,434 up-to-date): every requested task except root Detekt passed; Detekt remains nonzero only for the six
+  recorded findings in unmodified BLE (3), domain (1), model (1), and network (1) sources. Google/F-Droid Debug lint
+  passed 770 tasks (105 executed, 665 up-to-date).
+- This is source and deterministic fake-test evidence, not release or radio evidence. Required follow-up includes a
+  two-radio then four-radio Android run, independent channel/settings mutation and history checks, disconnect/reconnect
+  storms, process death/restore, Doze/background behavior, RF send/receive, and remote receipt. No Gateway v3,
+  cross-endpoint outbox/bridge, RF scheduler, or MeshCore multi-radio claim is made.
+
+
 ## 2026-08-23 - Android multi-radio and multi-protocol architecture proposal
 - Audited Android main at `e4c97badf810cbe5088a5ad9a3e72c853a72a2a7` and the DIY node repository at
   `76219cd7562f76d1543f12944efc4379f788a233`, plus current Android BLE, Meshtastic Client API, and MeshCore 1.17.1

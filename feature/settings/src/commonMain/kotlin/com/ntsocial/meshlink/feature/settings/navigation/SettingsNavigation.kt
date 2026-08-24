@@ -36,6 +36,7 @@ import androidx.navigation3.runtime.NavKey
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.Route
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.settings.AboutScreen
 import com.ntsocial.meshlink.feature.settings.AdministrationScreen
 import com.ntsocial.meshlink.feature.settings.DeviceConfigurationScreen
@@ -76,12 +77,11 @@ import com.ntsocial.meshlink.feature.settings.radio.component.TAKConfigScreen
 import com.ntsocial.meshlink.feature.settings.radio.component.TelemetryConfigScreen
 import com.ntsocial.meshlink.feature.settings.radio.component.TrafficManagementConfigScreen
 import com.ntsocial.meshlink.feature.settings.radio.component.UserConfigScreen
-import org.koin.compose.viewmodel.koinViewModel
 import kotlin.reflect.KClass
 
 @Composable
 fun getRadioConfigViewModel(backStack: NavBackStack<NavKey>): RadioConfigViewModel {
-    val viewModel = koinViewModel<RadioConfigViewModel>()
+    val viewModel = scopedViewModel<RadioConfigViewModel>()
     val destNum =
         remember(backStack.toList()) {
             backStack.lastOrNull { it is SettingsRoute.Settings }?.let { (it as SettingsRoute.Settings).destNum }
@@ -97,7 +97,7 @@ fun getRadioConfigViewModel(backStack: NavBackStack<NavKey>): RadioConfigViewMod
 fun EntryProviderScope<NavKey>.settingsGraph(backStack: NavBackStack<NavKey>) {
     entry<SettingsRoute.SettingsGraph> {
         SettingsMainScreen(
-            settingsViewModel = koinViewModel(),
+            settingsViewModel = scopedViewModel(),
             radioConfigViewModel = getRadioConfigViewModel(backStack),
             onClickNodeChip = { backStack.add(NodesRoute.NodeDetail(it)) },
             onNavigate = { backStack.add(it) },
@@ -106,7 +106,7 @@ fun EntryProviderScope<NavKey>.settingsGraph(backStack: NavBackStack<NavKey>) {
 
     entry<SettingsRoute.Settings> {
         SettingsMainScreen(
-            settingsViewModel = koinViewModel(),
+            settingsViewModel = scopedViewModel(),
             radioConfigViewModel = getRadioConfigViewModel(backStack),
             onClickNodeChip = { backStack.add(NodesRoute.NodeDetail(it)) },
             onNavigate = { backStack.add(it) },
@@ -123,7 +123,7 @@ fun EntryProviderScope<NavKey>.settingsGraph(backStack: NavBackStack<NavKey>) {
     }
 
     entry<SettingsRoute.ModuleConfiguration> {
-        val settingsViewModel: SettingsViewModel = koinViewModel()
+        val settingsViewModel: SettingsViewModel = scopedViewModel()
         val excludedModulesUnlocked by settingsViewModel.excludedModulesUnlocked.collectAsStateWithLifecycle()
         ModuleConfigurationScreen(
             viewModel = getRadioConfigViewModel(backStack),
@@ -141,7 +141,7 @@ fun EntryProviderScope<NavKey>.settingsGraph(backStack: NavBackStack<NavKey>) {
     }
 
     entry<SettingsRoute.CleanNodeDb> {
-        val viewModel: CleanNodeDatabaseViewModel = koinViewModel()
+        val viewModel: CleanNodeDatabaseViewModel = scopedViewModel()
         CleanNodeDatabaseScreen(viewModel = viewModel)
     }
 
@@ -244,12 +244,12 @@ fun EntryProviderScope<NavKey>.settingsGraph(backStack: NavBackStack<NavKey>) {
     }
 
     entry<SettingsRoute.DebugPanel> {
-        val viewModel: DebugViewModel = koinViewModel()
+        val viewModel: DebugViewModel = scopedViewModel()
         DebugScreen(viewModel = viewModel, onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() })
     }
 
     entry<SettingsRoute.DeviceLinks> {
-        val viewModel: DeviceLinkDirectoryViewModel = koinViewModel()
+        val viewModel: DeviceLinkDirectoryViewModel = scopedViewModel()
         DeviceLinkDirectoryScreen(
             viewModel = viewModel,
             onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
@@ -264,7 +264,7 @@ fun EntryProviderScope<NavKey>.settingsGraph(backStack: NavBackStack<NavKey>) {
     }
 
     entry<SettingsRoute.FilterSettings> {
-        val viewModel: FilterSettingsViewModel = koinViewModel()
+        val viewModel: FilterSettingsViewModel = scopedViewModel()
         FilterSettingsScreen(viewModel = viewModel, onBack = dropUnlessResumed { backStack.removeLastOrNull() })
     }
 }

@@ -38,6 +38,7 @@ import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.core.navigation.replaceLast
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.messaging.QuickChatScreen
 import com.ntsocial.meshlink.feature.messaging.QuickChatViewModel
 import com.ntsocial.meshlink.feature.messaging.ui.contact.AdaptiveContactsScreen
@@ -64,7 +65,7 @@ fun EntryProviderScope<NavKey>.contactsGraph(
     entry<ContactsRoute.Messages>(metadata = { ListDetailSceneStrategy.detailPane() }) { args ->
         val contactKey = args.contactKey
         val messageViewModel: com.ntsocial.meshlink.feature.messaging.MessageViewModel =
-            koinViewModel(key = "messages-$contactKey")
+            scopedViewModel(key = "messages-$contactKey")
         messageViewModel.setContactKey(contactKey)
 
         com.ntsocial.meshlink.feature.messaging.MessageScreen(
@@ -81,7 +82,7 @@ fun EntryProviderScope<NavKey>.contactsGraph(
 
     entry<ContactsRoute.Share>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
         val message = args.message
-        val viewModel = koinViewModel<ContactsViewModel>()
+        val viewModel = scopedViewModel<ContactsViewModel>()
         ShareScreen(
             viewModel = viewModel,
             onConfirm = { contactKey -> backStack.replaceLast(ContactsRoute.Messages(contactKey, message)) },
@@ -90,7 +91,7 @@ fun EntryProviderScope<NavKey>.contactsGraph(
     }
 
     entry<ContactsRoute.QuickChat>(metadata = { ListDetailSceneStrategy.extraPane() }) {
-        val viewModel = koinViewModel<QuickChatViewModel>()
+        val viewModel = scopedViewModel<QuickChatViewModel>()
         QuickChatScreen(viewModel = viewModel, onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() })
     }
 }
@@ -100,7 +101,7 @@ fun ContactsEntryContent(backStack: NavBackStack<NavKey>, scrollToTopEvents: Flo
     val uiViewModel: com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel = koinViewModel()
     val sharedContactRequested by uiViewModel.sharedContactRequested.collectAsStateWithLifecycle()
     val requestChannelSet by uiViewModel.requestChannelSet.collectAsStateWithLifecycle()
-    val contactsViewModel = koinViewModel<ContactsViewModel>()
+    val contactsViewModel = scopedViewModel<ContactsViewModel>()
 
     AdaptiveContactsScreen(
         backStack = backStack,

@@ -891,3 +891,40 @@ Idempotency fingerprint 也要加入 `endpointId`、`protocol`、`routeId`，避
 - [MeshCore payload formats](https://docs.meshcore.io/payloads/)
 - [MeshCore number allocations](https://docs.meshcore.io/number_allocations/)
 - [MeshCore FAQ](https://docs.meshcore.io/faq/)
+
+## 24. Phase 1 實作狀態（2026-08-24）
+
+`multi_nodes_` 分支已完成本提案中「先隔離 Meshtastic session，再談跨協議」的第一代來源碼架構。這不是整份提案的完成聲明，也不是四台實機驗收結果。
+
+### 24.1 已完成
+
+- 新增 `core:radio-fleet`：提供 `EndpointId`、最多四台的 durable endpoint catalog、每台獨立 lifecycle state／generation，以及序列化完整啟動的 fleet manager。
+- 舊有 root radio graph 保留為唯一 `LEGACY_PRIMARY`，繼續承接 Gateway v1/v2、既有 Android host integration 與相容呼叫；第一代禁止重新指定或移除它。
+- 每個 secondary Meshtastic endpoint 有獨立的固定 BLE address、Room handle、ChannelSet／LocalConfig／ModuleConfig DataStore、Koin scope、repository、packet handler、service scope 與 queued-message drain。
+- 原本 process-global 的 active BLE pointer 改為 address-keyed registry，且移除連線時檢查 ownership，避免舊 session 清掉同 address 的新 session。
+- endpoint 存活期間會 pin 對應 Room database，關閉 session 時會釋放 database、DataStore cache、Koin scope 與 coroutine scope。
+- Connections 顯示最多四台 Meshtastic；Android 的 Messages／channel list、Nodes、Settings、Channels 與 Firmware 等 endpoint-aware 主功能顯示以 address 最後四碼命名的節點子分頁。
+- 每個節點分頁透過 endpoint Koin scope 與 scope-aware ViewModel key 取得自己的資料。切換節點時會回到該功能根頁，避免把前一節點的 detail route 套用到另一個節點。
+- 第一次既有使用者啟動會把 root radio selection 遷移為 legacy-primary profile；同 address 會去重，總數上限為四。
+
+### 24.2 本階段刻意保留的邊界
+
+- Gateway v1/v2 仍只投影 legacy primary；secondary Gateway 依賴會 fail closed。Gateway v3 endpoint selector 尚未實作。
+- Settings 中 radio/channel/database-owned 狀態已按節點隔離，但語言、主題等 app-global preference 仍是共用值，即使它們會出現在每個節點的 Settings 分頁。
+- secondary outbound 使用各自 Room queue 與 process-local drain；全域 endpoint-aware ledger、WorkManager 恢復與公平 RF scheduler 尚未實作。
+- Android host phone-location、widget、notification 與 endpointless broadcast 行為仍由 legacy primary 或 aggregate host 邊界承擔。
+- 每個節點目前沒有獨立保存深層 Navigation back stack；節點切換採安全的 root reset。
+- MeshCore 多節點、第三協議 adapter、unified inbox、跨 endpoint bridge 都未啟用。
+- Desktop／Windows 與 iOS 沒有新增多節點 runtime 或 UI；共享 fleet contract 與 BLE registry 通過其編譯邊界，iOS fleet panel 是 no-op actual。
+
+### 24.3 來源碼驗證
+
+- Fleet manager 測試涵蓋四個獨立 state/generation、同 address 去重、legacy-primary 保護、建立失敗與 deferred registration。
+- Persistence 測試涵蓋舊 selection migration、去重、四台上限與 primary repair；database 測試確認 pinned endpoint 不被 cache eviction；BLE 測試確認不同 address 與 stale owner 不會互相移除。
+- Root 與手動建立的 secondary Koin graph 驗證通過，Android Google Debug 編譯通過，修改來源沒有新增 Detekt finding。
+- JDK 21／en-US 根命令 `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile --continue` 最終執行 1,685 個 actionable tasks（251 executed、1,434 up-to-date）。格式、兩個 Android Debug assembly、tests、`allTests`、Desktop/JVM、共享 KMP 與 iOS Simulator 編譯均完成；命令僅因未修改來源中的既有六項 Detekt（BLE 3、domain 1、model 1、network 1）維持非零。
+- `:app:lintGoogleDebug :app:lintFdroidDebug` 成功，執行 770 個 actionable tasks（105 executed、665 up-to-date）。
+
+### 24.4 尚未取得的必要證據
+
+目前沒有兩台或四台真實 Meshtastic 同時連線證據，也沒有逐台修改 primary／secondary channels、獨立訊息歷史、斷線重連風暴、process death restore、Doze／背景、RF 發送、遠端接收或同 mesh 重複收訊去重結果。進入發布判定前，仍應依第 20 節先完成兩台，再完成四台的實機矩陣；目前只能稱為 Phase-1 source/fake-test implementation。

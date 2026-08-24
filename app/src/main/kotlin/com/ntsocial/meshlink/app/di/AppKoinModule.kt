@@ -47,6 +47,10 @@ import com.ntsocial.meshlink.core.network.di.CoreNetworkModule
 import com.ntsocial.meshlink.core.network.repository.ProbeTableProvider
 import com.ntsocial.meshlink.core.prefs.di.CorePrefsAndroidModule
 import com.ntsocial.meshlink.core.prefs.di.CorePrefsModule
+import com.ntsocial.meshlink.core.radiofleet.DefaultRadioFleetManager
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSessionFactory
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointStore
+import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.service.di.CoreServiceAndroidModule
 import com.ntsocial.meshlink.core.service.di.CoreServiceModule
 import com.ntsocial.meshlink.core.takserver.di.CoreTakServerModule
@@ -60,6 +64,8 @@ import com.ntsocial.meshlink.feature.node.di.FeatureNodeModule
 import com.ntsocial.meshlink.feature.settings.di.FeatureSettingsModule
 import com.ntsocial.meshlink.feature.widget.di.FeatureWidgetModule
 import com.ntsocial.meshlink.feature.wifiprovision.di.FeatureWifiProvisionModule
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import org.koin.core.annotation.Module
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
@@ -125,4 +131,15 @@ class AppKoinModule {
     @Single fun provideProbeTable(provider: ProbeTableProvider): ProbeTable = provider.get()
 
     @Single fun provideUsbSerialProber(probeTable: ProbeTable): UsbSerialProber = UsbSerialProber(probeTable)
+
+    @Single
+    fun provideRadioFleetManager(
+        endpointStore: RadioEndpointStore,
+        sessionFactory: RadioEndpointSessionFactory,
+        dispatchers: com.ntsocial.meshlink.core.di.CoroutineDispatchers,
+    ): RadioFleetManager = DefaultRadioFleetManager(
+        endpointStore = endpointStore,
+        sessionFactory = sessionFactory,
+        scope = CoroutineScope(SupervisorJob() + dispatchers.default),
+    )
 }

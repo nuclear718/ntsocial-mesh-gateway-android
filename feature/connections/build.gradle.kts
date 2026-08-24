@@ -55,6 +55,9 @@ kotlin {
             implementation(libs.jetbrains.navigation3.ui)
         }
 
-        androidMain.dependencies { implementation(libs.usb.serial.android) }
+        androidMain.dependencies {
+            implementation(projects.core.radioFleet)
+            implementation(libs.usb.serial.android)
+        }
     }
 }

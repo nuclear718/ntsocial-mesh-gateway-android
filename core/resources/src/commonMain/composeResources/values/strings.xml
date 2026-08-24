@@ -1037,7 +1037,12 @@
     <string name="quick_chat_new">New quick chat</string>
     <string name="quick_chat_show">Show quick chat menu</string>
     <string name="radiation">Radiation</string>
+    <!-- RADIO -->
     <string name="radio_configuration">Radio configuration</string>
+    <string name="radio_endpoint_switching">Preparing this node…</string>
+    <string name="radio_fleet_capacity">Meshtastic nodes %1$d / 4</string>
+    <string name="radio_fleet_title">Connected nodes</string>
+    <string name="radio_legacy_primary">Gateway primary</string>
     <string name="rainfall_1h">Rain (1h)</string>
     <string name="rainfall_24h">Rain (24h)</string>
     <string name="range_test">Range Test</string>

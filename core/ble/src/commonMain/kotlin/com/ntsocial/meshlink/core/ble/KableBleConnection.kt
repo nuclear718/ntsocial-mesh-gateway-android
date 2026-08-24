@@ -147,14 +147,14 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
         // Install ownership of the new peripheral atomically. Cancellation between
         // peripheral construction and field assignment would strand `p` (Kable allocates
         // a per-peripheral scope + Bluetooth-state observer eagerly), so the cleanup,
-        // assignment, and ActiveBleConnection update must complete as a single unit.
+        // assignment, and ActiveBleConnections update must complete as a single unit.
         // _deviceFlow.emit() is intentionally outside this block — making it
         // non-cancellable could hang teardown on a slow collector.
         withContext(NonCancellable) {
             cleanUpPeripheral(device.address)
             peripheral = p
             negotiatedWriteLengths = NegotiatedWriteLengths()
-            ActiveBleConnection.active = ActiveConnection(p, device.address)
+            ActiveBleConnections.register(ActiveConnection(p, device.address))
         }
 
         _deviceFlow.emit(device)
@@ -230,18 +230,17 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
         stateJob = null
 
         // Capture the peripheral we own before clearing it so we can identity-check
-        // ActiveBleConnection below. A stale disconnect from an earlier connection
+        // ActiveBleConnections below. A stale disconnect from an earlier connection
         // attempt's exception handler must not clobber a newer connection that has
         // already installed itself as active.
         val owned = peripheral
+        val ownedAddress = device?.address
         safeClosePeripheral("disconnect")
         peripheral = null
         connectionScope = null
         negotiatedWriteLengths = NegotiatedWriteLengths()
 
-        if (owned != null && ActiveBleConnection.active?.peripheral === owned) {
-            ActiveBleConnection.active = null
-        }
+        if (owned != null && ownedAddress != null) ActiveBleConnections.removeIfOwned(ownedAddress, owned)
 
         _deviceFlow.emit(null)
     }
@@ -266,7 +265,12 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
 
     /** Ensures the previous peripheral's GATT resources are fully released. */
     private suspend fun cleanUpPeripheral(tag: String) {
-        withContext(NonCancellable) { safeClosePeripheral(tag) }
+        val owned = peripheral
+        val ownedAddress = device?.address
+        withContext(NonCancellable) {
+            safeClosePeripheral(tag)
+            if (owned != null && ownedAddress != null) ActiveBleConnections.removeIfOwned(ownedAddress, owned)
+        }
     }
 
     private suspend fun cacheNegotiatedWriteLengths(peripheral: Peripheral, address: String) {

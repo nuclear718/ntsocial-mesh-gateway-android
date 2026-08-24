@@ -48,6 +48,7 @@ kotlin {
             implementation(projects.core.ble)
             implementation(projects.core.prefs)
             implementation(projects.core.proto)
+            implementation(projects.core.radioFleet)
             implementation(projects.core.takserver)
 
             implementation(libs.jetbrains.lifecycle.runtime)

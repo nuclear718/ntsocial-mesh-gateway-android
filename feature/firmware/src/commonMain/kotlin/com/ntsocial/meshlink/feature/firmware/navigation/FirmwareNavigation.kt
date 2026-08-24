@@ -30,9 +30,9 @@ import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.ntsocial.meshlink.core.navigation.FirmwareRoute
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.firmware.FirmwareUpdateScreen
 import com.ntsocial.meshlink.feature.firmware.FirmwareUpdateViewModel
-import org.koin.compose.viewmodel.koinViewModel
 
 /** Registers the firmware update screen entries into the Navigation 3 entry provider. */
 fun EntryProviderScope<NavKey>.firmwareGraph(backStack: NavBackStack<NavKey>) {
@@ -46,6 +46,6 @@ fun EntryProviderScope<NavKey>.firmwareGraph(backStack: NavBackStack<NavKey>) {
 
 @Composable
 private fun FirmwareScreen(onNavigateUp: () -> Unit) {
-    val viewModel = koinViewModel<FirmwareUpdateViewModel>()
+    val viewModel = scopedViewModel<FirmwareUpdateViewModel>()
     FirmwareUpdateScreen(onNavigateUp = onNavigateUp, viewModel = viewModel)
 }

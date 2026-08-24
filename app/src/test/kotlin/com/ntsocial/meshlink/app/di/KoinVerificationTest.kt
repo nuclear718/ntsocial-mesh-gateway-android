@@ -30,6 +30,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.SavedStateHandle
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.ntsocial.meshlink.app.radio.RadioEndpointScopeContext
+import com.ntsocial.meshlink.app.radio.radioEndpointKoinModule
 import com.ntsocial.meshlink.core.ble.BleLogFormat
 import com.ntsocial.meshlink.core.ble.BleLogLevel
 import com.ntsocial.meshlink.core.model.util.NodeIdLookup
@@ -37,6 +39,7 @@ import com.ntsocial.meshlink.feature.node.metrics.MetricsViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CoroutineDispatcher
+import org.koin.dsl.module
 import org.koin.plugin.module.dsl.koinApplication
 import org.koin.test.verify.definition
 import org.koin.test.verify.injectedParameters
@@ -85,5 +88,29 @@ class KoinVerificationTest {
         } finally {
             app.close()
         }
+    }
+
+    @Test
+    fun verifySecondaryRadioEndpointScopeGraph() {
+        module { includes(AppKoinModule().module(), radioEndpointKoinModule) }
+            .verify(
+                extraTypes =
+                listOf(
+                    Application::class,
+                    Context::class,
+                    Lifecycle::class,
+                    SavedStateHandle::class,
+                    WorkerParameters::class,
+                    WorkManager::class,
+                    CoroutineDispatcher::class,
+                    NodeIdLookup::class,
+                    HttpClient::class,
+                    HttpClientEngine::class,
+                    BleLogLevel::class,
+                    BleLogFormat::class,
+                    RadioEndpointScopeContext::class,
+                ),
+                injections = injectedParameters(definition<MetricsViewModel>(Int::class)),
+            )
     }
 }

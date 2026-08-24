@@ -72,7 +72,7 @@ open class ScannerViewModel(
     protected val serviceRepository: ServiceRepository,
     private val radioController: RadioController,
     private val radioInterfaceService: RadioInterfaceService,
-    private val radioPrefs: RadioPrefs,
+    protected val radioPrefs: RadioPrefs,
     private val recentAddressesDataSource: RecentAddressesDataSource,
     private val getDiscoveredDevicesUseCase: GetDiscoveredDevicesUseCase,
     private val networkRepository: NetworkRepository,
@@ -299,6 +299,13 @@ open class ScannerViewModel(
         radioController.setDeviceAddress(address)
     }
 
+    /** Platform hook for selecting an already authorized device. */
+    protected open fun connectSelected(entry: DeviceListEntry) {
+        radioPrefs.setDevName(entry.name)
+        addRecentAddress(entry.fullAddress, entry.name)
+        changeDeviceAddress(entry.fullAddress)
+    }
+
     fun addRecentAddress(address: String, name: String) {
         if (!address.startsWith(TCP_DEVICE_PREFIX)) return
         safeLaunch(tag = "addRecentAddress") { recentAddressesDataSource.add(RecentAddress(address, name)) }
@@ -314,39 +321,35 @@ open class ScannerViewModel(
      *
      * @return `true` if the connection has been initiated; `false` if bonding/permission is pending.
      */
-    fun onSelected(entry: DeviceListEntry): Boolean {
-        radioPrefs.setDevName(entry.name)
-        addRecentAddress(entry.fullAddress, entry.name)
-        return when (entry) {
-            is DeviceListEntry.Ble -> {
-                if (entry.bonded) {
-                    changeDeviceAddress(entry.fullAddress)
-                    true
-                } else {
-                    requestBonding(entry)
-                    false
-                }
-            }
-
-            is DeviceListEntry.Usb -> {
-                if (entry.bonded) {
-                    changeDeviceAddress(entry.fullAddress)
-                    true
-                } else {
-                    requestPermission(entry)
-                    false
-                }
-            }
-
-            is DeviceListEntry.Tcp -> {
-                safeLaunch(tag = "onSelectedTcp") { changeDeviceAddress(entry.fullAddress) }
+    fun onSelected(entry: DeviceListEntry): Boolean = when (entry) {
+        is DeviceListEntry.Ble -> {
+            if (entry.bonded) {
+                connectSelected(entry)
                 true
+            } else {
+                requestBonding(entry)
+                false
             }
+        }
 
-            is DeviceListEntry.Mock -> {
-                changeDeviceAddress(entry.fullAddress)
+        is DeviceListEntry.Usb -> {
+            if (entry.bonded) {
+                connectSelected(entry)
                 true
+            } else {
+                requestPermission(entry)
+                false
             }
+        }
+
+        is DeviceListEntry.Tcp -> {
+            safeLaunch(tag = "onSelectedTcp") { connectSelected(entry) }
+            true
+        }
+
+        is DeviceListEntry.Mock -> {
+            connectSelected(entry)
+            true
         }
     }
 
@@ -358,12 +361,12 @@ open class ScannerViewModel(
      * first.
      */
     protected open fun requestBonding(entry: DeviceListEntry.Ble) {
-        changeDeviceAddress(entry.fullAddress)
+        connectSelected(entry)
     }
 
     protected open fun requestPermission(entry: DeviceListEntry.Usb) = Unit
 
-    fun disconnect() {
+    open fun disconnect() {
         radioPrefs.setDevName(null)
         changeDeviceAddress(NO_DEVICE_SELECTED)
     }

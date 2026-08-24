@@ -29,14 +29,15 @@ import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.ntsocial.meshlink.core.navigation.ChannelsRoute
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel
-import org.koin.compose.viewmodel.koinViewModel
 
 /** Navigation graph for for the top level ChannelScreen - [ChannelsRoute.Channels]. */
 fun EntryProviderScope<NavKey>.channelsGraph(backStack: NavBackStack<NavKey>) {
     entry<ChannelsRoute.ChannelsGraph> {
         ChannelScreen(
-            radioConfigViewModel = koinViewModel<RadioConfigViewModel>(),
+            viewModel = scopedViewModel(),
+            radioConfigViewModel = scopedViewModel<RadioConfigViewModel>(),
             onNavigate = { route -> backStack.add(route) },
             onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
         )
@@ -44,7 +45,8 @@ fun EntryProviderScope<NavKey>.channelsGraph(backStack: NavBackStack<NavKey>) {
 
     entry<ChannelsRoute.Channels> {
         ChannelScreen(
-            radioConfigViewModel = koinViewModel<RadioConfigViewModel>(),
+            viewModel = scopedViewModel(),
+            radioConfigViewModel = scopedViewModel<RadioConfigViewModel>(),
             onNavigate = { route -> backStack.add(route) },
             onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
         )

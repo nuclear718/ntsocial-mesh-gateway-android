@@ -52,6 +52,7 @@ import com.ntsocial.meshlink.core.model.NodeInfo
 import com.ntsocial.meshlink.core.model.Position
 import com.ntsocial.meshlink.core.model.RadioNotConnectedException
 import com.ntsocial.meshlink.core.model.util.anonymize
+import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.repository.CommandSender
 import com.ntsocial.meshlink.core.repository.MeshConnectionManager
 import com.ntsocial.meshlink.core.repository.MeshLocationManager
@@ -59,11 +60,13 @@ import com.ntsocial.meshlink.core.repository.MeshRouter
 import com.ntsocial.meshlink.core.repository.MeshServiceNotifications
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioPrefs
 import com.ntsocial.meshlink.core.repository.SERVICE_NOTIFY_ID
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -106,6 +109,10 @@ class MeshService : Service() {
         get() = notifications as MeshServiceNotificationsImpl
 
     private val orchestrator: MeshServiceOrchestrator by inject()
+
+    private val radioFleetManager: RadioFleetManager by inject()
+
+    private val radioPrefs: RadioPrefs by inject()
 
     private val router: MeshRouter by inject()
 
@@ -185,6 +192,12 @@ class MeshService : Service() {
         try {
             orchestrator.start()
             isServiceInitialized = true
+            serviceScope.launch {
+                radioFleetManager.start(
+                    legacyAddress = radioPrefs.readPersistedDevAddr(),
+                    legacyName = radioPrefs.devName.value,
+                )
+            }
             connectionManager.locationSharingRequested
                 .onEach { reconcileLocationForegroundAccess() }
                 .launchIn(serviceScope)
@@ -431,6 +444,7 @@ class MeshService : Service() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         if (isServiceInitialized) {
             orchestrator.stop()
+            CoroutineScope(dispatchers.io + SupervisorJob()).launch { radioFleetManager.stop() }
         }
         serviceJob.cancel()
         super.onDestroy()

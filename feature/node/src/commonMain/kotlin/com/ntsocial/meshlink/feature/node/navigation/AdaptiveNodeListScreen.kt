@@ -30,10 +30,10 @@ import androidx.navigation3.runtime.NavKey
 import com.ntsocial.meshlink.core.navigation.ChannelsRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.node.list.NodeListScreen
 import com.ntsocial.meshlink.feature.node.list.NodeListViewModel
 import kotlinx.coroutines.flow.Flow
-import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 fun AdaptiveNodeListScreen(
@@ -42,7 +42,7 @@ fun AdaptiveNodeListScreen(
     onHandleDeepLink: (com.ntsocial.meshlink.core.common.util.CommonUri, onInvalid: () -> Unit) -> Unit = { _, _ -> },
     onNavigateToConnections: () -> Unit = {},
 ) {
-    val nodeListViewModel: NodeListViewModel = koinViewModel()
+    val nodeListViewModel: NodeListViewModel = scopedViewModel()
 
     NodeListScreen(
         viewModel = nodeListViewModel,

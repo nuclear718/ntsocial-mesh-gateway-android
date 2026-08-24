@@ -35,6 +35,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.app.di.AndroidKoinApp
+import com.ntsocial.meshlink.app.radio.radioEndpointKoinModule
 import com.ntsocial.meshlink.core.common.ContextServices
 import com.ntsocial.meshlink.core.database.DatabaseManager
 import com.ntsocial.meshlink.core.repository.MeshPrefs
@@ -52,6 +53,7 @@ import kotlinx.coroutines.withTimeout
 import org.koin.android.ext.android.get
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.workmanager.koin.workManagerFactory
+import org.koin.core.context.loadKoinModules
 import org.koin.plugin.module.dsl.startKoin
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
@@ -76,6 +78,7 @@ open class MeshUtilApplication :
             androidContext(this@MeshUtilApplication)
             workManagerFactory()
         }
+        loadKoinModules(radioEndpointKoinModule)
 
         // The Provider may be created before Application.onCreate, so Gateway event collection starts only after Koin
         // is fully initialized. Events contain metadata only; external clients re-query the protected Provider.

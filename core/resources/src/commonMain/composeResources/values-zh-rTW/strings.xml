@@ -934,6 +934,10 @@
     <string name="quick_chat_show">顯示快速聊天選單</string>
     <string name="radiation">輻射</string>
     <string name="radio_configuration">設備設定</string>
+    <string name="radio_endpoint_switching">正在準備此節點…</string>
+    <string name="radio_fleet_capacity">Meshtastic 節點 %1$d / 4</string>
+    <string name="radio_fleet_title">已連接節點</string>
+    <string name="radio_legacy_primary">網關主節點</string>
     <string name="rainfall_1h">降雨（1h）</string>
     <string name="rainfall_24h">降雨（24h）</string>
     <string name="range_test">範圍測試</string>

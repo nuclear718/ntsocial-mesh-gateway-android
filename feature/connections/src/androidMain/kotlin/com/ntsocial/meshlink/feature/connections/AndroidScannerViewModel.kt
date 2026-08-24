@@ -33,6 +33,8 @@ import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.model.util.anonymize
 import com.ntsocial.meshlink.core.network.repository.NetworkRepository
 import com.ntsocial.meshlink.core.network.repository.UsbRepository
+import com.ntsocial.meshlink.core.radiofleet.DiscoveredRadio
+import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.RadioPrefs
 import com.ntsocial.meshlink.core.repository.ServiceRepository
@@ -60,6 +62,7 @@ class AndroidScannerViewModel(
     private val usbRepository: UsbRepository,
     uiPrefs: UiPrefs,
     bleScanner: com.ntsocial.meshlink.core.ble.BleScanner? = null,
+    private val radioFleetManager: RadioFleetManager,
 ) : ScannerViewModel(
     serviceRepository,
     radioController,
@@ -72,6 +75,43 @@ class AndroidScannerViewModel(
     uiPrefs,
     bleScanner,
 ) {
+    override fun connectSelected(entry: DeviceListEntry) {
+        addRecentAddress(entry.fullAddress, entry.name)
+        viewModelScope.launch {
+            runCatching {
+                val profile =
+                    radioFleetManager.register(
+                        candidate = DiscoveredRadio(transportAddress = entry.fullAddress, displayName = entry.name),
+                        connect = false,
+                    )
+                if (profile.legacyPrimary) {
+                    // The catalog, rather than an asynchronously populated UI snapshot, identifies the immutable
+                    // Android AIDL/Gateway projection before any connection can start.
+                    radioPrefs.setDevName(entry.name)
+                    changeDeviceAddress(entry.fullAddress)
+                } else {
+                    radioFleetManager.connect(profile.id)
+                }
+            }
+                .onFailure { error ->
+                    Logger.w(error) { "Unable to add Meshtastic endpoint" }
+                    serviceRepository.setErrorMessage(
+                        text = error.message ?: "Unable to add Meshtastic endpoint",
+                        severity = Severity.Warn,
+                    )
+                }
+        }
+    }
+
+    override fun disconnect() {
+        val primary = radioFleetManager.snapshots.value.values.firstOrNull { it.profile.legacyPrimary }
+        if (primary == null) {
+            super.disconnect()
+        } else {
+            viewModelScope.launch { radioFleetManager.disconnect(primary.profile.id) }
+        }
+    }
+
     override fun requestBonding(entry: DeviceListEntry.Ble) {
         Logger.i { "Starting bonding for ${entry.device.address.anonymize}" }
         viewModelScope.launch {
@@ -79,7 +119,7 @@ class AndroidScannerViewModel(
             try {
                 bluetoothRepository.bond(entry.device)
                 Logger.i { "Bonding complete for ${entry.device.address.anonymize}, selecting device..." }
-                changeDeviceAddress(entry.fullAddress)
+                connectSelected(entry)
             } catch (ex: SecurityException) {
                 Logger.w(ex) { "Bonding failed for ${entry.device.address.anonymize} Permissions not granted" }
                 serviceRepository.setErrorMessage(
@@ -107,7 +147,7 @@ class AndroidScannerViewModel(
             .onEach { granted ->
                 if (granted) {
                     Logger.i { "User approved USB access" }
-                    changeDeviceAddress(entry.fullAddress)
+                    connectSelected(entry)
                 } else {
                     Logger.e { "USB permission denied for device ${entry.address}" }
                 }

@@ -990,7 +990,12 @@ quick_chat_instant
 quick_chat_new
 quick_chat_show
 radiation
+### RADIO ###
 radio_configuration
+radio_endpoint_switching
+radio_fleet_capacity
+radio_fleet_title
+radio_legacy_primary
 rainfall_1h
 rainfall_24h
 range_test

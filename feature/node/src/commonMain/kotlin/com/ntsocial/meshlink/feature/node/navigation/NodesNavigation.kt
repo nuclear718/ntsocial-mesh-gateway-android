@@ -57,6 +57,7 @@ import com.ntsocial.meshlink.core.resources.power
 import com.ntsocial.meshlink.core.resources.signal
 import com.ntsocial.meshlink.core.resources.traceroute
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.node.compass.CompassViewModel
 import com.ntsocial.meshlink.feature.node.detail.NodeDetailScreen
 import com.ntsocial.meshlink.feature.node.detail.NodeDetailViewModel
@@ -75,7 +76,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.StringResource
-import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.reflect.KClass
 
@@ -126,8 +126,8 @@ fun EntryProviderScope<NavKey>.nodeDetailGraph(
     }
 
     entry<NodesRoute.NodeDetail>(metadata = { ListDetailSceneStrategy.detailPane() }) { args ->
-        val nodeDetailViewModel: NodeDetailViewModel = koinViewModel()
-        val compassViewModel: CompassViewModel = koinViewModel()
+        val nodeDetailViewModel: NodeDetailViewModel = scopedViewModel()
+        val compassViewModel: CompassViewModel = scopedViewModel()
         val destNum = args.destNum ?: 0 // Handle nullable destNum if needed
         NodeDetailScreen(
             nodeId = destNum,
@@ -140,7 +140,7 @@ fun EntryProviderScope<NavKey>.nodeDetailGraph(
     }
 
     entry<NodeDetailRoute.TracerouteLog>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
-        val metricsViewModel = koinViewModel<MetricsViewModel> { parametersOf(args.destNum) }
+        val metricsViewModel = scopedViewModel<MetricsViewModel> { parametersOf(args.destNum) }
         metricsViewModel.setNodeId(args.destNum)
 
         TracerouteLogScreen(
@@ -193,7 +193,7 @@ private inline fun <reified R : Route> EntryProviderScope<NavKey>.addNodeDetailS
 ) {
     entry<R>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
         val destNum = getDestNum(args)
-        val metricsViewModel = koinViewModel<MetricsViewModel> { parametersOf(destNum) }
+        val metricsViewModel = scopedViewModel<MetricsViewModel> { parametersOf(destNum) }
         metricsViewModel.setNodeId(destNum)
 
         routeInfo.screenComposable(metricsViewModel, dropUnlessResumed { backStack.removeLastOrNull() })

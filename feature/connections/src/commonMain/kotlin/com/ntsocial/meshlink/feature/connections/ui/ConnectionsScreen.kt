@@ -178,7 +178,10 @@ fun ConnectionsScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
 
+                RadioFleetPanel()
+
                 AdaptiveTwoPane(
+                    modifier = Modifier.weight(1f),
                     first = {
                         val uiState =
                             when {

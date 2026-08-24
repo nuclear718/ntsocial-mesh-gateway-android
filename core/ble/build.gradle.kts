@@ -44,6 +44,7 @@ kotlin {
             implementation(projects.core.model)
 
             implementation(libs.kermit)
+            implementation(libs.kotlinx.atomicfu)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kable.core)
         }

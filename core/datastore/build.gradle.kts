@@ -41,8 +41,10 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(projects.core.common)
+            implementation(projects.core.di)
             implementation(projects.core.model)
             implementation(projects.core.proto)
+            implementation(projects.core.radioFleet)
             api(libs.androidx.datastore)
             api(libs.androidx.datastore.preferences)
             implementation(libs.kotlinx.serialization.json)

@@ -38,6 +38,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(projects.core.repository)
+            implementation(projects.core.radioFleet)
             implementation(projects.core.common)
             implementation(projects.core.di)
 
