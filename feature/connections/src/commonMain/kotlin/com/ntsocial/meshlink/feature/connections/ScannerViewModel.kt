@@ -58,7 +58,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
-import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Platform-neutral ViewModel that drives the Connections screen: device discovery (BLE/USB/TCP), scan state, current
@@ -233,7 +233,7 @@ open class ScannerViewModel(
             safeLaunch(tag = "startBleScan") {
                 try {
                     bleScanner
-                        .scan(timeout = Duration.INFINITE, serviceUuid = MeshtasticBleConstants.SERVICE_UUID)
+                        .scan(timeout = BLE_SCAN_DURATION, serviceUuid = MeshtasticBleConstants.SERVICE_UUID)
                         .flowOn(dispatchers.io)
                         .collect { device ->
                             scannedBleDevices.update { current ->
@@ -371,6 +371,9 @@ open class ScannerViewModel(
         changeDeviceAddress(NO_DEVICE_SELECTED)
     }
 }
+
+/** One discovery sweep is long enough for normal BLE advertising intervals without becoming a permanent scan. */
+internal val BLE_SCAN_DURATION = 12.seconds
 
 /**
  * Keeps the last useful local name while still accepting fresher RSSI/advertisement state.

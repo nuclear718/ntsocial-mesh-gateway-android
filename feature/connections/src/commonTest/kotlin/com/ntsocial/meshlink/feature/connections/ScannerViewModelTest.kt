@@ -41,6 +41,7 @@ import dev.mokkery.answering.returns
 import dev.mokkery.every
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
+import dev.mokkery.verify
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -141,6 +142,9 @@ class ScannerViewModelTest {
             assertEquals(false, awaitItem())
             viewModel.startBleScan()
             assertEquals(true, awaitItem())
+            verify {
+                bleScanner.scan(BLE_SCAN_DURATION, com.ntsocial.meshlink.core.ble.MeshtasticBleConstants.SERVICE_UUID)
+            }
 
             viewModel.stopBleScan()
             assertEquals(false, awaitItem())

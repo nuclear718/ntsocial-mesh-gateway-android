@@ -1,6 +1,35 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
 
+## 2026-08-25 - Android three-phone P1 remediation and early-ended soak
+- On branch `multi_nodes_` from HEAD `2c62c6bc0`, independently reproduced all four confirmed P1s from the 2026-08-24
+  report: nested `/channels` stack corruption/crash, no MeshService recovery after `MY_PACKAGE_REPLACED`, a cold
+  Gateway Provider query before Koin, and permanent auto BLE scan/indeterminate animation near 0.7 core/126 rendered
+  frames per second on the affected Samsung.
+- Minimally fixed nested deep links to append under the current real top-level stack; boot/package-replaced restart to
+  delegate persisted-address hydration and the bounded no-device grace to MeshService; app-owned idempotent Koin
+  bootstrap invoked synchronously by the exported Provider wrapper and reused by Application; and a 12-second,
+  lifecycle/Connected-bounded BLE scan with no indeterminate scan bar. Added focused navigation, receiver, bootstrap,
+  and scanner tests. Did not change Room/packet/RF/Gateway contracts or BLE transport priority.
+- The JDK-21/en-US full gate completed 2,180 tasks (428 executed, 11 from cache, 1,741 up-to-date). Formatting, Android
+  Debug builds, tests/allTests, Desktop/JVM, shared KMP, iOS Simulator compilation, both Debug lints, Google Release
+  R8/Lint Vital/AAB, and cloud guards passed. Exit 1 was only the six existing findings in unmodified BLE (3), domain
+  (1), model (1), and network (1) sources. The final 51,393,739-byte Google arm64 Debug APK `1.0.6 (7)` has SHA-256
+  `8BC272A926D58AE811B63951707B0BF233D5BBC68F23A5300058607B9652C265` and passes 16 KiB zipalign.
+- Data-preserving installed the exact APK on the same three Android 16 phones; all installed hashes matched and initial
+  install times stayed intact. With no manual launch, both previously selected single radios restored FGS and Stage 2
+  (the screen-off OPPO took about 41 seconds); the no-radio service stopped after grace. A 100-cycle cold Provider
+  stress had 100/100 complete process bootstraps, 100/100 expected shell security rejections, zero Koin/fatal errors.
+  Twelve manifest deep-link cases plus Settings -> Channels -> Back on all phones retained one PID and rendered safely.
+- D2 Connections 70-second average improved from reproduced 71.1% one-core/126 fps to 4.69%/8.44 fps; a manual scan
+  ended at the bounded timeout and HOME stopped it while Connected remained. A separate three-minute screen-off test
+  averaged D2 2.56% and D3 6.42% one-core with no errors. The user ended the planned 185-minute soak early after the
+  complete minutes 0-58: 59 samples/device and 12/12 UI events, every phone online with one PID and all safety counters
+  zero. Full-window CPU averaged D1/D2/D3 0.27%/7.95%/16.42%; D3 energy remains an unproven Profile-build candidate.
+- Full report: `ANDROID_MULTI_NODE_THREE_PHONE_HARDWARE_REMEDIATION_REPORT_2026-08-25.md`. Do not claim a three-hour,
+  Doze, multi-radio-per-phone, RF/remote-receipt, authorized-parent command, signed-release, or store result from this run.
+
+
 ## 2026-08-24 - Android multi-node build and three-phone single-node hardware soak
 - On branch `multi_nodes_` at HEAD `d3aa2eebf16cf5e5f7f44803b17e7a68594c2b59` plus the dirty worktree,
   built `:app:assembleGoogleDebug --rerun-tasks` with JDK 21/en-US. The build passed in 5m28s (450 executed tasks),

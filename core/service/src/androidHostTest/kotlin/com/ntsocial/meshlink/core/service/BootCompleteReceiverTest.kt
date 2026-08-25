@@ -24,25 +24,24 @@
  */
 package com.ntsocial.meshlink.core.service
 
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import co.touchlab.kermit.Logger
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
-/** Restarts [MeshService] after a completed boot or an in-place package update. */
-class BootCompleteReceiver : BroadcastReceiver() {
-
-    override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action
-        if (!shouldRestartMeshService(action)) return
-
-        // MeshService reads the authoritative persisted address and applies its bounded no-device grace period. Reading
-        // MeshPrefs.deviceAddress.value here races DataStore hydration in a cold process and can incorrectly skip a
-        // previously selected radio.
-        Logger.i { "BootCompleteReceiver: starting MeshService after $action" }
-        MeshService.startService(context)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class BootCompleteReceiverTest {
+    @Test
+    fun `only completed boot and own package replacement restart the service`() {
+        assertTrue(shouldRestartMeshService(Intent.ACTION_BOOT_COMPLETED))
+        assertTrue(shouldRestartMeshService(Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertFalse(shouldRestartMeshService(Intent.ACTION_PACKAGE_REPLACED))
+        assertFalse(shouldRestartMeshService("android.intent.action.QUICKBOOT_POWERON"))
+        assertFalse(shouldRestartMeshService("com.ntsocial.meshlink.SIM_BOOT"))
+        assertFalse(shouldRestartMeshService(null))
     }
 }
-
-internal fun shouldRestartMeshService(action: String?): Boolean =
-    action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED

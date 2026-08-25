@@ -71,13 +71,22 @@ class MultiBackstack(val startTab: NavKey) {
         }
     }
 
-    /** Sets the active tab and replaces its stack with the provided route path. */
+    /**
+     * Applies a deep-link path without assigning a nested graph key as the active top-level tab.
+     *
+     * A path rooted at a real top-level destination replaces that destination's stack. A path rooted at a nested graph,
+     * such as Channels or Firmware, is appended to the current tab just like in-app navigation.
+     */
     fun handleDeepLink(navKeys: List<NavKey>) {
         val rootKey = navKeys.firstOrNull() ?: return
-        val topLevel = TopLevelDestination.fromNavKey(rootKey)?.route ?: rootKey
-        currentTabRoute = topLevel
-        val stack = backStacks[topLevel] ?: return
-        stack.replaceAll(navKeys)
+        val topLevel = TopLevelDestination.fromNavKey(rootKey)?.route
+        if (topLevel != null) {
+            val stack = backStacks[topLevel] ?: return
+            stack.replaceAll(navKeys)
+            currentTabRoute = topLevel
+        } else {
+            backStacks[currentTabRoute]?.addAll(navKeys)
+        }
     }
 }
 

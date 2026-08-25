@@ -52,10 +52,10 @@ import org.meshtastic.proto.Config
  * Read-only, certificate-pinned gateway snapshots for the NTsocial Android application.
  *
  * This Provider intentionally does not expose radio configuration, PSKs, raw node protobufs, positions, or message
- * payload outside the validated envelope BLOB. It never resolves Koin during [onCreate], because Android may create a
- * Provider before the application's Koin startup is complete.
+ * payload outside the validated envelope BLOB. The Android host wrapper starts the complete Koin graph before this
+ * provider's [onCreate] returns, so an external query cannot race Application startup.
  */
-class NtsocialGatewayProvider :
+open class NtsocialGatewayProvider :
     ContentProvider(),
     KoinComponent {
     private val callerVerifier: NtsocialGatewayCallerVerifier by inject()

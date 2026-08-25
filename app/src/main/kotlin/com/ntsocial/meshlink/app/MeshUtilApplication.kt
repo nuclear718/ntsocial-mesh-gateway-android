@@ -34,9 +34,6 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import co.touchlab.kermit.Logger
-import com.ntsocial.meshlink.app.di.AndroidKoinApp
-import com.ntsocial.meshlink.app.radio.radioEndpointKoinModule
-import com.ntsocial.meshlink.core.common.ContextServices
 import com.ntsocial.meshlink.core.database.DatabaseManager
 import com.ntsocial.meshlink.core.repository.MeshPrefs
 import com.ntsocial.meshlink.core.service.NtsocialGatewayEventPublisher
@@ -51,10 +48,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import org.koin.android.ext.android.get
-import org.koin.android.ext.koin.androidContext
-import org.koin.androidx.workmanager.koin.workManagerFactory
-import org.koin.core.context.loadKoinModules
-import org.koin.plugin.module.dsl.startKoin
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
@@ -72,13 +65,7 @@ open class MeshUtilApplication :
 
     override fun onCreate() {
         super.onCreate()
-        ContextServices.app = this
-
-        startKoin<AndroidKoinApp> {
-            androidContext(this@MeshUtilApplication)
-            workManagerFactory()
-        }
-        loadKoinModules(radioEndpointKoinModule)
+        AndroidKoinBootstrap.ensureStarted(this)
 
         // The Provider may be created before Application.onCreate, so Gateway event collection starts only after Koin
         // is fully initialized. Events contain metadata only; external clients re-query the protected Provider.
@@ -135,7 +122,7 @@ open class MeshUtilApplication :
         get<DatabaseManager>().close()
         applicationScope.cancel()
         super.onTerminate()
-        org.koin.core.context.stopKoin()
+        AndroidKoinBootstrap.stop()
     }
 
     private fun scheduleMeshLogCleanup() {

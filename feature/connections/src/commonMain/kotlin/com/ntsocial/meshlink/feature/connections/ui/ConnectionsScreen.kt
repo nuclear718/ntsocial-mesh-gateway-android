@@ -48,7 +48,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.navigation.Route
@@ -129,13 +129,27 @@ fun ConnectionsScreen(
 
     val bleAutoScan by scanModel.bleAutoScan.collectAsStateWithLifecycle()
 
-    // Auto-start BLE scan on screen entry when the user has previously opted in. Stop on screen exit to save battery.
-    // We use `Unit` as the key so the effect is stable across recompositions — the toggle button manages scan
-    // start/stop directly and must not be interrupted by this effect re-firing when `bleAutoScan` changes.
-    // A LaunchedEffect watches bleAutoScan separately to handle the DataStore delivering `true` after the initial
-    // `false` (disk read latency), without triggering a dispose/restart cycle that kills an in-progress scan.
-    LaunchedEffect(bleAutoScan) { if (bleAutoScan && !scanModel.isBleScanning.value) scanModel.startBleScan() }
-    DisposableEffect(Unit) { onDispose { scanModel.stopBleScan() } }
+    var isScreenResumed by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        isScreenResumed = true
+        onPauseOrDispose {
+            isScreenResumed = false
+            scanModel.stopBleScan()
+        }
+    }
+    // Persisted auto-scan means one bounded sweep when this screen is resumed while disconnected. A connected user can
+    // still explicitly scan for another fleet endpoint with the manual action.
+    LaunchedEffect(bleAutoScan, isScreenResumed, connectionState) {
+        if (
+            isScreenResumed &&
+            bleAutoScan &&
+            connectionState !is ConnectionState.Connected &&
+            !scanModel.isBleScanning.value
+        ) {
+            scanModel.startBleScan()
+        }
+    }
+    LaunchedEffect(connectionState) { if (connectionState is ConnectionState.Connected) scanModel.stopBleScan() }
 
     /* Animate waiting for the configurations */
     var isWaiting by remember { mutableStateOf(false) }

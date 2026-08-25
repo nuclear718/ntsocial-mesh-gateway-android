@@ -26,6 +26,7 @@ package com.ntsocial.meshlink.core.navigation
 
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
+import com.ntsocial.meshlink.core.common.util.CommonUri
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -150,5 +151,57 @@ class MultiBackstackTest {
         assertEquals(2, multiBackstack.activeBackStack.size)
         assertEquals(NodesRoute.NodesGraph, multiBackstack.activeBackStack.first())
         assertEquals(tracerouteLog, multiBackstack.activeBackStack.last())
+    }
+
+    @Test
+    fun `channels router path stays on current tab and is safe to render`() {
+        val startTab = TopLevelDestination.Settings.route
+        val multiBackstack = MultiBackstack(startTab)
+        val settingsStack = NavBackStack<NavKey>().apply { add(TopLevelDestination.Settings.route) }
+        multiBackstack.backStacks = mapOf(TopLevelDestination.Settings.route to settingsStack)
+        val path = requireNotNull(DeepLinkRouter.route(CommonUri.parse("meshtastic://meshtastic/channels")))
+
+        multiBackstack.handleDeepLink(path)
+
+        assertEquals(TopLevelDestination.Settings.route, multiBackstack.currentTabRoute)
+        assertEquals(
+            listOf<NavKey>(TopLevelDestination.Settings.route, ChannelsRoute.ChannelsGraph),
+            multiBackstack.activeBackStack.toList(),
+        )
+    }
+
+    @Test
+    fun `firmware and wifi nested paths append to current stack`() {
+        val startTab = TopLevelDestination.Connections.route
+        val nestedPaths =
+            listOf(
+                listOf(FirmwareRoute.FirmwareGraph, FirmwareRoute.FirmwareUpdate),
+                listOf(WifiProvisionRoute.WifiProvision(address = null)),
+            )
+
+        nestedPaths.forEach { path ->
+            val multiBackstack = MultiBackstack(startTab)
+            val connectionsStack = NavBackStack<NavKey>().apply { add(startTab) }
+            multiBackstack.backStacks = mapOf(startTab to connectionsStack)
+
+            multiBackstack.handleDeepLink(path)
+
+            assertEquals(startTab, multiBackstack.currentTabRoute)
+            val expected: List<NavKey> = listOf(startTab) + path
+            assertEquals(expected, multiBackstack.activeBackStack.toList())
+        }
+    }
+
+    @Test
+    fun `missing top-level target stack does not change current tab`() {
+        val startTab = TopLevelDestination.Settings.route
+        val multiBackstack = MultiBackstack(startTab)
+        val settingsStack = NavBackStack<NavKey>().apply { add(startTab) }
+        multiBackstack.backStacks = mapOf(startTab to settingsStack)
+
+        multiBackstack.handleDeepLink(listOf(NodesRoute.NodesGraph))
+
+        assertEquals(startTab, multiBackstack.currentTabRoute)
+        assertEquals(listOf<NavKey>(startTab), multiBackstack.activeBackStack.toList())
     }
 }

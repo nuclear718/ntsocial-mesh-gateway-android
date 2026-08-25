@@ -185,7 +185,7 @@
 
         <!-- New protected NTsocial Gateway boundary. The authority varies with the app package for F-Droid/debug. -->
         <provider
-            android:name="com.ntsocial.meshlink.core.service.NtsocialGatewayProvider"
+            android:name="com.ntsocial.meshlink.app.NtsocialGatewayBootstrapProvider"
             android:authorities="${applicationId}.gateway"
             android:exported="true"
             android:grantUriPermissions="false" />
@@ -293,21 +293,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
 
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <!--For HTC devices per https://stackoverflow.com/questions/20441308/boot-completed-not-working-android/46294732#46294732 -->
-                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
-
-                <!-- for testing -->
-                <action android:name="com.ntsocial.meshlink.SIM_BOOT" />
             </intent-filter>
 
             <!-- Also restart our service if the app gets upgraded -->
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <!-- I was using PACKAGE_REPLACED, but MY_PACKAGE_REPLACED is newer and seems cleaner
-                <data
-                    android:scheme="package"
-                    android:path="com.ntsocial.meshlink" /> -->
             </intent-filter>
         </receiver>
         <receiver android:name="com.ntsocial.meshlink.core.service.ReplyReceiver" android:exported="false" />

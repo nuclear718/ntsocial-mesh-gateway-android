@@ -96,7 +96,6 @@ private fun LazyListScope.bluetoothSection(
     item(key = "header:ble", contentType = "header") {
         DeviceSectionHeader(
             title = stringResource(Res.string.bluetooth),
-            showProgress = isBleScanning,
             trailing = {
                 ScanToggleAction(
                     isScanning = isBleScanning,

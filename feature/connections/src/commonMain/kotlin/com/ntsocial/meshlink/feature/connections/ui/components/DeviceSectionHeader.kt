@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,19 +40,13 @@ import androidx.compose.ui.unit.dp
  * Section header used to group content in the Connections list.
  *
  * Follows the Material 3 "header + trailing action" pattern: a [titleSmall] label on the left, an optional composable
- * [trailing] slot on the right (typically a [androidx.compose.material3.TextButton] for a scan toggle), and an optional
- * thin [LinearProgressIndicator] rendered underneath when [showProgress] is true.
+ * [trailing] slot on the right (typically a [androidx.compose.material3.TextButton] for a scan toggle).
  *
  * The header title and the trailing action are rendered on the same baseline so a section's control never drifts above
  * or below its header.
  */
 @Composable
-fun DeviceSectionHeader(
-    title: String,
-    modifier: Modifier = Modifier,
-    showProgress: Boolean = false,
-    trailing: @Composable () -> Unit = {},
-) {
+fun DeviceSectionHeader(title: String, modifier: Modifier = Modifier, trailing: @Composable () -> Unit = {}) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -66,9 +59,6 @@ fun DeviceSectionHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             trailing()
-        }
-        if (showProgress) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
     }
 }
