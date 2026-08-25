@@ -51,6 +51,10 @@ import com.ntsocial.meshlink.core.radiofleet.DefaultRadioFleetManager
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSessionFactory
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointStore
 import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
+import com.ntsocial.meshlink.core.radiofleet.conversation.DefaultFleetChannelsRepository
+import com.ntsocial.meshlink.core.radiofleet.conversation.EndpointAppearanceStore
+import com.ntsocial.meshlink.core.radiofleet.conversation.EndpointConversationSourceRegistry
+import com.ntsocial.meshlink.core.radiofleet.conversation.FleetChannelsRepository
 import com.ntsocial.meshlink.core.service.di.CoreServiceAndroidModule
 import com.ntsocial.meshlink.core.service.di.CoreServiceModule
 import com.ntsocial.meshlink.core.takserver.di.CoreTakServerModule
@@ -140,6 +144,19 @@ class AppKoinModule {
     ): RadioFleetManager = DefaultRadioFleetManager(
         endpointStore = endpointStore,
         sessionFactory = sessionFactory,
+        scope = CoroutineScope(SupervisorJob() + dispatchers.default),
+    )
+
+    @Single
+    fun provideFleetChannelsRepository(
+        fleetManager: RadioFleetManager,
+        sourceRegistry: EndpointConversationSourceRegistry,
+        appearanceStore: EndpointAppearanceStore,
+        dispatchers: com.ntsocial.meshlink.core.di.CoroutineDispatchers,
+    ): FleetChannelsRepository = DefaultFleetChannelsRepository(
+        fleetManager = fleetManager,
+        sourceRegistry = sourceRegistry,
+        appearanceStore = appearanceStore,
         scope = CoroutineScope(SupervisorJob() + dispatchers.default),
     )
 }

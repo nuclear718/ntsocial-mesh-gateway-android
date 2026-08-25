@@ -26,31 +26,43 @@
 
 package com.ntsocial.meshlink.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
+import com.ntsocial.meshlink.app.radio.AndroidEndpointConversationSourceCoordinator
 import com.ntsocial.meshlink.app.radio.RadioEndpointScopeRegistry
+import com.ntsocial.meshlink.core.navigation.ContactsRoute
 import com.ntsocial.meshlink.core.navigation.MultiBackstack
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.TopLevelDestination
 import com.ntsocial.meshlink.core.navigation.rememberMultiBackstack
+import com.ntsocial.meshlink.core.radiofleet.EndpointSessionState
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSnapshot
 import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
@@ -63,6 +75,7 @@ import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
 import com.ntsocial.meshlink.feature.connections.navigation.connectionsGraph
 import com.ntsocial.meshlink.feature.firmware.navigation.firmwareGraph
 import com.ntsocial.meshlink.feature.meshcore.navigation.meshCoreGraph
+import com.ntsocial.meshlink.feature.messaging.navigation.FleetChannelsEntryContent
 import com.ntsocial.meshlink.feature.messaging.navigation.contactsGraph
 import com.ntsocial.meshlink.feature.node.navigation.nodesGraph
 import com.ntsocial.meshlink.feature.settings.navigation.settingsGraph
@@ -108,13 +121,14 @@ private fun EndpointAwareNavigation(multiBackstack: MultiBackstack) {
     val viewModel: UIViewModel = koinViewModel()
     val fleetManager = koinInject<RadioFleetManager>()
     val scopeRegistry = koinInject<RadioEndpointScopeRegistry>()
+    val conversationSourceCoordinator = koinInject<AndroidEndpointConversationSourceCoordinator>()
     val snapshots by fleetManager.snapshots.collectAsStateWithLifecycle()
     val selectedEndpointId by fleetManager.selectedEndpointId.collectAsStateWithLifecycle()
     val endpointScopes by scopeRegistry.scopes.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
-    val endpointAware =
-        multiBackstack.currentTabRoute != TopLevelDestination.Connections.route &&
-            multiBackstack.currentTabRoute != TopLevelDestination.MeshCore.route
+    LaunchedEffect(conversationSourceCoordinator) { conversationSourceCoordinator.start() }
+    val scopeMode = featureScopeMode(multiBackstack)
+    val endpointAware = scopeMode == FeatureScopeMode.SELECTED_ENDPOINT
     val endpointList =
         snapshots.values.sortedWith(
             compareByDescending<RadioEndpointSnapshot> { it.profile.legacyPrimary }.thenBy { it.profile.displayName },
@@ -129,7 +143,7 @@ private fun EndpointAwareNavigation(multiBackstack: MultiBackstack) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        if (endpointAware && endpointList.isNotEmpty()) {
+        if (scopeMode == FeatureScopeMode.SELECTED_ENDPOINT && endpointList.isNotEmpty()) {
             RadioEndpointTabs(
                 endpoints = endpointList,
                 selectedEndpointId = selectedEndpointId,
@@ -192,7 +206,19 @@ private fun RadioNavigationDisplay(
 ) {
     val provider =
         entryProvider<NavKey> {
-            contactsGraph(backStack, viewModel.scrollToTopEventFlow)
+            contactsGraph(
+                backStack = backStack,
+                scrollToTopEvents = viewModel.scrollToTopEventFlow,
+                fleetRootContent = { FleetChannelsEntryContent(backStack) },
+                endpointContent = { endpointId, expectedGeneration, content ->
+                    EndpointScopeHost(
+                        endpointId = RadioEndpointId(endpointId),
+                        expectedGeneration = expectedGeneration,
+                    ) {
+                        content()
+                    }
+                },
+            )
             nodesGraph(
                 backStack = backStack,
                 scrollToTopEvents = viewModel.scrollToTopEventFlow,
@@ -225,11 +251,68 @@ private fun RadioEndpointTabs(
             Tab(
                 selected = endpoint.profile.id == selectedEndpointId,
                 onClick = { onSelect(endpoint.profile.id) },
-                text = { Text(endpoint.profile.addressSuffix.uppercase()) },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(endpointTabStateColor(endpoint.state)))
+                        Spacer(Modifier.width(7.dp))
+                        Text("${endpoint.profile.displayName} · ${endpoint.profile.addressSuffix.uppercase()}")
+                    }
+                },
             )
         }
     }
 }
+
+private enum class FeatureScopeMode {
+    ROOT,
+    SELECTED_ENDPOINT,
+    FLEET,
+}
+
+private fun featureScopeMode(multiBackstack: MultiBackstack): FeatureScopeMode {
+    val currentTopLevel = multiBackstack.currentTabRoute
+    return if (
+        currentTopLevel == TopLevelDestination.Connections.route ||
+        currentTopLevel == TopLevelDestination.MeshCore.route
+    ) {
+        FeatureScopeMode.ROOT
+    } else if (currentTopLevel != TopLevelDestination.Conversations.route) {
+        FeatureScopeMode.SELECTED_ENDPOINT
+    } else {
+        when (multiBackstack.activeBackStack.lastOrNull()) {
+            ContactsRoute.ContactsGraph,
+            ContactsRoute.Contacts,
+            is ContactsRoute.FleetMessages,
+            is ContactsRoute.EndpointContacts,
+            is ContactsRoute.FleetShare,
+            is ContactsRoute.FleetQuickChat,
+            -> FeatureScopeMode.FLEET
+
+            else -> FeatureScopeMode.SELECTED_ENDPOINT
+        }
+    }
+}
+
+@Composable
+private fun endpointTabStateColor(state: EndpointSessionState): Color = when (state) {
+    is EndpointSessionState.Ready -> Color(ENDPOINT_READY_COLOR)
+
+    EndpointSessionState.Connecting,
+    EndpointSessionState.Synchronizing,
+    -> Color(ENDPOINT_CONNECTING_COLOR)
+
+    is EndpointSessionState.Degraded,
+    is EndpointSessionState.Failed,
+    -> Color(ENDPOINT_ATTENTION_COLOR)
+
+    EndpointSessionState.Registered,
+    EndpointSessionState.WaitingResource,
+    -> MaterialTheme.colorScheme.outline
+}
+
+private const val ENDPOINT_READY_COLOR = 0xff16a34a
+private const val ENDPOINT_CONNECTING_COLOR = 0xff2563eb
+private const val ENDPOINT_ATTENTION_COLOR = 0xffd97706
 
 /** True when no device address is persisted, or the address is the "none" sentinel (`"n"`). */
 private fun String?.isNullOrSelectedNone(): Boolean = isNullOrBlank() || this == "n"

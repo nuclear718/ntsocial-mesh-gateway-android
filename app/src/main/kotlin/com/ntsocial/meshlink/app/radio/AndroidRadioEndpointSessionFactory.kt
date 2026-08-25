@@ -232,7 +232,7 @@ private class SecondaryRadioEndpointSession(
         if (closed) return@withLock
         closed = true
         runCatching { radio.disconnect() }.onFailure { Logger.w(it) { "Failed to disconnect secondary endpoint" } }
-        scopeRegistry.unregister(endpointId)
+        scopeRegistry.unregister(endpointId, koinScope)
         serviceScope.cancel()
         koinScope.close()
         scopedDataStoreFactory.release(endpointId)

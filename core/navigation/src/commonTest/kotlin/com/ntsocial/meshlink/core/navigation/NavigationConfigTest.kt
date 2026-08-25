@@ -56,8 +56,17 @@ class NavigationConfigTest {
             ContactsRoute.Contacts,
             ContactsRoute.Messages(contactKey = "test-contact", message = "hello"),
             ContactsRoute.Messages(contactKey = "test-contact"),
+            ContactsRoute.FleetMessages(
+                endpointId = "endpoint-a",
+                contactKey = "0^all",
+                expectedGeneration = 7L,
+                message = "hello",
+            ),
+            ContactsRoute.EndpointContacts(endpointId = "endpoint-a", expectedGeneration = 7L),
             ContactsRoute.Share(message = "share-text"),
+            ContactsRoute.FleetShare(endpointId = "endpoint-a", expectedGeneration = 7L, message = "share-text"),
             ContactsRoute.QuickChat,
+            ContactsRoute.FleetQuickChat(endpointId = "endpoint-a", expectedGeneration = 7L),
             // MeshCoreRoute
             MeshCoreRoute.MeshCoreGraph,
             MeshCoreRoute.Conversation(conversationId = "channel:0", title = "Public", isChannel = true),

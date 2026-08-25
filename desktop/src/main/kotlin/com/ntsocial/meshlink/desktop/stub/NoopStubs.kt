@@ -35,6 +35,8 @@ import com.ntsocial.meshlink.core.model.MeshActivity
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.Node
 import com.ntsocial.meshlink.core.network.repository.MQTTRepository
+import com.ntsocial.meshlink.core.radiofleet.conversation.FleetChannelGroup
+import com.ntsocial.meshlink.core.radiofleet.conversation.FleetChannelsRepository
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
 import com.ntsocial.meshlink.core.repository.DataPair
 import com.ntsocial.meshlink.core.repository.Location
@@ -71,6 +73,11 @@ private const val TAG = "NoopStub"
 
 private fun logWarn(message: String) {
     Logger.w(tag = TAG) { message }
+}
+
+/** Desktop retains its existing single-radio conversation surface; the Android fleet entry point is not exposed. */
+class NoopFleetChannelsRepository : FleetChannelsRepository {
+    override val groups = MutableStateFlow(emptyList<FleetChannelGroup>())
 }
 
 // region Transport / Radio Stubs (Android BLE/USB — no commonMain impl)

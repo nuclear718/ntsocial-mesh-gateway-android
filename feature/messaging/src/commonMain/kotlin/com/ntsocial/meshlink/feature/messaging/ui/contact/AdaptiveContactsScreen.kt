@@ -37,6 +37,7 @@ import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.SharedContact
 
 @Composable
+@Suppress("ViewModelForwarding") // Transitional Navigation 3 wrapper; ContactsScreen still owns its presentation state.
 fun AdaptiveContactsScreen(
     backStack: NavBackStack<NavKey>,
     contactsViewModel: ContactsViewModel,
@@ -46,6 +47,8 @@ fun AdaptiveContactsScreen(
     onHandleDeepLink: (CommonUri, onInvalid: () -> Unit) -> Unit,
     onClearSharedContactRequested: () -> Unit,
     onClearRequestChannelUrl: () -> Unit,
+    endpointId: String? = null,
+    expectedGeneration: Long = 0L,
 ) {
     ContactsScreen(
         onNavigateToShare = { backStack.add(ChannelsRoute.ChannelsGraph) },
@@ -56,7 +59,17 @@ fun AdaptiveContactsScreen(
         onClearRequestChannelUrl = onClearRequestChannelUrl,
         viewModel = contactsViewModel,
         onClickNodeChip = { backStack.add(NodesRoute.NodeDetail(it)) },
-        onNavigateToMessages = { contactKey -> backStack.add(ContactsRoute.Messages(contactKey)) },
+        onNavigateToMessages = { contactKey ->
+            backStack.add(
+                endpointId?.let {
+                    ContactsRoute.FleetMessages(
+                        endpointId = it,
+                        contactKey = contactKey,
+                        expectedGeneration = expectedGeneration,
+                    )
+                } ?: ContactsRoute.Messages(contactKey),
+            )
+        },
         onNavigateToNodeDetails = { backStack.add(NodesRoute.NodeDetail(it)) },
         scrollToTopEvents = scrollToTopEvents,
         activeContactKey = null,

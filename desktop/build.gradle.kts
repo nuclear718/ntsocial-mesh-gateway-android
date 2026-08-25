@@ -272,6 +272,7 @@ dependencies {
     implementation(projects.core.ui)
     implementation(projects.core.proto)
     implementation(projects.core.ble)
+    implementation(projects.core.radioFleet)
 
     // Feature modules (JVM variants for real composable wiring)
     implementation(projects.feature.settings)

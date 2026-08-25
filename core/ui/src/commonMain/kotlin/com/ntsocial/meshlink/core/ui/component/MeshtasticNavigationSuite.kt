@@ -115,7 +115,6 @@ fun MeshtasticNavigationSuite(
                             connectionState = connectionState,
                             unreadMessageCount = unreadMessageCount,
                             selectedDevice = selectedDevice,
-                            uiViewModel = uiViewModel,
                         )
                     },
                     label =
@@ -189,7 +188,6 @@ private fun NavigationIconContent(
     connectionState: ConnectionState,
     unreadMessageCount: Int,
     selectedDevice: String?,
-    uiViewModel: UIViewModel,
 ) {
     val isConnectionsRoute = destination == TopLevelDestination.Connections
 
@@ -214,10 +212,9 @@ private fun NavigationIconContent(
         state = rememberTooltipState(),
     ) {
         if (isConnectionsRoute) {
-            AnimatedConnectionsNavIcon(
+            ConnectionsNavIcon(
                 connectionState = connectionState,
                 deviceType = DeviceType.fromAddress(selectedDevice ?: "NoDevice"),
-                meshActivityFlow = uiViewModel.meshActivity,
             )
         } else {
             BadgedBox(

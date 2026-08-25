@@ -42,6 +42,7 @@ kotlin {
             implementation(projects.core.navigation)
             implementation(projects.core.prefs)
             implementation(projects.core.proto)
+            implementation(projects.core.radioFleet)
             implementation(projects.core.resources)
             implementation(projects.core.service)
             implementation(projects.core.ui)

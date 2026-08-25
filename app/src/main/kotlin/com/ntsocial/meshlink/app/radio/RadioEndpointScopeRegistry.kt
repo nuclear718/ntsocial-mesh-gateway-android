@@ -55,8 +55,11 @@ class RadioEndpointScopeRegistry {
         mutableScopes.value += endpointId to scope
     }
 
-    fun unregister(endpointId: RadioEndpointId) {
-        mutableScopes.value -= endpointId
+    fun unregister(endpointId: RadioEndpointId, expectedScope: Scope? = null) {
+        val current = mutableScopes.value[endpointId]
+        if (current != null && (expectedScope == null || current === expectedScope)) {
+            mutableScopes.value -= endpointId
+        }
     }
 
     fun get(endpointId: RadioEndpointId): Scope? = mutableScopes.value[endpointId]

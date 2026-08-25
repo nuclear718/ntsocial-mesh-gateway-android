@@ -43,6 +43,7 @@ import com.ntsocial.meshlink.core.network.KermitHttpLogger
 import com.ntsocial.meshlink.core.network.repository.MQTTRepository
 import com.ntsocial.meshlink.core.network.service.ApiService
 import com.ntsocial.meshlink.core.network.service.ApiServiceImpl
+import com.ntsocial.meshlink.core.radiofleet.conversation.FleetChannelsRepository
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
 import com.ntsocial.meshlink.core.repository.LocationRepository
 import com.ntsocial.meshlink.core.repository.MeshLocationManager
@@ -69,6 +70,7 @@ import com.ntsocial.meshlink.desktop.radio.DesktopMessageQueue
 import com.ntsocial.meshlink.desktop.radio.DesktopRadioTransportFactory
 import com.ntsocial.meshlink.desktop.stub.NoopAppWidgetUpdater
 import com.ntsocial.meshlink.desktop.stub.NoopCompassHeadingProvider
+import com.ntsocial.meshlink.desktop.stub.NoopFleetChannelsRepository
 import com.ntsocial.meshlink.desktop.stub.NoopLocationRepository
 import com.ntsocial.meshlink.desktop.stub.NoopMQTTRepository
 import com.ntsocial.meshlink.desktop.stub.NoopMagneticFieldProvider
@@ -161,6 +163,7 @@ fun desktopModule() = module {
  */
 @Suppress("LongMethod")
 private fun desktopPlatformStubsModule() = module {
+    single<FleetChannelsRepository> { NoopFleetChannelsRepository() }
     single<ServiceRepository> { ServiceRepositoryImpl() }
     single<RadioTransportFactory> {
         DesktopRadioTransportFactory(

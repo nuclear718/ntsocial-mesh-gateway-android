@@ -37,10 +37,13 @@ import com.ntsocial.meshlink.core.navigation.ContactsRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.core.navigation.replaceLast
+import com.ntsocial.meshlink.core.radiofleet.conversation.FleetChannelGroup
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
 import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.messaging.QuickChatScreen
 import com.ntsocial.meshlink.feature.messaging.QuickChatViewModel
+import com.ntsocial.meshlink.feature.messaging.fleet.FleetChannelsScreen
+import com.ntsocial.meshlink.feature.messaging.fleet.FleetChannelsViewModel
 import com.ntsocial.meshlink.feature.messaging.ui.contact.AdaptiveContactsScreen
 import com.ntsocial.meshlink.feature.messaging.ui.contact.ContactsViewModel
 import com.ntsocial.meshlink.feature.messaging.ui.sharing.ShareScreen
@@ -53,31 +56,46 @@ import org.koin.compose.viewmodel.koinViewModel
 fun EntryProviderScope<NavKey>.contactsGraph(
     backStack: NavBackStack<NavKey>,
     scrollToTopEvents: Flow<ScrollToTopEvent> = MutableSharedFlow(),
+    fleetRootContent: (@Composable () -> Unit)? = null,
+    endpointContent:
+    @Composable (endpointId: String, expectedGeneration: Long, content: @Composable () -> Unit) -> Unit =
+        { _, _, content ->
+            content()
+        },
 ) {
     entry<ContactsRoute.ContactsGraph>(metadata = { ListDetailSceneStrategy.listPane() }) {
-        ContactsEntryContent(backStack = backStack, scrollToTopEvents = scrollToTopEvents)
+        fleetRootContent?.invoke() ?: ContactsEntryContent(backStack = backStack, scrollToTopEvents = scrollToTopEvents)
     }
 
     entry<ContactsRoute.Contacts>(metadata = { ListDetailSceneStrategy.listPane() }) {
-        ContactsEntryContent(backStack = backStack, scrollToTopEvents = scrollToTopEvents)
+        fleetRootContent?.invoke() ?: ContactsEntryContent(backStack = backStack, scrollToTopEvents = scrollToTopEvents)
     }
 
     entry<ContactsRoute.Messages>(metadata = { ListDetailSceneStrategy.detailPane() }) { args ->
-        val contactKey = args.contactKey
-        val messageViewModel: com.ntsocial.meshlink.feature.messaging.MessageViewModel =
-            scopedViewModel(key = "messages-$contactKey")
-        messageViewModel.setContactKey(contactKey)
+        MessageEntryContent(backStack = backStack, contactKey = args.contactKey, message = args.message)
+    }
 
-        com.ntsocial.meshlink.feature.messaging.MessageScreen(
-            contactKey = contactKey,
-            message = args.message,
-            viewModel = messageViewModel,
-            navigateToNodeDetails = { id -> backStack.add(NodesRoute.NodeDetail(id)) },
-            navigateToQuickChatOptions =
-            dropUnlessResumed { backStack.add(com.ntsocial.meshlink.core.navigation.ContactsRoute.QuickChat) },
-            navigateToFilterSettings = dropUnlessResumed { backStack.add(SettingsRoute.FilterSettings) },
-            onNavigateBack = dropUnlessResumed { backStack.removeLastOrNull() },
-        )
+    entry<ContactsRoute.FleetMessages>(metadata = { ListDetailSceneStrategy.detailPane() }) { args ->
+        endpointContent(args.endpointId, args.expectedGeneration) {
+            MessageEntryContent(
+                backStack = backStack,
+                contactKey = args.contactKey,
+                message = args.message,
+                endpointId = args.endpointId,
+                expectedGeneration = args.expectedGeneration,
+            )
+        }
+    }
+
+    entry<ContactsRoute.EndpointContacts>(metadata = { ListDetailSceneStrategy.detailPane() }) { args ->
+        endpointContent(args.endpointId, args.expectedGeneration) {
+            ContactsEntryContent(
+                backStack = backStack,
+                scrollToTopEvents = scrollToTopEvents,
+                endpointId = args.endpointId,
+                expectedGeneration = args.expectedGeneration,
+            )
+        }
     }
 
     entry<ContactsRoute.Share>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
@@ -90,14 +108,46 @@ fun EntryProviderScope<NavKey>.contactsGraph(
         )
     }
 
+    entry<ContactsRoute.FleetShare>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
+        endpointContent(args.endpointId, args.expectedGeneration) {
+            val viewModel = scopedViewModel<ContactsViewModel>()
+            ShareScreen(
+                viewModel = viewModel,
+                onConfirm = { contactKey ->
+                    backStack.replaceLast(
+                        ContactsRoute.FleetMessages(
+                            endpointId = args.endpointId,
+                            contactKey = contactKey,
+                            expectedGeneration = args.expectedGeneration,
+                            message = args.message,
+                        ),
+                    )
+                },
+                onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
+            )
+        }
+    }
+
     entry<ContactsRoute.QuickChat>(metadata = { ListDetailSceneStrategy.extraPane() }) {
         val viewModel = scopedViewModel<QuickChatViewModel>()
         QuickChatScreen(viewModel = viewModel, onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() })
     }
+
+    entry<ContactsRoute.FleetQuickChat>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
+        endpointContent(args.endpointId, args.expectedGeneration) {
+            val viewModel = scopedViewModel<QuickChatViewModel>()
+            QuickChatScreen(viewModel = viewModel, onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() })
+        }
+    }
 }
 
 @Composable
-fun ContactsEntryContent(backStack: NavBackStack<NavKey>, scrollToTopEvents: Flow<ScrollToTopEvent>) {
+fun ContactsEntryContent(
+    backStack: NavBackStack<NavKey>,
+    scrollToTopEvents: Flow<ScrollToTopEvent>,
+    endpointId: String? = null,
+    expectedGeneration: Long = 0L,
+) {
     val uiViewModel: com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel = koinViewModel()
     val sharedContactRequested by uiViewModel.sharedContactRequested.collectAsStateWithLifecycle()
     val requestChannelSet by uiViewModel.requestChannelSet.collectAsStateWithLifecycle()
@@ -112,5 +162,64 @@ fun ContactsEntryContent(backStack: NavBackStack<NavKey>, scrollToTopEvents: Flo
         onHandleDeepLink = uiViewModel::handleDeepLink,
         onClearSharedContactRequested = uiViewModel::clearSharedContactRequested,
         onClearRequestChannelUrl = uiViewModel::clearRequestChannelUrl,
+        endpointId = endpointId,
+        expectedGeneration = expectedGeneration,
+    )
+}
+
+@Composable
+fun FleetChannelsEntryContent(backStack: NavBackStack<NavKey>) {
+    val viewModel = koinViewModel<FleetChannelsViewModel>()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    FleetChannelsScreen(
+        state = state,
+        onSelectAll = viewModel::showAll,
+        onSelectEndpoint = viewModel::showEndpoint,
+        onOpenChannel = { group, channel ->
+            backStack.add(
+                ContactsRoute.FleetMessages(
+                    endpointId = group.profile.id.value,
+                    contactKey = channel.localContactKey,
+                    expectedGeneration = group.generation,
+                ),
+            )
+        },
+        onOpenConversations = { group: FleetChannelGroup ->
+            backStack.add(
+                ContactsRoute.EndpointContacts(
+                    endpointId = group.profile.id.value,
+                    expectedGeneration = group.generation,
+                ),
+            )
+        },
+        onUpdateAppearance = viewModel::updateAppearance,
+    )
+}
+
+@Composable
+private fun MessageEntryContent(
+    backStack: NavBackStack<NavKey>,
+    contactKey: String,
+    message: String,
+    endpointId: String? = null,
+    expectedGeneration: Long = 0L,
+) {
+    val viewModelKey = listOfNotNull("messages", endpointId, contactKey).joinToString("-")
+    val messageViewModel: com.ntsocial.meshlink.feature.messaging.MessageViewModel = scopedViewModel(key = viewModelKey)
+    messageViewModel.setContactKey(contactKey)
+
+    com.ntsocial.meshlink.feature.messaging.MessageScreen(
+        contactKey = contactKey,
+        message = message,
+        viewModel = messageViewModel,
+        navigateToNodeDetails = { id -> backStack.add(NodesRoute.NodeDetail(id)) },
+        navigateToQuickChatOptions =
+        dropUnlessResumed {
+            backStack.add(
+                endpointId?.let { ContactsRoute.FleetQuickChat(it, expectedGeneration) } ?: ContactsRoute.QuickChat,
+            )
+        },
+        navigateToFilterSettings = dropUnlessResumed { backStack.add(SettingsRoute.FilterSettings) },
+        onNavigateBack = dropUnlessResumed { backStack.removeLastOrNull() },
     )
 }

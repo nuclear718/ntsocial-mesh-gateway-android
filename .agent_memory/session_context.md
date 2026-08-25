@@ -1,6 +1,40 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
 
+## 2026-08-25 - Android multi-node Channel Hub UI/UX and 107-minute three-phone run
+- Combined the two 2026-08-25 proposals into a bounded architecture: endpoint scopes retain independent Room,
+  DataStore, Koin, BLE, connection-generation, repository, and packet ownership; each publishes only a compact
+  read-only conversation snapshot into a root fleet repository. Added runtime-token source registration, exact
+  endpoint/generation navigation, and a fail-closed scope host. No cross-database Paging merge, global RF scheduler,
+  Gateway v3, or MeshCore multi-node expansion was introduced.
+- Replaced Android's basic per-endpoint Messages entry with a modern All + endpoint-tab Channel Hub. Cards expose
+  nickname/address suffix, accent, connection, unread total, channel role/index, lock, preview/time, unread badge, and
+  Open-all action; a separate DataStore persists appearance. Added en/zh-rTW/ja resources and deterministic fleet,
+  appearance, source-ownership, and route tests. Nodes/Settings remain scoped; Desktop retains its single-radio UI with
+  an explicit no-op fleet binding.
+- Device profiling isolated an unrelated but visible efficiency defect: the shared `AnimatedConnectionsNavIcon`
+  restarted a one-second glow for every MeshActivity and kept static screens rendering. Replacing it with the existing
+  static icon reduced a same-screen 20-second comparison from 366 to 2 frames on D2 and 62 to 8 on D3, without changing
+  BLE/session/packet behavior.
+- Focused radio-fleet, prefs, navigation, messaging, and Android tests passed, as did changed-module Spotless/Detekt.
+  The JDK-21/en-US full gate ran 2,000 actionable tasks and found the initial missing Desktop Koin binding; after the
+  no-op binding fix, the 177-task Desktop format/Detekt/test rerun passed all 32 tests. Final-source Android Debug
+  builds, tests/allTests, both lints, Desktop/JVM, shared KMP, and iOS Simulator compilation pass. Root Detekt is
+  nonzero only for the six recorded pre-existing findings.
+- The final Google arm64 Debug APK is `1.0.6 (7)`, 52,672,620 bytes, SHA-256
+  `F6E92B9C55D5837DCA920B8A5CD22713B770CFA76E693FBFA6B0DE6CE78028D8`, and passes 16 KiB zipalign. It was
+  data-preserving installed on the three Android 16 phones, whose installed hashes all match. D2 and D3 each retained
+  their one existing BLE radio; D1 remained the expected no-radio case.
+- Per the user's instruction, the planned three-hour soak ended early after complete minutes 0-107 because no further
+  problem was observed. There are 324 samples and 12/12 passing UI checkpoints. Every phone kept one PID; D2/D3 kept
+  Connected/FGS for 108/108 samples; all fatal, ANR, process-death, and projection counters were zero. D1/D2/D3 CPU
+  averaged 0.23%/3.85%/4.51% one-core; memory was reclaimed and threads were bounded. Correct-PID final logcat found
+  no App critical/error match except four non-fatal OPPO `IJankManager` vendor messages.
+- Full report: `ANDROID_MULTI_NODE_CHANNEL_HUB_UI_UX_IMPLEMENTATION_AND_THREE_PHONE_REPORT_2026-08-25.md`. Do not
+  claim a three-hour, two/four-radio-per-phone, RF send/remote receipt, Doze, Profile/Release energy, signed-release,
+  store, Windows-device, or iOS-device result from this work.
+
+
 ## 2026-08-25 - Android three-phone P1 remediation and early-ended soak
 - On branch `multi_nodes_` from HEAD `2c62c6bc0`, independently reproduced all four confirmed P1s from the 2026-08-24
   report: nested `/channels` stack corruption/crash, no MeshService recovery after `MY_PACKAGE_REPLACED`, a cold

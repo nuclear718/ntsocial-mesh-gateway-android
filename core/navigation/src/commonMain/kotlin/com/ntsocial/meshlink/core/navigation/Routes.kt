@@ -55,9 +55,24 @@ sealed interface ContactsRoute : Route {
 
     @Serializable data class Messages(val contactKey: String, val message: String = "") : ContactsRoute
 
+    @Serializable
+    data class FleetMessages(
+        val endpointId: String,
+        val contactKey: String,
+        val expectedGeneration: Long,
+        val message: String = "",
+    ) : ContactsRoute
+
+    @Serializable data class EndpointContacts(val endpointId: String, val expectedGeneration: Long) : ContactsRoute
+
     @Serializable data class Share(val message: String) : ContactsRoute
 
+    @Serializable
+    data class FleetShare(val endpointId: String, val expectedGeneration: Long, val message: String) : ContactsRoute
+
     @Serializable data object QuickChat : ContactsRoute
+
+    @Serializable data class FleetQuickChat(val endpointId: String, val expectedGeneration: Long) : ContactsRoute
 }
 
 @Serializable
