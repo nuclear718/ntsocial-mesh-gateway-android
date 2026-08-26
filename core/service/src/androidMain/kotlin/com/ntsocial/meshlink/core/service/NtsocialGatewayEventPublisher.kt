@@ -63,6 +63,7 @@ internal constructor(
     private val nodeRepository: NodeRepository,
     private val radioConfigRepository: RadioConfigRepository,
     private val packetRepository: PacketRepository,
+    private val fleetRegistry: NtsocialEndpointGatewaySourceRegistry,
     @Named("ServiceScope") private val scope: CoroutineScope,
 ) {
     private val catalogGenerationTracker = GatewayCatalogGenerationTracker()
@@ -121,6 +122,14 @@ internal constructor(
                 _historyState.value = historyState
                 publishDataChanged(v2MessageChangesUri, NtsocialGatewayContract.EVENT_MESSAGE_CHANGES_AVAILABLE)
                 publishDataChanged(v2StatusUri)
+            }
+            .launchIn(scope)
+        fleetRegistry.revision
+            .onEach {
+                publishDataChanged(v3StatusUri)
+                publishDataChanged(v3EndpointsUri)
+                publishDataChanged(v3ChannelsUri, NtsocialGatewayContract.EVENT_CHANNEL_CATALOG_CHANGED)
+                publishDataChanged(v3MessageChangesUri, NtsocialGatewayContract.EVENT_MESSAGE_CHANGES_AVAILABLE)
             }
             .launchIn(scope)
     }
@@ -207,6 +216,18 @@ internal constructor(
 
     private val v2MessageChangesUri: Uri
         get() = NtsocialGatewayContract.v2MessageChangesUri(authority)
+
+    private val v3StatusUri: Uri
+        get() = NtsocialGatewayContract.V3.statusUri(authority)
+
+    private val v3EndpointsUri: Uri
+        get() = NtsocialGatewayContract.V3.endpointsUri(authority)
+
+    private val v3ChannelsUri: Uri
+        get() = NtsocialGatewayContract.V3.channelsUri(authority)
+
+    private val v3MessageChangesUri: Uri
+        get() = NtsocialGatewayContract.V3.endpointsUri(authority)
 
     private companion object {
         const val HISTORY_NOT_READY = "not-ready"

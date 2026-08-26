@@ -31,8 +31,11 @@ import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSnapshot
 import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.radiofleet.conversation.EndpointAppearanceStore
 import com.ntsocial.meshlink.core.radiofleet.conversation.MutableEndpointConversationSourceRegistry
+import com.ntsocial.meshlink.core.repository.NodeRepository
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.service.MutableNtsocialEndpointGatewaySourceRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -49,9 +52,12 @@ class AndroidEndpointConversationSourceCoordinator(
     private val fleetManager: RadioFleetManager,
     private val scopeRegistry: RadioEndpointScopeRegistry,
     private val sourceRegistry: MutableEndpointConversationSourceRegistry,
+    private val gatewaySourceRegistry: MutableNtsocialEndpointGatewaySourceRegistry,
     private val appearanceStore: EndpointAppearanceStore,
     private val rootRadioConfigRepository: RadioConfigRepository,
     private val rootPacketRepository: PacketRepository,
+    private val rootNodeRepository: NodeRepository,
+    private val rootGatewayRepository: NtsocialGatewayRepository,
     dispatchers: CoroutineDispatchers,
 ) {
     private val sourceDispatcher = dispatchers.default
@@ -102,25 +108,11 @@ class AndroidEndpointConversationSourceCoordinator(
 
             val sourceScope = CoroutineScope(SupervisorJob() + sourceDispatcher)
             try {
-                val source =
-                    if (snapshot.profile.legacyPrimary) {
-                        MeshtasticEndpointConversationSource(
-                            endpointId = endpointId,
-                            radioConfigRepository = rootRadioConfigRepository,
-                            packetRepository = rootPacketRepository,
-                            scope = sourceScope,
-                        )
-                    } else {
-                        checkNotNull(endpointScope)
-                        MeshtasticEndpointConversationSource(
-                            endpointId = endpointId,
-                            radioConfigRepository = endpointScope.get(),
-                            packetRepository = endpointScope.get(),
-                            scope = sourceScope,
-                        )
-                    }
+                val source = createConversationSource(snapshot, endpointScope, sourceScope)
+                val gatewaySource = createGatewaySource(snapshot, endpointScope, sourceScope)
                 val replacement = ManagedSource(runtimeToken, sourceScope)
                 sourceRegistry.register(runtimeToken, source)
+                gatewaySourceRegistry.register(runtimeToken, gatewaySource)
                 managedSources.put(endpointId, replacement)?.scope?.cancel()
             } catch (error: Exception) {
                 sourceScope.cancel()
@@ -129,9 +121,49 @@ class AndroidEndpointConversationSourceCoordinator(
         }
     }
 
+    private fun createConversationSource(
+        snapshot: RadioEndpointSnapshot,
+        endpointScope: Scope?,
+        sourceScope: CoroutineScope,
+    ): MeshtasticEndpointConversationSource = if (snapshot.profile.legacyPrimary) {
+        MeshtasticEndpointConversationSource(
+            endpointId = snapshot.profile.id,
+            radioConfigRepository = rootRadioConfigRepository,
+            packetRepository = rootPacketRepository,
+            scope = sourceScope,
+        )
+    } else {
+        checkNotNull(endpointScope)
+        MeshtasticEndpointConversationSource(
+            endpointId = snapshot.profile.id,
+            radioConfigRepository = endpointScope.get(),
+            packetRepository = endpointScope.get(),
+            scope = sourceScope,
+        )
+    }
+
+    private fun createGatewaySource(
+        snapshot: RadioEndpointSnapshot,
+        endpointScope: Scope?,
+        sourceScope: CoroutineScope,
+    ): MeshtasticEndpointGatewaySource {
+        val scoped = if (snapshot.profile.legacyPrimary) null else checkNotNull(endpointScope)
+        return MeshtasticEndpointGatewaySource(
+            profile = snapshot.profile,
+            endpointSnapshots = fleetManager.snapshots,
+            appearanceStore = appearanceStore,
+            radioConfigRepository = scoped?.get() ?: rootRadioConfigRepository,
+            packetRepository = scoped?.get() ?: rootPacketRepository,
+            nodeRepository = scoped?.get() ?: rootNodeRepository,
+            gatewayRepository = scoped?.get() ?: rootGatewayRepository,
+            scope = sourceScope,
+        )
+    }
+
     private fun removeSource(endpointId: RadioEndpointId) {
         val removed = managedSources.remove(endpointId) ?: return
         sourceRegistry.unregister(endpointId, removed.runtimeToken)
+        gatewaySourceRegistry.unregister(endpointId.value, removed.runtimeToken)
         removed.scope.cancel()
     }
 

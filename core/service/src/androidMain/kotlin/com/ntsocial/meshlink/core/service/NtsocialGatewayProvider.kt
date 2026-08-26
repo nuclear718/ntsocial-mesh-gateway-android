@@ -64,6 +64,7 @@ open class NtsocialGatewayProvider :
     private val gatewayRepository: NtsocialGatewayRepository by inject()
     private val packetRepository: PacketRepository by inject()
     private val routeTokenStore: NtsocialGatewayRouteTokenStore by inject()
+    private val fleetFacade: NtsocialGatewayFleetFacade by inject()
     private val serviceRepository: ServiceRepository by inject()
     private val nodeRepository: NodeRepository by inject()
     private val cursorFactory by lazy {
@@ -74,6 +75,7 @@ open class NtsocialGatewayProvider :
             eventPublisher = eventPublisher,
             packetRepository = packetRepository,
             routeTokenStore = routeTokenStore,
+            fleetFacade = fleetFacade,
         )
     }
 
@@ -104,6 +106,10 @@ open class NtsocialGatewayProvider :
             GatewayEndpoint.V2_STATUS -> NtsocialGatewayContract.MIME_STATUS
             GatewayEndpoint.V2_CHANNELS -> NtsocialGatewayContract.MIME_CHANNELS
             GatewayEndpoint.V2_MESSAGE_CHANGES -> NtsocialGatewayContract.MIME_MESSAGE_CHANGES
+            GatewayEndpoint.V3_STATUS -> NtsocialGatewayContract.MIME_STATUS
+            GatewayEndpoint.V3_ENDPOINTS -> NtsocialGatewayContract.MIME_ENDPOINTS
+            GatewayEndpoint.V3_CHANNELS -> NtsocialGatewayContract.MIME_CHANNELS
+            GatewayEndpoint.V3_MESSAGE_CHANGES -> NtsocialGatewayContract.MIME_MESSAGE_CHANGES
         }
     }
 
@@ -168,6 +174,18 @@ open class NtsocialGatewayProvider :
             listOf(NtsocialGatewayContract.PATH_VERSION_V2, NtsocialGatewayContract.PATH_MESSAGE_CHANGES) ->
                 GatewayEndpoint.V2_MESSAGE_CHANGES
 
+            listOf(NtsocialGatewayContract.PATH_VERSION_V3, NtsocialGatewayContract.PATH_STATUS) ->
+                GatewayEndpoint.V3_STATUS
+
+            listOf(NtsocialGatewayContract.PATH_VERSION_V3, NtsocialGatewayContract.PATH_ENDPOINTS) ->
+                GatewayEndpoint.V3_ENDPOINTS
+
+            listOf(NtsocialGatewayContract.PATH_VERSION_V3, NtsocialGatewayContract.PATH_CHANNELS) ->
+                GatewayEndpoint.V3_CHANNELS
+
+            listOf(NtsocialGatewayContract.PATH_VERSION_V3, NtsocialGatewayContract.PATH_MESSAGE_CHANGES) ->
+                GatewayEndpoint.V3_MESSAGE_CHANGES
+
             else -> throw IllegalArgumentException("Unknown NTsocial Gateway URI")
         }
     }
@@ -188,6 +206,7 @@ private class NtsocialGatewaySnapshotCursorFactory(
     private val eventPublisher: NtsocialGatewayEventPublisher,
     private val packetRepository: PacketRepository,
     private val routeTokenStore: NtsocialGatewayRouteTokenStore,
+    private val fleetFacade: NtsocialGatewayFleetFacade,
 ) {
     fun create(endpoint: GatewayEndpoint, projection: Array<String>?, caller: NtsocialGatewayCaller, uri: Uri): Cursor =
         when (endpoint) {
@@ -198,6 +217,10 @@ private class NtsocialGatewaySnapshotCursorFactory(
             GatewayEndpoint.V2_STATUS -> v2StatusCursor(projection)
             GatewayEndpoint.V2_CHANNELS -> v2ChannelsCursor(projection, caller)
             GatewayEndpoint.V2_MESSAGE_CHANGES -> v2MessageChangesCursor(projection, uri)
+            GatewayEndpoint.V3_STATUS -> v3StatusCursor(projection)
+            GatewayEndpoint.V3_ENDPOINTS -> v3EndpointsCursor(projection)
+            GatewayEndpoint.V3_CHANNELS -> v3ChannelsCursor(projection, caller)
+            GatewayEndpoint.V3_MESSAGE_CHANGES -> v3MessageChangesCursor(projection, uri)
         }
 
     private fun statusCursor(projection: Array<String>?): Cursor {
@@ -261,6 +284,133 @@ private class NtsocialGatewaySnapshotCursorFactory(
                     NtsocialTransport.MAX_CLIENT_ENVELOPE_SIZE_BYTES,
             )
         return singleRowCursor(projection, V2_STATUS_COLUMNS, values)
+    }
+
+    private fun v3StatusCursor(projection: Array<String>?): Cursor {
+        val fleet = runBlocking { fleetFacade.snapshot() }
+        val values: Map<String, Any?> =
+            mapOf(
+                NtsocialGatewayContract.COLUMN_API_VERSION to NtsocialGatewayContract.API_VERSION_V3,
+                NtsocialGatewayContract.COLUMN_CAPABILITIES to GATEWAY_V3_CAPABILITIES,
+                NtsocialGatewayContract.COLUMN_PROVIDER_INSTANCE_ID to fleet.providerInstanceId,
+                NtsocialGatewayContract.COLUMN_FLEET_GENERATION to fleet.fleetGeneration,
+                NtsocialGatewayContract.COLUMN_MAX_RADIO_ENDPOINTS to NtsocialGatewayFleetFacade.MAX_ENDPOINTS,
+                NtsocialGatewayContract.COLUMN_REGISTERED_ENDPOINT_COUNT to fleet.endpoints.size,
+                NtsocialGatewayContract.COLUMN_LIVE_ENDPOINT_COUNT to fleet.liveEndpointCount,
+                NtsocialGatewayContract.COLUMN_MAX_COMMAND_ENVELOPE_SIZE_BYTES to
+                    NtsocialGatewayFleetFacade.MAX_COMMAND_BYTES,
+            )
+        return singleRowCursor(projection, V3_STATUS_COLUMNS, values)
+    }
+
+    private fun v3EndpointsCursor(projection: Array<String>?): Cursor {
+        val fleet = runBlocking { fleetFacade.snapshot() }
+        val cursor = MatrixCursor(resolveProjection(projection, V3_ENDPOINT_COLUMNS))
+        fleet.endpoints.forEach { endpoint ->
+            cursor.addValues(
+                mapOf(
+                    NtsocialGatewayContract.COLUMN_ENDPOINT_ID to endpoint.endpointId,
+                    NtsocialGatewayContract.COLUMN_DISPLAY_NAME to endpoint.displayName,
+                    NtsocialGatewayContract.COLUMN_ADDRESS_SUFFIX to endpoint.addressSuffix,
+                    NtsocialGatewayContract.COLUMN_PROTOCOL to endpoint.protocol,
+                    NtsocialGatewayContract.COLUMN_SESSION_STATE to endpoint.sessionState,
+                    NtsocialGatewayContract.COLUMN_ENDPOINT_GENERATION to endpoint.endpointGeneration,
+                    NtsocialGatewayContract.COLUMN_HISTORY_EPOCH to endpoint.historyEpoch,
+                    NtsocialGatewayContract.COLUMN_MESSAGE_CHANGE_SEQ to endpoint.messageChangeSeq,
+                    NtsocialGatewayContract.COLUMN_NATIVE_HISTORY_AVAILABLE to endpoint.nativeHistoryAvailable.asInt(),
+                    NtsocialGatewayContract.COLUMN_NATIVE_TEXT_SEND_AVAILABLE to
+                        endpoint.nativeTextSendAvailable.asInt(),
+                    NtsocialGatewayContract.COLUMN_ARBITRARY_ROUTE_OVERLAY_AVAILABLE to
+                        endpoint.arbitraryRouteOverlayAvailable.asInt(),
+                    NtsocialGatewayContract.COLUMN_HAS_CACHED_CATALOG to endpoint.hasCachedCatalog.asInt(),
+                    NtsocialGatewayContract.COLUMN_APPEARANCE_TOKEN to endpoint.appearanceToken,
+                    NtsocialGatewayContract.COLUMN_SORT_ORDER to endpoint.sortOrder,
+                    NtsocialGatewayContract.COLUMN_FLEET_GENERATION to fleet.fleetGeneration,
+                ),
+            )
+        }
+        return cursor
+    }
+
+    private fun v3ChannelsCursor(projection: Array<String>?, caller: NtsocialGatewayCaller): Cursor {
+        val fleet = runBlocking { fleetFacade.snapshot() }
+        val cursor = MatrixCursor(resolveProjection(projection, V3_CHANNEL_COLUMNS))
+        fleet.endpoints.forEach { endpoint ->
+            val live = endpoint.sessionState == "READY"
+            endpoint.channels.forEach { channel ->
+                val routeToken =
+                    if (live && (channel.canSendNativeText || channel.canSendNtOverlay)) {
+                        routeTokenStore.issueV3(
+                            caller = caller,
+                            endpointId = endpoint.endpointId,
+                            sourceChannelId = channel.sourceChannelId,
+                            channelIndex = channel.slotIndex,
+                            endpointGeneration = endpoint.endpointGeneration,
+                            fleetGeneration = fleet.fleetGeneration,
+                        )
+                    } else {
+                        null
+                    }
+                cursor.addValues(
+                    mapOf(
+                        NtsocialGatewayContract.COLUMN_BEARER to BEARER_MESHTASTIC,
+                        NtsocialGatewayContract.COLUMN_ENDPOINT_ID to endpoint.endpointId,
+                        NtsocialGatewayContract.COLUMN_ENDPOINT_GENERATION to endpoint.endpointGeneration,
+                        NtsocialGatewayContract.COLUMN_FLEET_GENERATION to fleet.fleetGeneration,
+                        NtsocialGatewayContract.COLUMN_SOURCE_CHANNEL_ID to channel.sourceChannelId,
+                        NtsocialGatewayContract.COLUMN_ROUTE_TOKEN to routeToken,
+                        NtsocialGatewayContract.COLUMN_SLOT_INDEX to channel.slotIndex,
+                        NtsocialGatewayContract.COLUMN_ROLE to channel.role,
+                        NtsocialGatewayContract.COLUMN_CONFIGURED_NAME to channel.configuredName,
+                        NtsocialGatewayContract.COLUMN_DISPLAY_NAME to channel.displayName,
+                        NtsocialGatewayContract.COLUMN_SECURITY_CLASS to channel.securityClass,
+                        NtsocialGatewayContract.COLUMN_UPLINK_ENABLED to channel.uplinkEnabled.asInt(),
+                        NtsocialGatewayContract.COLUMN_DOWNLINK_ENABLED to channel.downlinkEnabled.asInt(),
+                        NtsocialGatewayContract.COLUMN_CAN_READ_NATIVE_TEXT to channel.canReadNativeText.asInt(),
+                        NtsocialGatewayContract.COLUMN_CAN_SEND_NATIVE_TEXT to
+                            (live && channel.canSendNativeText).asInt(),
+                        NtsocialGatewayContract.COLUMN_CAN_SEND_NT_OVERLAY to
+                            (live && channel.canSendNtOverlay).asInt(),
+                        NtsocialGatewayContract.COLUMN_HISTORY_EPOCH to endpoint.historyEpoch,
+                    ),
+                )
+            }
+        }
+        return cursor
+    }
+
+    private fun v3MessageChangesCursor(projection: Array<String>?, uri: Uri): Cursor {
+        val query = parseGatewayV3MessageChangesQuery(uri)
+        val source = fleetFacade.source(query.endpointId) ?: throw IllegalArgumentException("Unknown Gateway endpoint")
+        val endpoint = runBlocking { source.snapshot() }
+        val cursor = MatrixCursor(resolveProjection(projection, V3_MESSAGE_CHANGE_COLUMNS))
+        runBlocking { source.messageChanges(after = query.after, limit = query.limit) }
+            .forEach { change ->
+                cursor.addValues(
+                    mapOf(
+                        NtsocialGatewayContract.COLUMN_ENDPOINT_ID to endpoint.endpointId,
+                        NtsocialGatewayContract.COLUMN_ENDPOINT_GENERATION to endpoint.endpointGeneration,
+                        NtsocialGatewayContract.COLUMN_HISTORY_EPOCH to endpoint.historyEpoch,
+                        NtsocialGatewayContract.COLUMN_SOURCE_MESSAGE_ID to change.sourceMessageId,
+                        NtsocialGatewayContract.COLUMN_SOURCE_CHANNEL_ID to change.sourceChannelId,
+                        NtsocialGatewayContract.COLUMN_ORIGIN_CLIENT_MESSAGE_ID to change.originClientMessageId,
+                        NtsocialGatewayContract.COLUMN_CHANGE_SEQ to change.changeSeq,
+                        NtsocialGatewayContract.COLUMN_PACKET_ID to change.packetId,
+                        NtsocialGatewayContract.COLUMN_FROM_NODE_ID to change.fromNodeId,
+                        NtsocialGatewayContract.COLUMN_FROM_DISPLAY_NAME to change.fromDisplayName,
+                        NtsocialGatewayContract.COLUMN_TEXT to change.text,
+                        NtsocialGatewayContract.COLUMN_SENDER_TIMESTAMP_MILLIS to change.senderTimestampMillis,
+                        NtsocialGatewayContract.COLUMN_RECEIVED_AT_MILLIS to change.receivedAtMillis,
+                        NtsocialGatewayContract.COLUMN_DIRECTION to change.direction,
+                        NtsocialGatewayContract.COLUMN_STATUS to change.status,
+                        NtsocialGatewayContract.COLUMN_SNR to change.snr,
+                        NtsocialGatewayContract.COLUMN_RSSI to change.rssi,
+                        NtsocialGatewayContract.COLUMN_HOPS_AWAY to change.hopsAway,
+                        NtsocialGatewayContract.COLUMN_VIA_MQTT to change.viaMqtt.asInt(),
+                    ),
+                )
+            }
+        return cursor
     }
 
     private fun envelopesCursor(projection: Array<String>?): Cursor {
@@ -553,11 +703,73 @@ private class NtsocialGatewaySnapshotCursorFactory(
                 NtsocialGatewayContract.COLUMN_VIA_MQTT,
             )
 
+        val V3_STATUS_COLUMNS =
+            arrayOf(
+                NtsocialGatewayContract.COLUMN_API_VERSION,
+                NtsocialGatewayContract.COLUMN_CAPABILITIES,
+                NtsocialGatewayContract.COLUMN_PROVIDER_INSTANCE_ID,
+                NtsocialGatewayContract.COLUMN_FLEET_GENERATION,
+                NtsocialGatewayContract.COLUMN_MAX_RADIO_ENDPOINTS,
+                NtsocialGatewayContract.COLUMN_REGISTERED_ENDPOINT_COUNT,
+                NtsocialGatewayContract.COLUMN_LIVE_ENDPOINT_COUNT,
+                NtsocialGatewayContract.COLUMN_MAX_COMMAND_ENVELOPE_SIZE_BYTES,
+            )
+
+        val V3_ENDPOINT_COLUMNS =
+            arrayOf(
+                NtsocialGatewayContract.COLUMN_ENDPOINT_ID,
+                NtsocialGatewayContract.COLUMN_DISPLAY_NAME,
+                NtsocialGatewayContract.COLUMN_ADDRESS_SUFFIX,
+                NtsocialGatewayContract.COLUMN_PROTOCOL,
+                NtsocialGatewayContract.COLUMN_SESSION_STATE,
+                NtsocialGatewayContract.COLUMN_ENDPOINT_GENERATION,
+                NtsocialGatewayContract.COLUMN_HISTORY_EPOCH,
+                NtsocialGatewayContract.COLUMN_MESSAGE_CHANGE_SEQ,
+                NtsocialGatewayContract.COLUMN_NATIVE_HISTORY_AVAILABLE,
+                NtsocialGatewayContract.COLUMN_NATIVE_TEXT_SEND_AVAILABLE,
+                NtsocialGatewayContract.COLUMN_ARBITRARY_ROUTE_OVERLAY_AVAILABLE,
+                NtsocialGatewayContract.COLUMN_HAS_CACHED_CATALOG,
+                NtsocialGatewayContract.COLUMN_APPEARANCE_TOKEN,
+                NtsocialGatewayContract.COLUMN_SORT_ORDER,
+                NtsocialGatewayContract.COLUMN_FLEET_GENERATION,
+            )
+
+        val V3_CHANNEL_COLUMNS =
+            arrayOf(
+                NtsocialGatewayContract.COLUMN_BEARER,
+                NtsocialGatewayContract.COLUMN_ENDPOINT_ID,
+                NtsocialGatewayContract.COLUMN_ENDPOINT_GENERATION,
+                NtsocialGatewayContract.COLUMN_FLEET_GENERATION,
+                NtsocialGatewayContract.COLUMN_SOURCE_CHANNEL_ID,
+                NtsocialGatewayContract.COLUMN_ROUTE_TOKEN,
+                NtsocialGatewayContract.COLUMN_SLOT_INDEX,
+                NtsocialGatewayContract.COLUMN_ROLE,
+                NtsocialGatewayContract.COLUMN_CONFIGURED_NAME,
+                NtsocialGatewayContract.COLUMN_DISPLAY_NAME,
+                NtsocialGatewayContract.COLUMN_SECURITY_CLASS,
+                NtsocialGatewayContract.COLUMN_UPLINK_ENABLED,
+                NtsocialGatewayContract.COLUMN_DOWNLINK_ENABLED,
+                NtsocialGatewayContract.COLUMN_CAN_READ_NATIVE_TEXT,
+                NtsocialGatewayContract.COLUMN_CAN_SEND_NATIVE_TEXT,
+                NtsocialGatewayContract.COLUMN_CAN_SEND_NT_OVERLAY,
+                NtsocialGatewayContract.COLUMN_HISTORY_EPOCH,
+            )
+
+        val V3_MESSAGE_CHANGE_COLUMNS =
+            arrayOf(
+                NtsocialGatewayContract.COLUMN_ENDPOINT_ID,
+                NtsocialGatewayContract.COLUMN_ENDPOINT_GENERATION,
+                NtsocialGatewayContract.COLUMN_HISTORY_EPOCH,
+                *V2_MESSAGE_CHANGE_COLUMNS,
+            )
+
         const val BEARER_MESHTASTIC = "MESHTASTIC"
     }
 }
 
 internal data class GatewayMessageChangesQuery(val after: Long, val limit: Int)
+
+internal data class GatewayV3MessageChangesQuery(val endpointId: String, val after: Long, val limit: Int)
 
 internal fun parseGatewayMessageChangesQuery(uri: Uri): GatewayMessageChangesQuery {
     require(
@@ -582,6 +794,36 @@ internal fun parseGatewayMessageChangesQuery(uri: Uri): GatewayMessageChangesQue
     return GatewayMessageChangesQuery(after = after, limit = limit)
 }
 
+internal fun parseGatewayV3MessageChangesQuery(uri: Uri): GatewayV3MessageChangesQuery {
+    require(
+        uri.queryParameterNames.all {
+            it == NtsocialGatewayContract.QUERY_ENDPOINT_ID ||
+                it == NtsocialGatewayContract.QUERY_AFTER ||
+                it == NtsocialGatewayContract.QUERY_LIMIT
+        },
+    ) {
+        "Unknown Gateway v3 message query parameter"
+    }
+    require(uri.getQueryParameters(NtsocialGatewayContract.QUERY_ENDPOINT_ID).size == 1) {
+        "endpoint_id is required exactly once"
+    }
+    val endpointId = requireNotNull(uri.getQueryParameter(NtsocialGatewayContract.QUERY_ENDPOINT_ID))
+    require(isValidGatewayEndpointId(endpointId)) { "endpoint_id is invalid" }
+    require(uri.getQueryParameters(NtsocialGatewayContract.QUERY_AFTER).size <= 1) { "after must not be repeated" }
+    require(uri.getQueryParameters(NtsocialGatewayContract.QUERY_LIMIT).size <= 1) { "limit must not be repeated" }
+    val after =
+        uri.getQueryParameter(NtsocialGatewayContract.QUERY_AFTER)?.let { value ->
+            requireNotNull(value.toLongOrNull()) { "after must be a base-10 integer" }
+        } ?: DEFAULT_MESSAGE_CHANGES_AFTER
+    val limit =
+        uri.getQueryParameter(NtsocialGatewayContract.QUERY_LIMIT)?.let { value ->
+            requireNotNull(value.toIntOrNull()) { "limit must be a base-10 integer" }
+        } ?: DEFAULT_MESSAGE_CHANGES_LIMIT
+    require(after >= 0L) { "after must not be negative" }
+    require(limit in 1..MAX_MESSAGE_CHANGES_LIMIT) { "limit is outside the supported range" }
+    return GatewayV3MessageChangesQuery(endpointId = endpointId, after = after, limit = limit)
+}
+
 private data class MappedGatewayMessageChange(
     val change: NtsocialGatewayMessageChange,
     val identity: NtsocialGatewayMessageIdentity,
@@ -597,6 +839,10 @@ private enum class GatewayEndpoint {
     V2_STATUS,
     V2_CHANNELS,
     V2_MESSAGE_CHANGES,
+    V3_STATUS,
+    V3_ENDPOINTS,
+    V3_CHANNELS,
+    V3_MESSAGE_CHANGES,
 }
 
 private fun Boolean.asInt(): Int = if (this) 1 else 0
@@ -612,6 +858,12 @@ internal const val GATEWAY_V2_CAPABILITIES =
         NtsocialGatewayContract.CAPABILITY_ROUTE_OVERLAY_SEND or
         NtsocialGatewayContract.CAPABILITY_MESSAGE_CHANGE_EVENTS or
         NtsocialGatewayContract.CAPABILITY_NATIVE_TEXT_SEND
+internal const val GATEWAY_V3_CAPABILITIES =
+    GATEWAY_V2_CAPABILITIES or
+        NtsocialGatewayContract.CAPABILITY_MULTI_ENDPOINT_FLEET or
+        NtsocialGatewayContract.CAPABILITY_ENDPOINT_SCOPED_CATALOG or
+        NtsocialGatewayContract.CAPABILITY_ENDPOINT_SCOPED_HISTORY or
+        NtsocialGatewayContract.CAPABILITY_ENDPOINT_SCOPED_ROUTE_SEND
 
 internal fun gatewayMessageChangeValues(
     change: NtsocialGatewayMessageChange,

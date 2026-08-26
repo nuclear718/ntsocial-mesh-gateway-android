@@ -25,13 +25,16 @@
 package com.ntsocial.meshlink.app
 
 import android.app.Application
+import com.ntsocial.meshlink.app.radio.AndroidEndpointConversationSourceCoordinator
 import com.ntsocial.meshlink.core.service.NtsocialGatewayProvider
+import org.koin.android.ext.android.get
 
 /** Ensures the complete Android DI graph exists before the exported Gateway Provider can receive Binder calls. */
 class NtsocialGatewayBootstrapProvider : NtsocialGatewayProvider() {
     override fun onCreate(): Boolean {
         val application = requireNotNull(context?.applicationContext as? Application)
         AndroidKoinBootstrap.ensureStarted(application)
+        application.get<AndroidEndpointConversationSourceCoordinator>().start()
         return super.onCreate()
     }
 }

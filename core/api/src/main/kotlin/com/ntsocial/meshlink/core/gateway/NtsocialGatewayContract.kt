@@ -38,18 +38,22 @@ object NtsocialGatewayContract {
 
     const val API_VERSION = 1
     const val API_VERSION_V2 = 2
+    const val API_VERSION_V3 = 3
     const val AUTHORITY_SUFFIX = ".gateway"
 
     const val PATH_VERSION = "v1"
     const val PATH_VERSION_V2 = "v2"
+    const val PATH_VERSION_V3 = "v3"
     const val PATH_STATUS = "status"
     const val PATH_ENVELOPES = "envelopes"
     const val PATH_NODES = "nodes"
     const val PATH_CHANNELS = "channels"
     const val PATH_MESSAGE_CHANGES = "message-changes"
+    const val PATH_ENDPOINTS = "endpoints"
 
     const val QUERY_AFTER = "after"
     const val QUERY_LIMIT = "limit"
+    const val QUERY_ENDPOINT_ID = "endpoint_id"
 
     const val ACTION_COMMAND = "$PREFIX.gateway.COMMAND"
     const val ACTION_EVENT = "$PREFIX.gateway.EVENT"
@@ -74,6 +78,8 @@ object NtsocialGatewayContract {
     const val EXTRA_SOURCE_CHANNEL_ID = "source_channel_id"
     const val EXTRA_ROUTE_TOKEN = "route_token"
     const val EXTRA_CLIENT_MESSAGE_ID = "client_message_id"
+    const val EXTRA_ENDPOINT_ID = "endpoint_id"
+    const val EXTRA_EXPECTED_ENDPOINT_GENERATION = "expected_endpoint_generation"
     const val CLIENT_MESSAGE_ID_HEX_LENGTH = 32
     const val EXTRA_TEXT = "text"
     const val EXTRA_TO = "to"
@@ -101,6 +107,10 @@ object NtsocialGatewayContract {
     const val CAPABILITY_ROUTE_OVERLAY_SEND = 1L shl 2
     const val CAPABILITY_MESSAGE_CHANGE_EVENTS = 1L shl 3
     const val CAPABILITY_NATIVE_TEXT_SEND = 1L shl 4
+    const val CAPABILITY_MULTI_ENDPOINT_FLEET = 1L shl 5
+    const val CAPABILITY_ENDPOINT_SCOPED_CATALOG = 1L shl 6
+    const val CAPABILITY_ENDPOINT_SCOPED_HISTORY = 1L shl 7
+    const val CAPABILITY_ENDPOINT_SCOPED_ROUTE_SEND = 1L shl 8
     const val MAX_NATIVE_TEXT_SIZE_BYTES = NtsocialGatewayNativeText.MAX_UTF8_SIZE_BYTES
 
     /** SHA-256 prefix exported as 16 bytes / 32 uppercase hexadecimal characters. */
@@ -133,6 +143,19 @@ object NtsocialGatewayContract {
     const val COLUMN_NATIVE_HISTORY_AVAILABLE = "native_history_available"
     const val COLUMN_NATIVE_TEXT_SEND_AVAILABLE = "native_text_send_available"
     const val COLUMN_ARBITRARY_ROUTE_OVERLAY_AVAILABLE = "arbitrary_route_overlay_available"
+    const val COLUMN_PROVIDER_INSTANCE_ID = "provider_instance_id"
+    const val COLUMN_FLEET_GENERATION = "fleet_generation"
+    const val COLUMN_MAX_RADIO_ENDPOINTS = "max_radio_endpoints"
+    const val COLUMN_REGISTERED_ENDPOINT_COUNT = "registered_endpoint_count"
+    const val COLUMN_LIVE_ENDPOINT_COUNT = "live_endpoint_count"
+    const val COLUMN_ENDPOINT_ID = "endpoint_id"
+    const val COLUMN_ENDPOINT_GENERATION = "endpoint_generation"
+    const val COLUMN_ADDRESS_SUFFIX = "address_suffix"
+    const val COLUMN_PROTOCOL = "protocol"
+    const val COLUMN_SESSION_STATE = "session_state"
+    const val COLUMN_HAS_CACHED_CATALOG = "has_cached_catalog"
+    const val COLUMN_APPEARANCE_TOKEN = "appearance_token"
+    const val COLUMN_SORT_ORDER = "sort_order"
 
     const val COLUMN_DIRECTION = "direction"
     const val COLUMN_VERSION = "version"
@@ -188,6 +211,7 @@ object NtsocialGatewayContract {
     const val MIME_NODES = "vnd.android.cursor.dir/vnd.$PREFIX.gateway.node"
     const val MIME_CHANNELS = "vnd.android.cursor.dir/vnd.$PREFIX.gateway.channel"
     const val MIME_MESSAGE_CHANGES = "vnd.android.cursor.dir/vnd.$PREFIX.gateway.message-change"
+    const val MIME_ENDPOINTS = "vnd.android.cursor.dir/vnd.$PREFIX.gateway.endpoint"
 
     fun authorityFor(applicationId: String): String = applicationId + AUTHORITY_SUFFIX
 
@@ -209,6 +233,26 @@ object NtsocialGatewayContract {
             .appendQueryParameter(QUERY_AFTER, after.toString())
             .appendQueryParameter(QUERY_LIMIT, limit.toString())
             .build()
+
+    /** Endpoint-scoped fleet resources introduced by Gateway v3. */
+    object V3 {
+        fun statusUri(authority: String): Uri = endpointUri(authority, PATH_STATUS)
+
+        fun endpointsUri(authority: String): Uri = endpointUri(authority, PATH_ENDPOINTS)
+
+        fun channelsUri(authority: String): Uri = endpointUri(authority, PATH_CHANNELS)
+
+        fun messageChangesUri(authority: String, endpointId: String, after: Long = 0, limit: Int = 100): Uri =
+            endpointUri(authority, PATH_MESSAGE_CHANGES)
+                .buildUpon()
+                .appendQueryParameter(QUERY_ENDPOINT_ID, endpointId)
+                .appendQueryParameter(QUERY_AFTER, after.toString())
+                .appendQueryParameter(QUERY_LIMIT, limit.toString())
+                .build()
+
+        private fun endpointUri(authority: String, path: String): Uri =
+            Uri.Builder().scheme("content").authority(authority).appendPath(PATH_VERSION_V3).appendPath(path).build()
+    }
 
     private fun endpointUri(authority: String, path: String): Uri =
         Uri.Builder().scheme("content").authority(authority).appendPath(PATH_VERSION).appendPath(path).build()

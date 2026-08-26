@@ -34,6 +34,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import co.touchlab.kermit.Logger
+import com.ntsocial.meshlink.app.radio.AndroidEndpointConversationSourceCoordinator
 import com.ntsocial.meshlink.core.database.DatabaseManager
 import com.ntsocial.meshlink.core.repository.MeshPrefs
 import com.ntsocial.meshlink.core.service.NtsocialGatewayEventPublisher
@@ -70,6 +71,7 @@ open class MeshUtilApplication :
         // The Provider may be created before Application.onCreate, so Gateway event collection starts only after Koin
         // is fully initialized. Events contain metadata only; external clients re-query the protected Provider.
         get<NtsocialGatewayEventPublisher>().start()
+        get<AndroidEndpointConversationSourceCoordinator>().start()
 
         // Schedule periodic MeshLog cleanup
         scheduleMeshLogCleanup()

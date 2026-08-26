@@ -78,6 +78,57 @@ class NtsocialGatewayRouteTokenStoreTest {
     }
 
     @Test
+    fun `v3 route is endpoint generation and fleet bound`() {
+        val token =
+            store.issueV3(
+                caller = caller,
+                endpointId = "endpoint-a",
+                sourceChannelId = "meshtastic:alpha",
+                channelIndex = 0,
+                endpointGeneration = "endpoint-generation-a",
+                fleetGeneration = "fleet-a",
+                nowMillis = 1_000L,
+            )
+
+        assertEquals(
+            0,
+            store
+                .resolveV3(
+                    token = token,
+                    caller = caller,
+                    endpointId = "endpoint-a",
+                    sourceChannelId = "meshtastic:alpha",
+                    endpointGeneration = "endpoint-generation-a",
+                    fleetGeneration = "fleet-a",
+                    nowMillis = 1_001L,
+                )
+                ?.channelIndex,
+        )
+        assertNull(
+            store.resolveV3(
+                token = token,
+                caller = caller,
+                endpointId = "endpoint-b",
+                sourceChannelId = "meshtastic:alpha",
+                endpointGeneration = "endpoint-generation-a",
+                fleetGeneration = "fleet-a",
+                nowMillis = 1_001L,
+            ),
+        )
+        assertNull(
+            store.resolveV3(
+                token = token,
+                caller = caller,
+                endpointId = "endpoint-a",
+                sourceChannelId = "meshtastic:alpha",
+                endpointGeneration = "endpoint-generation-b",
+                fleetGeneration = "fleet-a",
+                nowMillis = 1_001L,
+            ),
+        )
+    }
+
+    @Test
     fun `accepted client message survives store recreation with deterministic packet id`() {
         val clientMessageId = "0123456789ABCDEF0123456789ABCDEF"
         val fingerprint = "A".repeat(64)

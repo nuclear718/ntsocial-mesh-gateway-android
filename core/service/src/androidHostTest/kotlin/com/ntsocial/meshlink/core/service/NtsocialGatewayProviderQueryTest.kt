@@ -65,6 +65,30 @@ class NtsocialGatewayProviderQueryTest {
     }
 
     @Test
+    fun `v3 query parser requires one endpoint id`() {
+        assertEquals(
+            GatewayV3MessageChangesQuery(endpointId = "endpoint-a", after = 3, limit = 50),
+            parseGatewayV3MessageChangesQuery(
+                Uri.parse(
+                    "content://com.ntsocial.meshlink.gateway/v3/message-changes" +
+                        "?endpoint_id=endpoint-a&after=3&limit=50",
+                ),
+            ),
+        )
+        listOf(
+            "after=0",
+            "endpoint_id=bad endpoint",
+            "endpoint_id=endpoint-a&endpoint_id=endpoint-b",
+        ).forEach { query ->
+            assertFailsWith<IllegalArgumentException> {
+                parseGatewayV3MessageChangesQuery(
+                    Uri.parse("content://com.ntsocial.meshlink.gateway/v3/message-changes?$query"),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `message change projection exports origin client id only as nullable correlation metadata`() {
         val identity =
             NtsocialGatewayMessageIdentity(

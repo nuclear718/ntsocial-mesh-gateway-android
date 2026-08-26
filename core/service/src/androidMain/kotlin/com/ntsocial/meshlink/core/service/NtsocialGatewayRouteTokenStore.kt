@@ -49,13 +49,15 @@ internal class NtsocialGatewayRouteTokenStore(context: Context) {
         nowMillis: Long = System.currentTimeMillis(),
     ): String = synchronized(lock) {
         purgeExpired(nowMillis)
-        val token = newToken()
+        val token = newGatewayRouteToken(random, TOKEN_SIZE_BYTES)
         routes[token] =
             Route(
                 caller = caller,
+                endpointId = null,
                 sourceChannelId = sourceChannelId,
                 channelIndex = channelIndex,
                 radioGeneration = radioGeneration,
+                fleetGeneration = null,
                 expiresAtMillis = nowMillis + ROUTE_TTL_MILLIS,
             )
         token
@@ -78,13 +80,67 @@ internal class NtsocialGatewayRouteTokenStore(context: Context) {
             ?.let { ResolvedRoute(channelIndex = it.channelIndex) }
     }
 
+    fun issueV3(
+        caller: NtsocialGatewayCaller,
+        endpointId: String,
+        sourceChannelId: String,
+        channelIndex: Int,
+        endpointGeneration: String,
+        fleetGeneration: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): String = synchronized(lock) {
+        require(isValidGatewayEndpointId(endpointId))
+        purgeExpired(nowMillis)
+        val token = newGatewayRouteToken(random, TOKEN_SIZE_BYTES)
+        routes[token] =
+            Route(
+                caller = caller,
+                endpointId = endpointId,
+                sourceChannelId = sourceChannelId,
+                channelIndex = channelIndex,
+                radioGeneration = endpointGeneration,
+                fleetGeneration = fleetGeneration,
+                expiresAtMillis = nowMillis + ROUTE_TTL_MILLIS,
+            )
+        token
+    }
+
+    fun resolveV3(
+        token: String,
+        caller: NtsocialGatewayCaller,
+        endpointId: String,
+        sourceChannelId: String,
+        endpointGeneration: String,
+        fleetGeneration: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): ResolvedRoute? = synchronized(lock) {
+        purgeExpired(nowMillis)
+        routes[token]
+            ?.takeIf {
+                it.caller == caller &&
+                    it.endpointId == endpointId &&
+                    it.sourceChannelId == sourceChannelId &&
+                    it.radioGeneration == endpointGeneration &&
+                    it.fleetGeneration == fleetGeneration
+            }
+            ?.let {
+                ResolvedRoute(
+                    channelIndex = it.channelIndex,
+                    endpointId = it.endpointId,
+                    endpointGeneration = it.radioGeneration,
+                    fleetGeneration = it.fleetGeneration,
+                )
+            }
+    }
+
     fun reserveClientMessage(
         caller: NtsocialGatewayCaller,
         clientMessageId: String,
         requestFingerprint: String,
+        endpointId: String? = null,
         nowMillis: Long = System.currentTimeMillis(),
     ): ClientMessageReservation = synchronized(lock) {
-        val key = ClientMessageKey(caller.packageName, clientMessageId)
+        val key = ClientMessageKey(caller.packageName, endpointId, clientMessageId)
         clientMessages[key]?.let { existing ->
             return@synchronized when {
                 existing.requestFingerprint != requestFingerprint -> ClientMessageReservation.Conflict
@@ -119,8 +175,9 @@ internal class NtsocialGatewayRouteTokenStore(context: Context) {
         clientMessageId: String,
         requestFingerprint: String,
         packetId: Int,
+        endpointId: String? = null,
     ): Boolean = synchronized(lock) {
-        val key = ClientMessageKey(caller.packageName, clientMessageId)
+        val key = ClientMessageKey(caller.packageName, endpointId, clientMessageId)
         val existing = clientMessages[key]
         check(
             existing != null && existing.requestFingerprint == requestFingerprint && existing.packetId == packetId,
@@ -135,16 +192,16 @@ internal class NtsocialGatewayRouteTokenStore(context: Context) {
         routes.entries.removeAll { (_, route) -> route.expiresAtMillis <= nowMillis }
     }
 
-    private fun newToken(): String {
-        val bytes = ByteArray(TOKEN_SIZE_BYTES)
-        random.nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-    }
-
     private fun deterministicPacketId(key: ClientMessageKey): Int {
         val digest =
             MessageDigest.getInstance("SHA-256")
-                .digest("${key.packageName}:${key.clientMessageId}".toByteArray(StandardCharsets.UTF_8))
+                .digest(
+                    (
+                        key.endpointId?.let { endpointId -> "${key.packageName}:$endpointId:${key.clientMessageId}" }
+                            ?: "${key.packageName}:${key.clientMessageId}"
+                        )
+                        .toByteArray(StandardCharsets.UTF_8),
+                )
         val value =
             ((digest[0].toInt() and POSITIVE_FIRST_BYTE_MASK) shl BITS_24) or
                 ((digest[1].toInt() and UNSIGNED_BYTE_MASK) shl BITS_16) or
@@ -182,25 +239,29 @@ internal class NtsocialGatewayRouteTokenStore(context: Context) {
 
     private data class Route(
         val caller: NtsocialGatewayCaller,
+        val endpointId: String?,
         val sourceChannelId: String,
         val channelIndex: Int,
         val radioGeneration: String,
+        val fleetGeneration: String?,
         val expiresAtMillis: Long,
     )
 
-    private data class ClientMessageKey(val packageName: String, val clientMessageId: String) {
-        fun persistedKey(): String = "$packageName$LEDGER_SEPARATOR$clientMessageId"
+    private data class ClientMessageKey(val packageName: String, val endpointId: String?, val clientMessageId: String) {
+        fun persistedKey(): String =
+            listOfNotNull(packageName, endpointId, clientMessageId).joinToString(LEDGER_SEPARATOR.toString())
 
         companion object {
             fun fromPersistedKey(value: String): ClientMessageKey? {
-                val separatorIndex = value.lastIndexOf(LEDGER_SEPARATOR)
-                return if (separatorIndex <= 0 || separatorIndex == value.lastIndex) {
-                    null
-                } else {
-                    ClientMessageKey(
-                        packageName = value.substring(0, separatorIndex),
-                        clientMessageId = value.substring(separatorIndex + 1),
-                    )
+                val parts = value.split(LEDGER_SEPARATOR)
+                return when {
+                    parts.size == 2 && parts.all(String::isNotBlank) -> ClientMessageKey(parts[0], null, parts[1])
+
+                    parts.size == FLEET_LEDGER_KEY_PARTS &&
+                        parts.all(String::isNotBlank) &&
+                        isValidGatewayEndpointId(parts[1]) -> ClientMessageKey(parts[0], parts[1], parts[2])
+
+                    else -> null
                 }
             }
         }
@@ -248,12 +309,18 @@ internal class NtsocialGatewayRouteTokenStore(context: Context) {
         data object Conflict : ClientMessageReservation
     }
 
-    data class ResolvedRoute(val channelIndex: Int)
+    data class ResolvedRoute(
+        val channelIndex: Int,
+        val endpointId: String? = null,
+        val endpointGeneration: String? = null,
+        val fleetGeneration: String? = null,
+    )
 
     private companion object {
         const val LEDGER_PREFERENCES = "ntsocial_gateway_v2_client_messages"
         const val LEDGER_SEPARATOR = '|'
         const val LEDGER_VALUE_PARTS = 4
+        const val FLEET_LEDGER_KEY_PARTS = 3
         const val REQUEST_FINGERPRINT_HEX_LENGTH = 64
         const val ROUTE_TTL_MILLIS = 120_000L
         const val TOKEN_SIZE_BYTES = 32
@@ -266,4 +333,10 @@ internal class NtsocialGatewayRouteTokenStore(context: Context) {
         const val PACKET_ID_LAST_BYTE_INDEX = 3
         const val LEDGER_CREATED_AT_INDEX = 3
     }
+}
+
+private fun newGatewayRouteToken(random: SecureRandom, tokenSizeBytes: Int): String {
+    val bytes = ByteArray(tokenSizeBytes)
+    random.nextBytes(bytes)
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 }

@@ -64,6 +64,7 @@ import com.ntsocial.meshlink.core.data.repository.DeviceLinkRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.FirmwareReleaseRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.MeshLogRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.NodeRepositoryImpl
+import com.ntsocial.meshlink.core.data.repository.NtsocialGatewayRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.PacketRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.QuickChatActionRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.RadioConfigRepositoryImpl
@@ -174,7 +175,7 @@ internal val radioEndpointKoinModule = module {
         scoped<MeshServiceNotifications> { EndpointServiceNotifications }
         scoped<MeshLocationManager> { EndpointMeshLocationManager }
         scoped<AppWidgetUpdater> { EndpointAppWidgetUpdater }
-        scoped<NtsocialGatewayRepository> { SecondaryGatewayRepository() }
+        scopedOf(::NtsocialGatewayRepositoryImpl).bind<NtsocialGatewayRepository>()
 
         scopedOf(::SwitchingNodeInfoReadDataSource).bind<NodeInfoReadDataSource>()
         scopedOf(::SwitchingNodeInfoWriteDataSource).bind<NodeInfoWriteDataSource>()

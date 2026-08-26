@@ -122,6 +122,23 @@ class NtsocialGatewayCommandParsingTest {
         )
     }
 
+    @Test
+    fun `v3 endpoint scope requires endpoint and generation together`() {
+        val parsed =
+            assertNotNull(
+                parseGatewayRoutedCommand(
+                    validIntent()
+                        .putExtra(NtsocialGatewayContract.EXTRA_ENDPOINT_ID, "endpoint-a")
+                        .putExtra(NtsocialGatewayContract.EXTRA_EXPECTED_ENDPOINT_GENERATION, "generation-a"),
+                ),
+            )
+        assertEquals("endpoint-a", parsed.endpointId)
+        assertEquals("generation-a", parsed.expectedEndpointGeneration)
+        assertNull(
+            parseGatewayRoutedCommand(validIntent().putExtra(NtsocialGatewayContract.EXTRA_ENDPOINT_ID, "endpoint-a")),
+        )
+    }
+
     private fun validIntent(): Intent = Intent(NtsocialGatewayContract.ACTION_COMMAND)
         .putExtra(NtsocialGatewayContract.EXTRA_REQUEST_ID, "request")
         .putExtra(NtsocialGatewayContract.EXTRA_AUTHORIZATION_TOKEN, "authorization")

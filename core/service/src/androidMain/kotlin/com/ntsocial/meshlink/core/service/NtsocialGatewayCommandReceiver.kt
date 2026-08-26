@@ -62,6 +62,7 @@ class NtsocialGatewayCommandReceiver :
     private val routeTokenStore: NtsocialGatewayRouteTokenStore by inject()
     private val gatewayRepository: NtsocialGatewayRepository by inject()
     private val eventPublisher: NtsocialGatewayEventPublisher by inject()
+    private val fleetFacade: NtsocialGatewayFleetFacade by inject()
     private val scope: CoroutineScope by inject(qualifier = named("ServiceScope"))
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -102,17 +103,32 @@ class NtsocialGatewayCommandReceiver :
             ) ?: return
 
         val route =
-            routeTokenStore.resolve(
-                token = request.routeToken,
-                caller = caller,
-                sourceChannelId = request.sourceChannelId,
-                radioGeneration = eventPublisher.catalogSnapshot.value.radioGeneration,
+            resolveRoute(
+                caller,
+                request.endpointId,
+                request.expectedEndpointGeneration,
+                request.sourceChannelId,
+                request.routeToken,
             )
         if (route == null) {
             reject(caller, request.requestId, REASON_INVALID_ROUTE)
             return
         }
+        val gatewaySource = route.endpointId?.let(fleetFacade::source)
+        if (route.endpointId != null && gatewaySource == null) {
+            reject(caller, request.requestId, REASON_INVALID_ROUTE)
+            return
+        }
 
+        reserveAndDispatchNativeTextCommand(caller, request, route, gatewaySource)
+    }
+
+    private suspend fun reserveAndDispatchNativeTextCommand(
+        caller: NtsocialGatewayCaller,
+        request: GatewayNativeTextCommand,
+        route: NtsocialGatewayRouteTokenStore.ResolvedRoute,
+        gatewaySource: NtsocialEndpointGatewaySource?,
+    ) {
         val requestFingerprint = request.requestFingerprint()
         when (
             val reservation =
@@ -120,6 +136,7 @@ class NtsocialGatewayCommandReceiver :
                     caller = caller,
                     clientMessageId = request.clientMessageId,
                     requestFingerprint = requestFingerprint,
+                    endpointId = route.endpointId,
                 )
         ) {
             is NtsocialGatewayRouteTokenStore.ClientMessageReservation.Accepted ->
@@ -132,6 +149,7 @@ class NtsocialGatewayCommandReceiver :
                     channelIndex = route.channelIndex,
                     packetId = reservation.packetId,
                     requestFingerprint = requestFingerprint,
+                    gatewaySource = gatewaySource,
                 )
 
             NtsocialGatewayRouteTokenStore.ClientMessageReservation.Conflict ->
@@ -167,13 +185,19 @@ class NtsocialGatewayCommandReceiver :
             ) ?: return
 
         val route =
-            routeTokenStore.resolve(
-                token = request.routeToken,
-                caller = caller,
-                sourceChannelId = request.sourceChannelId,
-                radioGeneration = eventPublisher.catalogSnapshot.value.radioGeneration,
+            resolveRoute(
+                caller,
+                request.endpointId,
+                request.expectedEndpointGeneration,
+                request.sourceChannelId,
+                request.routeToken,
             )
         if (route == null) {
+            reject(caller, request.requestId, REASON_INVALID_ROUTE)
+            return
+        }
+        val gatewaySource = route.endpointId?.let(fleetFacade::source)
+        if (route.endpointId != null && gatewaySource == null) {
             reject(caller, request.requestId, REASON_INVALID_ROUTE)
             return
         }
@@ -190,6 +214,16 @@ class NtsocialGatewayCommandReceiver :
                     wantAck = request.wantAck,
                 ),
             ) ?: return
+        reserveAndDispatchRoutedCommand(caller, request, route, command, gatewaySource)
+    }
+
+    private suspend fun reserveAndDispatchRoutedCommand(
+        caller: NtsocialGatewayCaller,
+        request: GatewayRoutedCommand,
+        route: NtsocialGatewayRouteTokenStore.ResolvedRoute,
+        command: OutboundCommand,
+        gatewaySource: NtsocialEndpointGatewaySource?,
+    ) {
         val requestFingerprint = request.requestFingerprint()
         when (
             val reservation =
@@ -197,6 +231,7 @@ class NtsocialGatewayCommandReceiver :
                     caller = caller,
                     clientMessageId = request.clientMessageId,
                     requestFingerprint = requestFingerprint,
+                    endpointId = route.endpointId,
                 )
         ) {
             is NtsocialGatewayRouteTokenStore.ClientMessageReservation.Accepted ->
@@ -210,6 +245,7 @@ class NtsocialGatewayCommandReceiver :
                     command = command,
                     packetId = reservation.packetId,
                     requestFingerprint = requestFingerprint,
+                    gatewaySource = gatewaySource,
                 )
 
             NtsocialGatewayRouteTokenStore.ClientMessageReservation.Conflict ->
@@ -226,6 +262,38 @@ class NtsocialGatewayCommandReceiver :
                 broadcastSender = broadcastSender,
             ) ?: return
         reject(caller, request.requestId, REASON_UNSUPPORTED_COMMAND)
+    }
+
+    private suspend fun resolveRoute(
+        caller: NtsocialGatewayCaller,
+        endpointId: String?,
+        expectedEndpointGeneration: String?,
+        sourceChannelId: String,
+        routeToken: String,
+    ): NtsocialGatewayRouteTokenStore.ResolvedRoute? = if (endpointId == null && expectedEndpointGeneration == null) {
+        routeTokenStore.resolve(
+            token = routeToken,
+            caller = caller,
+            sourceChannelId = sourceChannelId,
+            radioGeneration = eventPublisher.catalogSnapshot.value.radioGeneration,
+        )
+    } else if (endpointId != null && expectedEndpointGeneration != null) {
+        val fleet = fleetFacade.snapshot()
+        fleet.endpoints
+            .singleOrNull { it.endpointId == endpointId }
+            ?.takeIf { it.endpointGeneration == expectedEndpointGeneration && it.sessionState == "READY" }
+            ?.let {
+                routeTokenStore.resolveV3(
+                    token = routeToken,
+                    caller = caller,
+                    endpointId = endpointId,
+                    sourceChannelId = sourceChannelId,
+                    endpointGeneration = expectedEndpointGeneration,
+                    fleetGeneration = fleet.fleetGeneration,
+                )
+            }
+    } else {
+        null
     }
 
     private fun commandRequestOrNull(intent: Intent): CommandRequest? {
@@ -357,10 +425,11 @@ class NtsocialGatewayCommandReceiver :
         command: OutboundCommand,
         packetId: Int,
         requestFingerprint: String,
+        gatewaySource: NtsocialEndpointGatewaySource?,
     ) {
         try {
-            val queued =
-                gatewayRepository.persistAndQueueRawEnvelope(
+            val queuedPacketId =
+                gatewaySource?.sendOverlay(
                     rawEnvelope = command.rawEnvelope,
                     sourceChannelId = request.sourceChannelId,
                     to = command.to,
@@ -369,19 +438,31 @@ class NtsocialGatewayCommandReceiver :
                     wantAck = command.wantAck,
                     packetId = packetId,
                 )
+                    ?: gatewayRepository
+                        .persistAndQueueRawEnvelope(
+                            rawEnvelope = command.rawEnvelope,
+                            sourceChannelId = request.sourceChannelId,
+                            to = command.to,
+                            channelIndex = channelIndex,
+                            hopLimit = command.hopLimit,
+                            wantAck = command.wantAck,
+                            packetId = packetId,
+                        )
+                        .packetId
             val ledgerCommitted =
                 routeTokenStore.markClientMessageAccepted(
                     caller = caller,
                     clientMessageId = request.clientMessageId,
                     requestFingerprint = requestFingerprint,
-                    packetId = queued.packetId,
+                    packetId = queuedPacketId,
+                    endpointId = request.endpointId,
                 )
             if (!ledgerCommitted) {
                 Logger.w { "ntsocial_gateway_tx stage=ledger result=pending_commit_failed" }
                 reject(caller, request.requestId, REASON_QUEUE_FAILED)
                 return
             }
-            eventPublisher.publishCommandAccepted(caller.packageName, request.requestId, queued.packetId)
+            eventPublisher.publishCommandAccepted(caller.packageName, request.requestId, queuedPacketId)
         } catch (_: IllegalArgumentException) {
             reject(caller, request.requestId, REASON_INVALID_ENVELOPE)
         } catch (e: CancellationException) {
@@ -397,29 +478,40 @@ class NtsocialGatewayCommandReceiver :
         channelIndex: Int,
         packetId: Int,
         requestFingerprint: String,
+        gatewaySource: NtsocialEndpointGatewaySource?,
     ) {
         try {
-            val packet =
-                gatewayRepository.persistAndQueueNativeBroadcastText(
+            val queuedPacketId =
+                gatewaySource?.sendNativeText(
                     text = request.text,
                     sourceChannelId = request.sourceChannelId,
                     channelIndex = channelIndex,
                     packetId = packetId,
                     originClientMessageId = request.clientMessageId,
                 )
+                    ?: gatewayRepository
+                        .persistAndQueueNativeBroadcastText(
+                            text = request.text,
+                            sourceChannelId = request.sourceChannelId,
+                            channelIndex = channelIndex,
+                            packetId = packetId,
+                            originClientMessageId = request.clientMessageId,
+                        )
+                        .id
             val ledgerCommitted =
                 routeTokenStore.markClientMessageAccepted(
                     caller = caller,
                     clientMessageId = request.clientMessageId,
                     requestFingerprint = requestFingerprint,
-                    packetId = packet.id,
+                    packetId = queuedPacketId,
+                    endpointId = request.endpointId,
                 )
             if (!ledgerCommitted) {
                 Logger.w { "ntsocial_gateway_native_text stage=ledger result=pending_commit_failed" }
                 reject(caller, request.requestId, REASON_QUEUE_FAILED)
                 return
             }
-            eventPublisher.publishCommandAccepted(caller.packageName, request.requestId, packet.id)
+            eventPublisher.publishCommandAccepted(caller.packageName, request.requestId, queuedPacketId)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -499,6 +591,8 @@ internal data class GatewayRoutedCommand(
     val sourceChannelId: String,
     val routeToken: String,
     val clientMessageId: String,
+    val endpointId: String?,
+    val expectedEndpointGeneration: String?,
     val payload: ByteArray?,
     val to: String?,
     val hopLimit: Int,
@@ -511,6 +605,8 @@ internal data class GatewayNativeTextCommand(
     val sourceChannelId: String,
     val routeToken: String,
     val clientMessageId: String,
+    val endpointId: String?,
+    val expectedEndpointGeneration: String?,
     val text: String,
 )
 
@@ -534,12 +630,15 @@ internal fun parseGatewayRoutedCommand(intent: Intent): GatewayRoutedCommand? {
             .getStringExtra(NtsocialGatewayContract.EXTRA_CLIENT_MESSAGE_ID)
             ?.takeIf(CLIENT_MESSAGE_ID_REGEX::matches)
             ?.uppercase() ?: return null
+    val endpoint = parseEndpointCommandScope(intent) ?: return null
     return GatewayRoutedCommand(
         requestId = requestId,
         authorizationToken = authorizationToken,
         sourceChannelId = sourceChannelId,
         routeToken = routeToken,
         clientMessageId = clientMessageId,
+        endpointId = endpoint.endpointId,
+        expectedEndpointGeneration = endpoint.expectedGeneration,
         payload = intent.getByteArrayExtra(NtsocialGatewayContract.EXTRA_PAYLOAD),
         to = intent.getStringExtra(NtsocialGatewayContract.EXTRA_TO),
         hopLimit = intent.getIntExtra(NtsocialGatewayContract.EXTRA_HOP_LIMIT, DEFAULT_GATEWAY_HOP_LIMIT),
@@ -567,6 +666,7 @@ internal fun parseGatewayNativeTextCommand(intent: Intent): GatewayNativeTextCom
             .getStringExtra(NtsocialGatewayContract.EXTRA_CLIENT_MESSAGE_ID)
             ?.takeIf(CLIENT_MESSAGE_ID_REGEX::matches)
             ?.uppercase() ?: return null
+    val endpoint = parseEndpointCommandScope(intent) ?: return null
     val text =
         intent.getStringExtra(NtsocialGatewayContract.EXTRA_TEXT)?.takeIf(NtsocialGatewayNativeText::isValid)
             ?: return null
@@ -576,12 +676,20 @@ internal fun parseGatewayNativeTextCommand(intent: Intent): GatewayNativeTextCom
         sourceChannelId = sourceChannelId,
         routeToken = routeToken,
         clientMessageId = clientMessageId,
+        endpointId = endpoint.endpointId,
+        expectedEndpointGeneration = endpoint.expectedGeneration,
         text = text,
     )
 }
 
 private fun GatewayRoutedCommand.requestFingerprint(): String = Buffer()
     .apply {
+        endpointId?.let {
+            writeUtf8(it)
+            writeByte(0)
+            writeUtf8(requireNotNull(expectedEndpointGeneration))
+            writeByte(0)
+        }
         writeUtf8(sourceChannelId)
         writeByte(0)
         payload?.let(::write)
@@ -598,6 +706,12 @@ internal fun GatewayNativeTextCommand.requestFingerprint(): String = Buffer()
     .apply {
         writeUtf8(NtsocialGatewayContract.COMMAND_SEND_CHANNEL_TEXT)
         writeByte(0)
+        endpointId?.let {
+            writeUtf8(it)
+            writeByte(0)
+            writeUtf8(requireNotNull(expectedEndpointGeneration))
+            writeByte(0)
+        }
         writeUtf8(sourceChannelId)
         writeByte(0)
         writeUtf8(text)
@@ -606,8 +720,23 @@ internal fun GatewayNativeTextCommand.requestFingerprint(): String = Buffer()
     .sha256()
     .hex()
 
+private data class GatewayEndpointCommandScope(val endpointId: String?, val expectedGeneration: String?)
+
+private fun parseEndpointCommandScope(intent: Intent): GatewayEndpointCommandScope? {
+    val rawEndpointId = intent.getStringExtra(NtsocialGatewayContract.EXTRA_ENDPOINT_ID)
+    val rawGeneration = intent.getStringExtra(NtsocialGatewayContract.EXTRA_EXPECTED_ENDPOINT_GENERATION)
+    return when {
+        rawEndpointId == null && rawGeneration == null -> GatewayEndpointCommandScope(null, null)
+        rawEndpointId == null || rawGeneration == null -> null
+        !isValidGatewayEndpointId(rawEndpointId) -> null
+        rawGeneration.isBlank() || rawGeneration.length > MAX_ENDPOINT_GENERATION_LENGTH -> null
+        else -> GatewayEndpointCommandScope(rawEndpointId, rawGeneration)
+    }
+}
+
 private const val MAX_GATEWAY_REQUEST_ID_LENGTH = 128
 private const val MAX_SOURCE_CHANNEL_ID_LENGTH = 128
 private const val MAX_ROUTE_TOKEN_LENGTH = 128
+private const val MAX_ENDPOINT_GENERATION_LENGTH = 160
 private const val DEFAULT_GATEWAY_HOP_LIMIT = 0
 private val CLIENT_MESSAGE_ID_REGEX = Regex("^[0-9A-Fa-f]{${NtsocialGatewayContract.CLIENT_MESSAGE_ID_HEX_LENGTH}}$")
