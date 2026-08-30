@@ -1686,6 +1686,33 @@
   build succeeded, terminal output reported the warm-region/ISR guards clean, two source reviews found no P0 blocker,
   and `git diff --check` passed. Neither unit behavior nor two-node RF behavior is yet verified.
 
+## 2026-08-30 - iOS USB device and parent-integration validation
+- Tested only the iOS track at source HEAD `6a8a665d4781ea60cd91697cc42a0a422210d78a` on a wired iPhone 15 running
+  iOS 26.6.1. The existing `NTsocial` parent `com.ntsocial.ios` 1.0.0 (1) and a diagnostic `NTsocial MeshLink`
+  `com.ntsocial.meshlink.ios` 1.0.0 (1) were left installed and running.
+- A normal MeshLink device build with source entitlements failed because the available local provisioning profile does
+  not authorize `group.com.ntsocial.meshlink.gateway`. The installed parent is also a personal-team Developer App;
+  its Debug configuration uses the empty `NTSocialAppPersonal.entitlements`, and its profile has no App Group. A
+  diagnostic MeshLink build was installed only by command-line `CODE_SIGN_ENTITLEMENTS=` override. This proves boot
+  behavior only and must never be cited as Apple Gateway, release-signing, TestFlight, or App Store evidence.
+- Root cause is provisioning/capability state, not a reproduced source defect. CoreDevice App Group lookup fails with
+  `ContainerLookupErrorDomain error 7`; the existing `AppleGatewayBootstrap` correctly clears Gateway configuration
+  and fails closed when the App Group container or shared Keychain key is unavailable. No product code was changed.
+- Limited physical checks passed: install/version readback, localized Bluetooth permission-card rendering, graceful
+  terminate/relaunch, both parent/companion foreground orders with both processes retained, stable-PID routing of
+  `ntsocial-meshlink://process`, post-restart private Room `integrity_check=ok` at schema 43 with retained
+  `history_epoch_v2`, and zero MeshLink crash logs.
+- The user was away and reported Bluetooth off. A Git-ignored XCUITest harness was attempted; after removing an old,
+  rebuildable parent UI-test Runner to satisfy the free-profile three-App limit, two runs timed out while iOS enabled
+  UI Automation before any test method ran. The temporary Runner was removed. Bluetooth permission acceptance,
+  navigation, BLE scan/connection, Stage 2, connected-radio admission, RF, and remote receipt were not tested.
+- Focused baseline passed 126/126: gateway 36, iOS runtime 19, radio-fleet 8, prefs 36, and parent
+  `AppleGatewayAdapterTests` 27. Full report:
+  `IOS_PARENT_INTEGRATION_USB_PHYSICAL_DEVICE_TEST_REPORT_2026-08-30.md`.
+- Follow-up requires eligible-team profiles for both exact bundle IDs carrying the same App Group and shared Keychain
+  group, parent built with full entitlements, Bluetooth enabled, and Meshtastic hardware. Only then rerun the mailbox,
+  HMAC, Darwin hint/deep-link, missed-hint/restart, connected-radio, and two-radio RF matrix.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.
