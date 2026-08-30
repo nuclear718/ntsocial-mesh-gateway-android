@@ -5,7 +5,7 @@
     <string name="ios_connection_title">Connection</string>
     <string name="ios_integration_title">Integration status</string>
     <string name="ios_connection_heading">Meshtastic radio connection</string>
-    <string name="ios_connection_summary">Scan for a nearby Meshtastic radio over Bluetooth, then select the single radio MeshLink should use.</string>
+    <string name="ios_connection_summary">Scan over Bluetooth and add up to four independently controlled Meshtastic radios.</string>
     <string name="ios_radio_ui_runtime">BLE radio runtime</string>
     <string name="ios_bluetooth_permission">Bluetooth permission</string>
     <string name="ios_bluetooth_enabled">Bluetooth</string>
@@ -16,7 +16,7 @@
     <string name="ios_refresh_bluetooth">Refresh Bluetooth</string>
     <string name="ios_scan_start">Scan for radios</string>
     <string name="ios_scan_stop">Stop scan</string>
-    <string name="ios_scan_in_progress">Scanning for Meshtastic radios for up to 20 seconds…</string>
+    <string name="ios_scan_in_progress">Scanning for Meshtastic radios for up to 12 seconds…</string>
     <string name="ios_discovered_radios">Discovered radios</string>
     <string name="ios_no_radios_found">No Meshtastic radios have been discovered.</string>
     <string name="ios_unnamed_radio">Unnamed radio</string>

@@ -29,6 +29,7 @@ package com.ntsocial.meshlink.ios.runtime
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import com.ntsocial.meshlink.core.common.util.CommonUri
 import com.ntsocial.meshlink.core.data.datasource.BootloaderOtaQuirksJsonDataSource
 import com.ntsocial.meshlink.core.data.datasource.DeviceHardwareJsonDataSource
 import com.ntsocial.meshlink.core.data.datasource.DeviceLinksJsonDataSource
@@ -48,8 +49,10 @@ import com.ntsocial.meshlink.core.network.repository.ServiceDiscovery
 import com.ntsocial.meshlink.core.network.service.ApiService
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
 import com.ntsocial.meshlink.core.repository.DataPair
+import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.Location
 import com.ntsocial.meshlink.core.repository.LocationRepository
+import com.ntsocial.meshlink.core.repository.LocationService
 import com.ntsocial.meshlink.core.repository.MeshLocationManager
 import com.ntsocial.meshlink.core.repository.MeshServiceNotifications
 import com.ntsocial.meshlink.core.repository.MeshWorkerManager
@@ -57,12 +60,19 @@ import com.ntsocial.meshlink.core.repository.Notification
 import com.ntsocial.meshlink.core.repository.NotificationManager
 import com.ntsocial.meshlink.core.repository.PlatformAnalytics
 import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
+import com.ntsocial.meshlink.feature.node.compass.CompassHeadingProvider
+import com.ntsocial.meshlink.feature.node.compass.HeadingState
+import com.ntsocial.meshlink.feature.node.compass.MagneticFieldProvider
+import com.ntsocial.meshlink.feature.node.compass.PhoneLocationProvider
+import com.ntsocial.meshlink.feature.node.compass.PhoneLocationState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
+import okio.BufferedSink
+import okio.BufferedSource
 import org.meshtastic.proto.ClientNotification
 import org.meshtastic.proto.MqttClientProxyMessage
 import org.meshtastic.proto.Position
@@ -132,6 +142,31 @@ internal object IosLocationRepository : LocationRepository {
     override val receivingLocationUpdates: StateFlow<Boolean> = MutableStateFlow(false)
 
     override fun getLocations(): Flow<Location> = emptyFlow()
+}
+
+/** File import/export remains unavailable until the Swift document-picker bridge supplies a security-scoped URL. */
+internal object IosFileService : FileService {
+    override suspend fun write(uri: CommonUri, block: suspend (BufferedSink) -> Unit): Boolean = false
+
+    override suspend fun read(uri: CommonUri, block: suspend (BufferedSource) -> Unit): Boolean = false
+}
+
+/** One-shot phone location is fail closed until CoreLocation consent and lifecycle ownership are implemented. */
+internal object IosLocationService : LocationService {
+    override suspend fun getCurrentLocation(): Location? = null
+}
+
+internal object IosCompassHeadingProvider : CompassHeadingProvider {
+    override fun headingUpdates(): Flow<HeadingState> = flowOf(HeadingState(hasSensor = false))
+}
+
+internal object IosPhoneLocationProvider : PhoneLocationProvider {
+    override fun locationUpdates(): Flow<PhoneLocationState> =
+        flowOf(PhoneLocationState(permissionGranted = false, providerEnabled = false))
+}
+
+internal object IosMagneticFieldProvider : MagneticFieldProvider {
+    override fun getDeclination(latitude: Double, longitude: Double, altitude: Double, timeMillis: Long): Float = 0F
 }
 
 internal object IosMqttRepository : MQTTRepository {

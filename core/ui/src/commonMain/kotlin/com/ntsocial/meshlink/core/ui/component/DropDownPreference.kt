@@ -54,21 +54,20 @@ import androidx.compose.ui.unit.dp
 import kotlin.jvm.JvmName
 
 @Composable
-fun <T : Enum<T>> DropDownPreference(
+@Suppress("ParameterNaming")
+inline fun <reified T : Enum<T>> DropDownPreference(
     title: String,
     enabled: Boolean,
     selectedItem: T,
-    onItemSelected: (T) -> Unit,
+    noinline onItemSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
     summary: String? = null,
-    itemIcon: @Composable ((T) -> ImageVector)? = null,
-    itemColor: @Composable ((T) -> Color)? = null,
-    itemLabel: @Composable ((T) -> String)? = null,
+    noinline itemIcon: @Composable ((T) -> ImageVector)? = null,
+    noinline itemColor: @Composable ((T) -> Color)? = null,
+    noinline itemLabel: @Composable ((T) -> String)? = null,
 ) {
     val enumConstants =
-        remember(selectedItem) {
-            enumEntriesOf(selectedItem).filter { it.name != "UNRECOGNIZED" && !it.isDeprecatedEnumEntry() }
-        }
+        remember(selectedItem) { enumValues<T>().filter { it.name != "UNRECOGNIZED" && !it.isDeprecatedEnumEntry() } }
 
     val items =
         enumConstants.map {
@@ -209,9 +208,7 @@ fun <T> DropDownPreference(
     }
 }
 
-internal expect fun <T : Enum<T>> enumEntriesOf(selectedItem: T): List<T>
-
-internal expect fun Enum<*>.isDeprecatedEnumEntry(): Boolean
+@PublishedApi internal expect fun Enum<*>.isDeprecatedEnumEntry(): Boolean
 
 @Preview(showBackground = true)
 @Composable

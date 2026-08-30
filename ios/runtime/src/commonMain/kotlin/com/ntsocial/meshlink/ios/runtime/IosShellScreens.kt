@@ -98,6 +98,28 @@ internal fun IntegrationStatusScreen(state: IosShellState, onRefresh: () -> Unit
     }
 }
 
+/** Compact Apple companion/Gateway diagnostics embedded in the full iOS Settings hierarchy. */
+@Composable
+internal fun AppleIntegrationSettingsSection(state: IosShellState, onRefresh: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = stringResource(IosRes.string.ios_integration_heading),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = stringResource(IosRes.string.ios_integration_summary),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        IntegrationReadinessCard(state.hostReadiness)
+        Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(IosRes.string.ios_run_host_check))
+        }
+        ParentHandoffNotice(state.parentHandoffState)
+    }
+}
+
 @Composable
 private fun IntegrationReadinessCard(readiness: AppleHostReadiness?) {
     ElevatedCard(colors = shellCardColors(), modifier = Modifier.fillMaxWidth()) {

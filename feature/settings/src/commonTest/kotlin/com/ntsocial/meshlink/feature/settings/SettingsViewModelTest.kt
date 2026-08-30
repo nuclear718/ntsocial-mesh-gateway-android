@@ -253,6 +253,7 @@ class SettingsViewModelTest {
     fun `setLocale updates prefs`() = runTest {
         viewModel.setLocale("fr")
         appPreferences.ui.locale.value shouldBe "fr"
+        viewModel.locale.value shouldBe "fr"
     }
 
     @Test

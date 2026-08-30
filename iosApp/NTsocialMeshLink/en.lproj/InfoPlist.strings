@@ -1,0 +1,3 @@
+/* NTsocial MeshLink original work and modifications. SPDX-License-Identifier: GPL-3.0-or-later */
+"CFBundleDisplayName" = "NTsocial MeshLink";
+"NSBluetoothAlwaysUsageDescription" = "NTsocial MeshLink uses Bluetooth to connect to your selected Meshtastic radio and provide LoRa communication.";

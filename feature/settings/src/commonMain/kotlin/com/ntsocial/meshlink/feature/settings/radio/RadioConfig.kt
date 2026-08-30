@@ -79,6 +79,7 @@ fun RadioConfigItemList(
     state: RadioConfigState,
     isManaged: Boolean,
     isOtaCapable: Boolean = false,
+    showBackupRestore: Boolean = true,
     onRouteClick: (Enum<*>) -> Unit = {},
     onImport: () -> Unit = {},
     onExport: () -> Unit = {},
@@ -91,7 +92,7 @@ fun RadioConfigItemList(
         DeviceConfigSection(isManaged, enabled, onNavigate)
         ModuleSettingsSection(isManaged, enabled, onNavigate)
 
-        if (state.isLocal) {
+        if (state.isLocal && showBackupRestore) {
             BackupRestoreSection(isManaged, enabled, onImport, onExport)
         }
 

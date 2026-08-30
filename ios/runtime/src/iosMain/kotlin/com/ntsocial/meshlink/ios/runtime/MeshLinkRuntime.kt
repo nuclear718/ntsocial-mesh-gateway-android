@@ -32,6 +32,7 @@ import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import kotlinx.coroutines.MainScope
+import org.koin.compose.KoinIsolatedContext
 import platform.UIKit.UIViewController
 
 /** Swift-facing lifecycle and root-controller boundary for the iOS host. */
@@ -68,7 +69,9 @@ object MeshLinkRuntime {
 
     fun makeRootViewController(): UIViewController {
         compositionRoot.start()
-        return ComposeUIViewController { IosShellApp(shellController) }
+        return ComposeUIViewController {
+            KoinIsolatedContext(context = compositionRoot.application) { IosShellApp(shellController) }
+        }
     }
 
     fun setHostActive(active: Boolean) {

@@ -22,12 +22,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ui.component
+package com.ntsocial.meshlink.feature.intro
 
-@PublishedApi
-internal actual fun Enum<*>.isDeprecatedEnumEntry(): Boolean = try {
-    val field = this::class.java.getField(this.name)
-    field.isAnnotationPresent(Deprecated::class.java) || field.isAnnotationPresent(java.lang.Deprecated::class.java)
-} catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") e: Exception) {
-    false
-}
+import androidx.compose.ui.graphics.Color
+
+/** Brand blue shared by the Android and iOS first-launch language selector. */
+internal val NtsocialIntroBlue = Color(0xFF3DA8FF)

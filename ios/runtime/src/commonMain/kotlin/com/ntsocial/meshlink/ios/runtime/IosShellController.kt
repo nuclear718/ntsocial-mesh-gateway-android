@@ -24,7 +24,9 @@
  */
 package com.ntsocial.meshlink.ios.runtime
 
+import com.ntsocial.meshlink.core.common.util.CommonUri
 import com.ntsocial.meshlink.core.gateway.apple.AppleGatewayContract
+import com.ntsocial.meshlink.core.navigation.DeepLinkRouter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +56,7 @@ internal data class IosShellState(
     val integrationChecks: Int = 0,
     val hostReadiness: AppleHostReadiness? = null,
     val parentHandoffState: ParentHandoffState = ParentHandoffState.NONE,
+    val pendingNavigationUrl: String? = null,
 )
 
 /** Host-owned controller that joins real radio facts with Apple integration readiness. */
@@ -99,9 +102,17 @@ internal class IosShellController(private val radioUiPort: RadioUiPort, scope: C
     fun handleOpenUrl(url: String) {
         val accepted = url == AppleGatewayContract.PROCESS_DEEP_LINK
         mutableState.update { current ->
-            current.copy(
-                parentHandoffState = if (accepted) ParentHandoffState.ACCEPTED else ParentHandoffState.REJECTED,
-            )
+            when {
+                accepted -> current.copy(parentHandoffState = ParentHandoffState.ACCEPTED)
+                isFeatureDeepLink(url) -> current.copy(pendingNavigationUrl = url)
+                else -> current.copy(parentHandoffState = ParentHandoffState.REJECTED)
+            }
+        }
+    }
+
+    fun consumeNavigationUrl(url: String) {
+        mutableState.update { current ->
+            if (current.pendingNavigationUrl == url) current.copy(pendingNavigationUrl = null) else current
         }
     }
 
@@ -110,5 +121,8 @@ internal class IosShellController(private val radioUiPort: RadioUiPort, scope: C
         radioUiPort.close()
     }
 }
+
+private fun isFeatureDeepLink(url: String): Boolean =
+    runCatching { DeepLinkRouter.route(CommonUri.parse(url)) != null }.getOrDefault(false)
 
 internal expect fun inspectAppleHost(): AppleHostReadiness

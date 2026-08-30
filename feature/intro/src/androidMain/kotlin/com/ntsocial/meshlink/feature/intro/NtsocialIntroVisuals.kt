@@ -53,8 +53,6 @@ import com.ntsocial.meshlink.core.resources.img_ntsocial_butterfly_wordmark
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 
-internal val NtsocialIntroBlue = Color(0xFF3DA8FF)
-
 private val IntroPanelMaxWidth = 380.dp
 private val IntroPanelPadding = 24.dp
 private const val SPLASH_FADE_MILLIS = 900

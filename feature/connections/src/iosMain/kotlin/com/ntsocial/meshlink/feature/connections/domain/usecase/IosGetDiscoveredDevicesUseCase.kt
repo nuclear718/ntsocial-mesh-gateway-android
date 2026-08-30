@@ -22,12 +22,19 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ui.component
+package com.ntsocial.meshlink.feature.connections.domain.usecase
 
-@PublishedApi
-internal actual fun Enum<*>.isDeprecatedEnumEntry(): Boolean = try {
-    val field = this::class.java.getField(this.name)
-    field.isAnnotationPresent(Deprecated::class.java) || field.isAnnotationPresent(java.lang.Deprecated::class.java)
-} catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") e: Exception) {
-    false
-}
+import com.ntsocial.meshlink.core.common.database.DatabaseManager
+import com.ntsocial.meshlink.core.datastore.RecentAddressesDataSource
+import com.ntsocial.meshlink.core.repository.NodeRepository
+import com.ntsocial.meshlink.feature.connections.model.GetDiscoveredDevicesUseCase
+import org.koin.core.annotation.Single
+
+/** Apple registration of the common discovery projection; iOS exposes Bluetooth in the first-release UI. */
+@Single(binds = [GetDiscoveredDevicesUseCase::class])
+class IosGetDiscoveredDevicesUseCase(
+    recentAddressesDataSource: RecentAddressesDataSource,
+    nodeRepository: NodeRepository,
+    databaseManager: DatabaseManager,
+    usbScanner: UsbScanner? = null,
+) : CommonGetDiscoveredDevicesUseCase(recentAddressesDataSource, nodeRepository, databaseManager, usbScanner)

@@ -5,7 +5,7 @@
     <string name="ios_connection_title">連線</string>
     <string name="ios_integration_title">整合狀態</string>
     <string name="ios_connection_heading">Meshtastic 無線電連線</string>
-    <string name="ios_connection_summary">透過藍牙掃描附近的 Meshtastic 無線電，並選擇 MeshLink 唯一使用的一台。</string>
+    <string name="ios_connection_summary">透過藍牙掃描並加入最多四台可獨立控制的 Meshtastic 無線電。</string>
     <string name="ios_radio_ui_runtime">BLE 無線電 runtime</string>
     <string name="ios_bluetooth_permission">藍牙權限</string>
     <string name="ios_bluetooth_enabled">藍牙</string>
@@ -16,7 +16,7 @@
     <string name="ios_refresh_bluetooth">重新檢查藍牙</string>
     <string name="ios_scan_start">掃描無線電</string>
     <string name="ios_scan_stop">停止掃描</string>
-    <string name="ios_scan_in_progress">正在掃描 Meshtastic 無線電，最多 20 秒…</string>
+    <string name="ios_scan_in_progress">正在掃描 Meshtastic 無線電，最多 12 秒…</string>
     <string name="ios_discovered_radios">已找到的無線電</string>
     <string name="ios_no_radios_found">尚未找到 Meshtastic 無線電。</string>
     <string name="ios_unnamed_radio">未命名的無線電</string>

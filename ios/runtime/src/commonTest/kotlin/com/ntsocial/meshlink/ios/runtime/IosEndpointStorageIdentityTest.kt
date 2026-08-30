@@ -22,12 +22,21 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ui.component
+package com.ntsocial.meshlink.ios.runtime
 
-@PublishedApi
-internal actual fun Enum<*>.isDeprecatedEnumEntry(): Boolean = try {
-    val field = this::class.java.getField(this.name)
-    field.isAnnotationPresent(Deprecated::class.java) || field.isAnnotationPresent(java.lang.Deprecated::class.java)
-} catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") e: Exception) {
-    false
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+
+class IosEndpointStorageIdentityTest {
+    @Test
+    fun `each restart-stable endpoint id receives a distinct path-safe namespace`() {
+        val first = iosEndpointStorageFileStem(RadioEndpointId("123e4567-e89b-12d3-a456-426614174000"))
+        val second = iosEndpointStorageFileStem(RadioEndpointId("223e4567-e89b-12d3-a456-426614174000"))
+
+        assertEquals("123e4567e89b12d3a456426614174000", first)
+        assertEquals(32, first.length)
+        assertNotEquals(first, second)
+    }
 }

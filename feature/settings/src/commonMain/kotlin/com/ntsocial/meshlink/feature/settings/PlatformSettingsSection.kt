@@ -22,12 +22,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ui.component
+package com.ntsocial.meshlink.feature.settings
 
-@PublishedApi
-internal actual fun Enum<*>.isDeprecatedEnumEntry(): Boolean = try {
-    val field = this::class.java.getField(this.name)
-    field.isAnnotationPresent(Deprecated::class.java) || field.isAnnotationPresent(java.lang.Deprecated::class.java)
-} catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") e: Exception) {
-    false
-}
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+
+/** Optional host-owned settings content, such as the Apple Gateway readiness card on iOS. */
+@Suppress("CompositionLocalAllowlist")
+val LocalPlatformSettingsSection = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }

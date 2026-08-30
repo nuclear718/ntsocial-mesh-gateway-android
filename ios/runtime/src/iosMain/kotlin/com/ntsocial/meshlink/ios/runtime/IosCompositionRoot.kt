@@ -28,26 +28,34 @@ import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.ble.BluetoothRepository
 import com.ntsocial.meshlink.core.common.database.DatabaseManager
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
+import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioPrefs
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.service.MeshServiceOrchestrator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.koin.core.Koin
 import org.koin.core.KoinApplication
 import org.koin.dsl.koinApplication
 
 /** Process composition root. Swift owns only Apple lifecycle/entitlements; this owner owns the radio graph. */
 internal class IosCompositionRoot {
-    private val application: KoinApplication = koinApplication { modules(iosCoreModule()) }
+    val application: KoinApplication = koinApplication { modules(iosCoreModule()) }
     val koin: Koin
         get() = application.koin
 
     private var started = false
     private var gatewayConfiguration: AppleGatewayRuntimeConfiguration? = null
     private var gatewayCoordinator: IosAppleGatewayCoordinator? = null
+    private val lifecycleScope by lazy { CoroutineScope(SupervisorJob() + koin.get<CoroutineDispatchers>().default) }
 
     fun configureGateway(sharedContainerPath: String, hmacKeyBase64: String) {
         gatewayConfiguration =
@@ -70,6 +78,13 @@ internal class IosCompositionRoot {
         started = true
         koin.get<IosDurableMessageQueue>().start()
         koin.get<MeshServiceOrchestrator>().start()
+        koin.get<IosEndpointConversationSourceCoordinator>().start()
+        lifecycleScope.launch {
+            val radioPrefs = koin.get<RadioPrefs>()
+            koin
+                .get<RadioFleetManager>()
+                .start(legacyAddress = radioPrefs.readPersistedDevAddr(), legacyName = radioPrefs.devName.value)
+        }
         startGatewayCoordinator()
     }
 
@@ -80,6 +95,9 @@ internal class IosCompositionRoot {
 
     fun close() {
         if (started) {
+            lifecycleScope.cancel()
+            runBlocking { koin.get<RadioFleetManager>().stop() }
+            koin.get<IosEndpointConversationSourceCoordinator>().close()
             koin.get<MeshServiceOrchestrator>().stop()
             koin.get<IosDurableMessageQueue>().close()
             gatewayCoordinator?.close()
@@ -95,6 +113,8 @@ internal class IosCompositionRoot {
         gatewayCoordinator?.close()
         gatewayCoordinator =
             try {
+                // Deliberately resolve from the process root. Endpoint scopes are never candidates for Apple Gateway,
+                // so selecting a secondary radio cannot redirect parent traffic or expose its channel identity.
                 IosAppleGatewayCoordinator(
                     configuration = configuration,
                     bluetoothRepository = koin.get<BluetoothRepository>(),

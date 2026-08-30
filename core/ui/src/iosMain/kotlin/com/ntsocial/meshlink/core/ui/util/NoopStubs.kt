@@ -25,14 +25,17 @@
 package com.ntsocial.meshlink.core.ui.util
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLinkStyles
 import com.ntsocial.meshlink.core.common.util.CommonUri
 import org.jetbrains.compose.resources.StringResource
+import platform.Foundation.NSURL
+import platform.UIKit.UIApplication
 
-actual fun createClipEntry(text: String, label: String): ClipEntry =
-    throw UnsupportedOperationException("ClipEntry instantiation not supported on iOS stub")
+@OptIn(ExperimentalComposeUiApi::class)
+actual fun createClipEntry(text: String, label: String): ClipEntry = ClipEntry.withPlainText(text)
 
 actual fun annotatedStringFromHtml(html: String, linkStyles: TextLinkStyles?): AnnotatedString = AnnotatedString(html)
 
@@ -42,7 +45,16 @@ actual fun annotatedStringFromHtml(html: String, linkStyles: TextLinkStyles?): A
 
 @Composable actual fun rememberShowToastResource(): suspend (StringResource) -> Unit = { _ -> }
 
-@Composable actual fun rememberOpenUrl(): (url: String) -> Unit = { _ -> }
+@Composable
+actual fun rememberOpenUrl(): (url: String) -> Unit = { value ->
+    runCatching {
+        UIApplication.sharedApplication.openURL(
+            url = NSURL(string = value),
+            options = emptyMap<Any?, Any?>(),
+            completionHandler = null,
+        )
+    }
+}
 
 @Composable
 actual fun rememberSaveFileLauncher(
@@ -60,7 +72,12 @@ actual fun rememberOpenFileLauncher(onUriReceived: (CommonUri?) -> Unit): (mimeT
 
 @Composable actual fun rememberOpenLocationSettings(): () -> Unit = {}
 
-@Composable actual fun rememberRequestBluetoothPermission(onGranted: () -> Unit, onDenied: () -> Unit): () -> Unit = {}
+@Composable
+actual fun rememberRequestBluetoothPermission(onGranted: () -> Unit, onDenied: () -> Unit): () -> Unit = {
+    // CoreBluetooth owns the system prompt. Continuing starts the scan that triggers it; the repository still
+    // rejects denied/disabled states and remains the source of truth.
+    onGranted()
+}
 
 @Composable
 actual fun rememberRequestLocalNetworkPermission(onGranted: () -> Unit, onDenied: () -> Unit): () -> Unit = {}

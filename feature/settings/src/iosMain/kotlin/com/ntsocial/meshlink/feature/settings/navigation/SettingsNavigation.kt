@@ -37,5 +37,11 @@ actual fun SettingsMainScreen(
     onNavigate: (Route) -> Unit,
     onBack: (() -> Unit)?,
 ) {
-    // TODO: Implement iOS settings main screen
+    IosSettingsMainScreen(
+        settingsViewModel = settingsViewModel,
+        radioConfigViewModel = radioConfigViewModel,
+        onClickNodeChip = onClickNodeChip,
+        onNavigate = onNavigate,
+        onBack = onBack,
+    )
 }

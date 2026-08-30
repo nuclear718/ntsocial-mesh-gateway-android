@@ -22,12 +22,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ui.component
+package com.ntsocial.meshlink.feature.connections.domain.usecase
 
-@PublishedApi
-internal actual fun Enum<*>.isDeprecatedEnumEntry(): Boolean = try {
-    val field = this::class.java.getField(this.name)
-    field.isAnnotationPresent(Deprecated::class.java) || field.isAnnotationPresent(java.lang.Deprecated::class.java)
-} catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") e: Exception) {
-    false
+import com.ntsocial.meshlink.feature.connections.model.DeviceListEntry
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import org.koin.core.annotation.Single
+
+/** iOS does not expose USB/Serial discovery; keep the shared projection explicitly empty. */
+@Single
+class IosUsbScanner : UsbScanner {
+    override fun scanUsbDevices(): Flow<List<DeviceListEntry.Usb>> = flowOf(emptyList())
 }

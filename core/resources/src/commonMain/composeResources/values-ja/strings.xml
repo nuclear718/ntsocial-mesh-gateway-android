@@ -59,6 +59,8 @@
     <string name="analytics_okay">分析とクラッシュレポートを許可する。</string>
     <string name="any">すべて</string>
     <string name="app_language">アプリの言語</string>
+    <string name="app_settings">アプリ</string>
+    <string name="app_version">バージョン</string>
     <string name="apply">適用</string>
     <string name="are_you_sure">よろしいですか？</string>
     <string name="are_you_sure_change_default">デフォルトチャンネルに変更しますか？</string>
@@ -218,6 +220,8 @@
     <string name="detection_trigger_type">検出トリガーの種類</string>
     <!-- DEVICE -->
     <string name="device">接続するデバイスを選択</string>
+    <string name="device_db_cache_limit">デバイス DB のキャッシュ上限</string>
+    <string name="device_db_cache_limit_summary">この端末に保持するデバイスデータベースの最大数</string>
     <string name="device_gps">デバイスの GPS</string>
     <string name="device_metrics_numeric_value">%1$s</string>
     <string name="device_sleeping">デバイスはスリープ状態です</string>
@@ -449,6 +453,8 @@
     <string name="new_node_seen">新しいノードを見ました：%1$s</string>
     <string name="nfc_disabled">NFC が無効になっています。システム設定で有効にしてください。</string>
     <!-- NO -->
+    <string name="no_bluetooth_devices_hint">デバイスの Bluetooth 通信範囲内にいることを確認してください。</string>
+    <string name="no_bluetooth_devices_seen">Bluetooth デバイスが見つかりません</string>
     <string name="no_device_selected">デバイスが選択されていません</string>
     <!-- NODE -->
     <string name="node_filter_exclude_infrastructure">インフラを除外</string>
@@ -620,6 +626,7 @@
     <string name="save_csv_in_storage_esp32_only">ストレージにCSVファイルを保存(ESP32のみ)</string>
     <!-- SCAN -->
     <string name="scan">スキャン</string>
+    <string name="scan_bluetooth_devices">Bluetooth デバイスをスキャン</string>
     <string name="scan_channels_nfc">チャンネルの NFC をスキャンする</string>
     <string name="scan_channels_qr">チャンネルのQRコードをスキャンする</string>
     <string name="scan_nfc">NFCをスキャンする</string>
@@ -737,6 +744,7 @@
     <string name="url">URL</string>
     <!-- USE -->
     <string name="use_12h_format">12時間の時計形式を使用</string>
+    <string name="use_homoglyph_characters_encoding">キリル文字のコンパクトエンコード</string>
     <string name="use_i2s_as_buzzer">I2Sをブザーとして使用</string>
     <string name="use_input_pullup_mode">INPUT_PULUP モードを使用</string>
     <string name="use_pwm_buzzer">PWMブザーを使用</string>

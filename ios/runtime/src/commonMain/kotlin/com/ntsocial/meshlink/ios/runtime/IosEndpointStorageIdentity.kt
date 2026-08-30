@@ -22,12 +22,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.ntsocial.meshlink.core.ui.component
+package com.ntsocial.meshlink.ios.runtime
 
-@PublishedApi
-internal actual fun Enum<*>.isDeprecatedEnumEntry(): Boolean = try {
-    val field = this::class.java.getField(this.name)
-    field.isAnnotationPresent(Deprecated::class.java) || field.isAnnotationPresent(java.lang.Deprecated::class.java)
-} catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") e: Exception) {
-    false
-}
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
+
+/** Stable, path-safe namespace shared by all four endpoint-local proto stores. */
+internal fun iosEndpointStorageFileStem(endpointId: RadioEndpointId): String =
+    endpointId.value.filter(Char::isLetterOrDigit).take(IOS_ENDPOINT_FILE_STEM_LENGTH).also { stem ->
+        require(stem.isNotBlank()) { "Endpoint ID cannot produce an empty DataStore file name" }
+    }
+
+private const val IOS_ENDPOINT_FILE_STEM_LENGTH = 32

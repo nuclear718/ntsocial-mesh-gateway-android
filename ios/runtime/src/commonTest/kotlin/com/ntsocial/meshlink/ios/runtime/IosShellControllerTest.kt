@@ -25,6 +25,8 @@
 package com.ntsocial.meshlink.ios.runtime
 
 import com.ntsocial.meshlink.core.model.ConnectionState
+import com.ntsocial.meshlink.core.navigation.ConnectionsRoute
+import com.ntsocial.meshlink.core.navigation.NodesRoute
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,6 +40,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class IosShellControllerTest {
+    @Test
+    fun `initial navigation follows the persisted radio selection`() {
+        assertEquals(ConnectionsRoute.ConnectionsGraph, iosInitialDestination(null))
+        assertEquals(ConnectionsRoute.ConnectionsGraph, iosInitialDestination(""))
+        assertEquals(ConnectionsRoute.ConnectionsGraph, iosInitialDestination("n"))
+        assertEquals(NodesRoute.NodesGraph, iosInitialDestination(RADIO_ID))
+    }
+
     @Test
     fun `radio state and commands are delegated without synthetic connection state`() {
         val port = FakeRadioUiPort()
@@ -106,6 +116,27 @@ class IosShellControllerTest {
 
             controller.handleOpenUrl("https://example.invalid")
             assertEquals(ParentHandoffState.REJECTED, controller.state.value.parentHandoffState)
+        } finally {
+            controller.close()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `feature deep links are queued once without impersonating a parent handoff`() {
+        val port = FakeRadioUiPort()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val controller = IosShellController(radioUiPort = port, scope = scope)
+        val url = "ntsocial-meshlink:///settings"
+
+        try {
+            controller.handleOpenUrl(url)
+
+            assertEquals(url, controller.state.value.pendingNavigationUrl)
+            assertEquals(ParentHandoffState.NONE, controller.state.value.parentHandoffState)
+
+            controller.consumeNavigationUrl(url)
+            assertEquals(null, controller.state.value.pendingNavigationUrl)
         } finally {
             controller.close()
             scope.cancel()

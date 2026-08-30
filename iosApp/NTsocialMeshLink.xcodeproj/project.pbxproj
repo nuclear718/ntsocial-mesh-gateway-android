@@ -12,6 +12,7 @@
 		A40000000000000000000004 /* AppleGatewayBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000007 /* AppleGatewayBootstrap.swift */; };
 		A40000000000000000000005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000008 /* PrivacyInfo.xcprivacy */; };
 		A40000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000009 /* Assets.xcassets */; };
+		A40000000000000000000007 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +25,9 @@
 		A30000000000000000000008 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A30000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A3000000000000000000000A /* normalize_skiko_icu_archive.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = normalize_skiko_icu_archive.sh; sourceTree = "<group>"; };
+		A3000000000000000000000B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A3000000000000000000000C /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A3000000000000000000000D /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,6 +65,7 @@
 				A30000000000000000000002 /* ComposeRootView.swift */,
 				A30000000000000000000007 /* AppleGatewayBootstrap.swift */,
 				A30000000000000000000003 /* Info.plist */,
+				A20000000000000000000005 /* InfoPlist.strings */,
 				A30000000000000000000004 /* NTsocialMeshLink.entitlements */,
 				A30000000000000000000008 /* PrivacyInfo.xcprivacy */,
 				A30000000000000000000009 /* Assets.xcassets */,
@@ -77,6 +82,19 @@
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
+/* Begin PBXVariantGroup section */
+		A20000000000000000000005 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A3000000000000000000000B /* en */,
+				A3000000000000000000000C /* ja */,
+				A3000000000000000000000D /* zh-Hant */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin PBXNativeTarget section */
 		A10000000000000000000001 /* NTsocialMeshLink */ = {
@@ -118,6 +136,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				ja,
 				Base,
 				"zh-Hant",
 			);
@@ -138,6 +157,7 @@
 			files = (
 				A40000000000000000000005 /* PrivacyInfo.xcprivacy in Resources */,
 				A40000000000000000000006 /* Assets.xcassets in Resources */,
+				A40000000000000000000007 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

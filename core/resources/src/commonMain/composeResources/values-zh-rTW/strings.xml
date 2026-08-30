@@ -783,6 +783,8 @@
     <string name="next">繼續</string>
     <string name="nfc_disabled">NFC 已停用，請在系統設定中啟用。</string>
     <!-- NO -->
+    <string name="no_bluetooth_devices_hint">請確認您位於裝置的藍牙通訊範圍內。</string>
+    <string name="no_bluetooth_devices_seen">未偵測到藍牙裝置</string>
     <string name="no_custom_tile_sources_found">沒有自定義圖專來源。</string>
     <string name="no_device_selected">未選擇裝置</string>
     <string name="no_files_manifested">未發現任何檔案。</string>
@@ -1070,6 +1072,7 @@
     <string name="save_rangetest">匯出範圍測試封包</string>
     <!-- SCAN -->
     <string name="scan">掃描</string>
+    <string name="scan_bluetooth_devices">掃描藍牙裝置</string>
     <string name="scan_channels_nfc">掃描頻道 NFC</string>
     <string name="scan_channels_qr">掃描頻道 QR Code</string>
     <string name="scan_nfc">掃描 NFC</string>

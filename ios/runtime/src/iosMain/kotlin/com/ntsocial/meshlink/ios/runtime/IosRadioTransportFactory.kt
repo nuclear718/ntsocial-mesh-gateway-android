@@ -33,7 +33,7 @@ import com.ntsocial.meshlink.core.network.radio.BaseRadioTransportFactory
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.RadioTransport
 
-/** iOS owns exactly one Kable-backed BLE transport; TCP/USB/Serial are intentionally outside the first release. */
+/** Every iOS endpoint receives its own Kable-backed BLE transport; TCP/USB/Serial remain unavailable. */
 internal class IosRadioTransportFactory(
     scanner: BleScanner,
     bluetoothRepository: BluetoothRepository,

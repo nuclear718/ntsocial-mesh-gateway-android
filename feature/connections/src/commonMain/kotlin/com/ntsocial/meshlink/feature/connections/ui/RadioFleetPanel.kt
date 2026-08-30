@@ -27,5 +27,5 @@ package com.ntsocial.meshlink.feature.connections.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
-/** Android's four-radio control surface. Other hosts keep their existing single-radio UI. */
+/** Host control surface for the shared, bounded four-radio fleet. */
 @Composable expect fun RadioFleetPanel(modifier: Modifier = Modifier)

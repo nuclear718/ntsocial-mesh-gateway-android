@@ -171,6 +171,8 @@ class SettingsViewModel(
         setThemeUseCase(theme)
     }
 
+    val locale: StateFlow<String> = uiPrefs.locale
+
     /** Set the application locale. Empty string means system default. */
     fun setLocale(languageTag: String) {
         setLocaleUseCase(languageTag)

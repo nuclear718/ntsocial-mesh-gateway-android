@@ -1,6 +1,64 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
 
+## 2026-08-30 - iOS four-Meshtastic endpoint isolation and UI phase 1
+- On branch `multi_nodes_` from HEAD `61109fe184d1891401703586de2977f66b0a8ca7`, iOS now uses the shared durable
+  maximum-four endpoint catalog and serialized fleet bootstrap. The first endpoint retains the established root
+  compatibility graph and exclusive Apple Gateway ownership; every secondary endpoint owns its own address-derived
+  Room database, radio/config DataStores, Koin scope, repository/service/packet graph, Kable transport generation, and
+  Room-backed message drain.
+- Added exact runtime-token and expected-scope registries so stale callbacks/sessions cannot remove or publish through a
+  replacement. Shared address-keyed BLE ownership remains authoritative. Shutdown quiesces scoped work and closes
+  pinned resources; secondary endpoints are never Apple Gateway candidates.
+- iOS Connections now has Android-parity fleet capacity/cards and endpoint lifecycle actions. Conversations exposes All
+  plus endpoint views; Nodes, Settings, Channels, and endpoint Conversations use exact endpoint/generation scopes.
+  Switching endpoints resets that feature to its root. App-global preferences remain shared, and MeshCore remains
+  transport-pending/root-only.
+- Focused evidence passes iOS runtime 19/19, radio-fleet 8/8, and prefs 36/36 JVM tests, plus changed-module
+  Spotless/Detekt, Simulator Debug linkage, and arm64 Release framework linkage. The Release framework run completed
+  282 tasks in 7m06s. A fresh signing-disabled generic-iphoneos Release build at
+  `/tmp/ntsocial-ios-multinode-release.hgDScm` exited quietly with code 0.
+- The final JDK-21/en-US root gate completed 2,015 tasks (381 executed, 1,634 up-to-date) in 3m01s. Formatting, both
+  Android Debug assemblies, tests/allTests, Desktop/JVM, shared KMP/iOS Simulator compilation, cloud guards, and both
+  Android lints pass. Exit 1 is exclusively the six recorded pre-existing Detekt findings in BLE (3), domain (1),
+  model (1), and network (1); changed iOS/Connections Detekt stays green.
+- A fresh signing-disabled Simulator app installed and cold-launched on `Codex iPhone 17` as PID 36827 and retained the
+  PID after three seconds. Only the empty localized Connections screen was visually checked because no BLE radio was
+  attached or injected. Full report: `IOS_MULTI_NODE_PHASE1_IMPLEMENTATION_REPORT_2026-08-30.md`.
+- Do not claim concurrent physical two/four-radio BLE, Stage 2, independent mutation, restoration/background, LoRa/RF,
+  remote receipt, cross-endpoint scheduling/bridging, secondary Gateway, signing, TestFlight, or App Store proof.
+
+
+## 2026-08-29 - iOS shared product shell and UI parity phase 1
+- On branch `multi_nodes_` from HEAD `61109fe184d1891401703586de2977f66b0a8ca7`, replaced the iOS two-tab
+  engineering shell with the shared Compose `MeshtasticAppShell`, Navigation 3 multi-back-stack, and conversations,
+  nodes, MeshCore, settings, channels/Wi-Fi, and Bluetooth connections graphs. The existing Kable/CoreBluetooth,
+  Room/DataStore, exact-session/readback, App Group/Keychain, durable ledger, and Apple Gateway ownership boundaries
+  remain unchanged.
+- Implemented the previously empty iOS Settings main screen with real radio configuration, theme/homoglyph/cache,
+  About/version, remote administration, and host-owned Apple Gateway readiness. Added the iOS Connections Koin graph,
+  feature-deep-link handoff, Foundation date/region formatting, clipboard/URL behavior, enum preferences, Japanese iOS
+  runtime strings, and final zh-TW/ja Bluetooth empty-state localization. Unsupported OTA, backup/import/export,
+  notification, file, location, compass, and fleet behavior remains hidden or fail closed.
+- Simulator QA caught one real host issue before delivery: the first complete-shell launch crashed because iOS lacked a
+  `ScannerViewModel` registration. The final Apple binding and empty USB projection fixed it. The final localized
+  signing-disabled Simulator App cold-launched as PID 22251 and returned the same PID three seconds later; the visual
+  Connections check shows the five-destination shell and complete Traditional Chinese empty state.
+- Final focused iOS/Windows validation passed 368 tasks, iOS runtime JVM tests are 17/17, both Simulator Debug and arm64
+  Release frameworks link, and Desktop tests pass. The correct JDK-21/en-US full root gate completed 2,015 tasks:
+  formatting, both Android Debug assemblies, tests/allTests, Desktop/JVM, KMP/iOS Simulator compilation, cloud guards,
+  and both lints pass; exit remains nonzero only for the six recorded pre-existing Detekt findings. Post-localization
+  validation passed 749 cross-platform tasks plus the 161-task arm64 Release link.
+- Fresh Xcode Derived Data `/tmp/ntsocial-ios-ui-parity-final.qCQEYr` (Simulator Debug), its final-source incremental
+  localization rebuild, and fresh `/tmp/ntsocial-ios-ui-parity-device.ncW63J` (generic iphoneos Release) all built
+  signing-disabled with quiet exit 0 and zero output. The bundle is `1.0.0 (1)`. Node UI still emits existing Coil/Skiko
+  alignment and Vico shader linker diagnostics even though both frameworks link; dependency alignment and physical
+  node-chart rendering remain gates.
+- Full report: `IOS_UI_PARITY_PHASE1_IMPLEMENTATION_REPORT_2026-08-29.md`. Do not claim iOS multi-radio, MeshCore
+  transport, signed/entitled interoperability, physical BLE/restoration, connected-radio administration, LoRa/RF or
+  remote receipt, background permanence, TestFlight, or App Store readiness from this phase.
+
+
 ## 2026-08-25 - Android multi-node Channel Hub UI/UX and 107-minute three-phone run
 - Combined the two 2026-08-25 proposals into a bounded architecture: endpoint scopes retain independent Room,
   DataStore, Koin, BLE, connection-generation, repository, and packet ownership; each publishes only a compact
@@ -108,7 +166,8 @@
 - Connections now exposes up to four radio cards. Android Messages/channel history, Nodes, Settings, Channels, and
   Firmware surfaces use address-last-four endpoint tabs and scope-aware ViewModel keys. Switching an endpoint resets
   that feature to its root destination to prevent a child route from being rendered against the wrong graph. The
-  existing Desktop and iOS interfaces remain single-radio; iOS receives a no-op actual for the shared fleet panel.
+  At that Android-phase snapshot, the existing Desktop and iOS interfaces remained single-radio and iOS received a
+  no-op actual for the shared fleet panel; the 2026-08-30 iOS phase above supersedes the iOS limitation.
 - Focused fleet, endpoint-store migration/deduplication/capacity, database pinning, stale BLE ownership, Android
   compilation, and root/secondary Koin graph tests pass; modified sources add no Detekt finding. The final JDK-21/en-US root
   `spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile --continue` run completed 1,685 tasks

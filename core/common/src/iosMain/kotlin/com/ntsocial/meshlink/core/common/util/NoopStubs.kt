@@ -24,33 +24,74 @@
  */
 package com.ntsocial.meshlink.core.common.util
 
-/** No-op stubs for iOS target in core:common. */
+import platform.Foundation.NSDate
+import platform.Foundation.NSDateFormatter
+import platform.Foundation.NSDateFormatterMediumStyle
+import platform.Foundation.NSDateFormatterNoStyle
+import platform.Foundation.NSDateFormatterShortStyle
+import platform.Foundation.NSLocale
+import platform.Foundation.NSRelativeDateTimeFormatter
+import platform.Foundation.NSRelativeDateTimeFormatterStyleNamed
+import platform.Foundation.NSRelativeDateTimeFormatterUnitsStyleShort
+import platform.Foundation.countryCode
+import platform.Foundation.currentLocale
+import platform.Foundation.usesMetricSystem
+
 actual object BuildUtils {
     actual val isEmulator: Boolean = false
     actual val sdkInt: Int = 0
 }
 
+/** Uses Foundation formatters so shared node/message UI follows the user's iOS locale and 12/24-hour setting. */
 actual object DateFormatter {
-    actual fun formatRelativeTime(timestampMillis: Long): String = ""
+    private val shortTimeFormatter = dateFormatter(NSDateFormatterNoStyle, NSDateFormatterShortStyle)
+    private val mediumTimeFormatter = dateFormatter(NSDateFormatterNoStyle, NSDateFormatterMediumStyle)
+    private val shortDateFormatter = dateFormatter(NSDateFormatterShortStyle, NSDateFormatterNoStyle)
+    private val shortDateTimeFormatter = dateFormatter(NSDateFormatterShortStyle, NSDateFormatterShortStyle)
+    private val relativeFormatter =
+        NSRelativeDateTimeFormatter().apply {
+            dateTimeStyle = NSRelativeDateTimeFormatterStyleNamed
+            unitsStyle = NSRelativeDateTimeFormatterUnitsStyleShort
+        }
 
-    actual fun formatDateTime(timestampMillis: Long): String = ""
+    actual fun formatRelativeTime(timestampMillis: Long): String =
+        relativeFormatter.localizedStringForDate(timestampMillis.toNSDate(), relativeToDate = NSDate())
 
-    actual fun formatShortDate(timestampMillis: Long): String = ""
+    actual fun formatDateTime(timestampMillis: Long): String = shortDateTimeFormatter.format(timestampMillis)
 
-    actual fun formatTime(timestampMillis: Long): String = ""
+    actual fun formatShortDate(timestampMillis: Long): String =
+        if (nowMillis - timestampMillis <= MILLISECONDS_PER_DAY) {
+            shortTimeFormatter.format(timestampMillis)
+        } else {
+            shortDateFormatter.format(timestampMillis)
+        }
 
-    actual fun formatTimeWithSeconds(timestampMillis: Long): String = ""
+    actual fun formatTime(timestampMillis: Long): String = shortTimeFormatter.format(timestampMillis)
 
-    actual fun formatDate(timestampMillis: Long): String = ""
+    actual fun formatTimeWithSeconds(timestampMillis: Long): String = mediumTimeFormatter.format(timestampMillis)
 
-    actual fun formatDateTimeShort(timestampMillis: Long): String = ""
+    actual fun formatDate(timestampMillis: Long): String = shortDateFormatter.format(timestampMillis)
+
+    actual fun formatDateTimeShort(timestampMillis: Long): String = shortDateTimeFormatter.format(timestampMillis)
+
+    private fun NSDateFormatter.format(timestampMillis: Long): String = stringFromDate(timestampMillis.toNSDate())
 }
 
-actual fun getSystemMeasurementSystem(): MeasurementSystem = MeasurementSystem.METRIC
+actual fun getSystemMeasurementSystem(): MeasurementSystem =
+    if (NSLocale.currentLocale.usesMetricSystem) MeasurementSystem.METRIC else MeasurementSystem.IMPERIAL
 
-actual fun currentRegionCode(): String = ""
+actual fun currentRegionCode(): String = NSLocale.currentLocale.countryCode.orEmpty()
 
-actual fun String?.isValidAddress(): Boolean = false
+actual fun String?.isValidAddress(): Boolean {
+    val value = this?.trim()
+    return when {
+        value.isNullOrEmpty() -> false
+        value == LOCALHOST -> true
+        IPV4_PATTERN.matches(value) -> value.split('.').all { segment -> segment.toIntOrNull() in 0..MAX_IPV4_SEGMENT }
+        value.contains(':') -> IPV6_PATTERN.matches(value)
+        else -> DOMAIN_PATTERN.matches(value)
+    }
+}
 
 actual interface CommonParcelable
 
@@ -86,3 +127,21 @@ actual class CommonParcel {
 
     actual fun writeByteArray(b: ByteArray?) {}
 }
+
+private fun dateFormatter(dateStyle: ULong, timeStyle: ULong): NSDateFormatter = NSDateFormatter().apply {
+    this.dateStyle = dateStyle
+    this.timeStyle = timeStyle
+}
+
+private fun Long.toNSDate(): NSDate =
+    NSDate(timeIntervalSinceReferenceDate = this / MILLISECONDS_PER_SECOND - APPLE_REFERENCE_DATE_UNIX_SECONDS)
+
+private val IPV4_PATTERN = Regex("^(?:\\d{1,3}\\.){3}\\d{1,3}${'$'}")
+private val IPV6_PATTERN = Regex("^[0-9A-Fa-f:]+${'$'}")
+private val DOMAIN_PATTERN = Regex("^(?=.{1,253}${'$'})(?:(?!-)[A-Za-z0-9-]{1,63}(?<!-)\\.)+[A-Za-z]{2,63}${'$'}")
+
+private const val MILLISECONDS_PER_SECOND = 1_000.0
+private const val MILLISECONDS_PER_DAY = 86_400_000L
+private const val APPLE_REFERENCE_DATE_UNIX_SECONDS = 978_307_200.0
+private const val MAX_IPV4_SEGMENT = 255
+private const val LOCALHOST = "localhost"

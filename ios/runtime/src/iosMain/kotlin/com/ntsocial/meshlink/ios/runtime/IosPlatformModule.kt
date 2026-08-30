@@ -41,19 +41,31 @@ import com.ntsocial.meshlink.core.data.datasource.BootloaderOtaQuirksJsonDataSou
 import com.ntsocial.meshlink.core.data.datasource.DeviceHardwareJsonDataSource
 import com.ntsocial.meshlink.core.data.datasource.DeviceLinksJsonDataSource
 import com.ntsocial.meshlink.core.data.datasource.FirmwareReleaseJsonDataSource
+import com.ntsocial.meshlink.core.datastore.RadioScopedDataStoreFactory
 import com.ntsocial.meshlink.core.datastore.di.DATASTORE_SCOPE
 import com.ntsocial.meshlink.core.datastore.serializer.ChannelSetSerializer
 import com.ntsocial.meshlink.core.datastore.serializer.LocalConfigSerializer
 import com.ntsocial.meshlink.core.datastore.serializer.LocalStatsSerializer
 import com.ntsocial.meshlink.core.datastore.serializer.ModuleConfigSerializer
+import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.network.repository.MQTTRepository
 import com.ntsocial.meshlink.core.network.repository.NetworkMonitor
 import com.ntsocial.meshlink.core.network.repository.ServiceDiscovery
 import com.ntsocial.meshlink.core.network.service.ApiService
+import com.ntsocial.meshlink.core.radiofleet.DefaultRadioFleetManager
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSessionFactory
+import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
+import com.ntsocial.meshlink.core.radiofleet.conversation.DefaultFleetChannelsRepository
+import com.ntsocial.meshlink.core.radiofleet.conversation.EndpointAppearanceStore
+import com.ntsocial.meshlink.core.radiofleet.conversation.EndpointConversationSourceRegistry
+import com.ntsocial.meshlink.core.radiofleet.conversation.FleetChannelsRepository
+import com.ntsocial.meshlink.core.radiofleet.conversation.MutableEndpointConversationSourceRegistry
 import com.ntsocial.meshlink.core.repository.AppWidgetUpdater
+import com.ntsocial.meshlink.core.repository.FileService
 import com.ntsocial.meshlink.core.repository.GatewayIngressSessionGate
 import com.ntsocial.meshlink.core.repository.LocationRepository
+import com.ntsocial.meshlink.core.repository.LocationService
 import com.ntsocial.meshlink.core.repository.MeshLocationManager
 import com.ntsocial.meshlink.core.repository.MeshServiceNotifications
 import com.ntsocial.meshlink.core.repository.MeshWorkerManager
@@ -65,8 +77,12 @@ import com.ntsocial.meshlink.core.repository.ServiceBroadcasts
 import com.ntsocial.meshlink.core.repository.ServiceRepository
 import com.ntsocial.meshlink.core.service.DirectRadioControllerImpl
 import com.ntsocial.meshlink.core.service.ServiceRepositoryImpl
+import com.ntsocial.meshlink.feature.node.compass.CompassHeadingProvider
+import com.ntsocial.meshlink.feature.node.compass.MagneticFieldProvider
+import com.ntsocial.meshlink.feature.node.compass.PhoneLocationProvider
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import org.koin.core.qualifier.named
@@ -92,6 +108,13 @@ import com.ntsocial.meshlink.core.prefs.di.module as corePrefsModule
 import com.ntsocial.meshlink.core.repository.di.module as coreRepositoryModule
 import com.ntsocial.meshlink.core.service.di.module as coreServiceModule
 import com.ntsocial.meshlink.core.takserver.di.module as coreTakServerModule
+import com.ntsocial.meshlink.core.ui.di.module as coreUiModule
+import com.ntsocial.meshlink.feature.connections.di.module as featureConnectionsModule
+import com.ntsocial.meshlink.feature.meshcore.di.module as featureMeshCoreModule
+import com.ntsocial.meshlink.feature.messaging.di.module as featureMessagingModule
+import com.ntsocial.meshlink.feature.node.di.module as featureNodeModule
+import com.ntsocial.meshlink.feature.settings.di.module as featureSettingsModule
+import com.ntsocial.meshlink.feature.wifiprovision.di.module as featureWifiProvisionModule
 
 internal fun iosCoreModule() = module {
     includes(
@@ -105,9 +128,17 @@ internal fun iosCoreModule() = module {
         com.ntsocial.meshlink.core.repository.di.CoreRepositoryModule().coreRepositoryModule(),
         com.ntsocial.meshlink.core.network.di.CoreNetworkModule().coreNetworkModule(),
         com.ntsocial.meshlink.core.ble.di.CoreBleModule().coreBleModule(),
+        com.ntsocial.meshlink.core.ui.di.CoreUiModule().coreUiModule(),
         com.ntsocial.meshlink.core.service.di.CoreServiceModule().coreServiceModule(),
         com.ntsocial.meshlink.core.takserver.di.CoreTakServerModule().coreTakServerModule(),
+        com.ntsocial.meshlink.feature.settings.di.FeatureSettingsModule().featureSettingsModule(),
+        com.ntsocial.meshlink.feature.node.di.FeatureNodeModule().featureNodeModule(),
+        com.ntsocial.meshlink.feature.messaging.di.FeatureMessagingModule().featureMessagingModule(),
+        com.ntsocial.meshlink.feature.connections.di.FeatureConnectionsModule().featureConnectionsModule(),
+        com.ntsocial.meshlink.feature.meshcore.di.FeatureMeshCoreModule().featureMeshCoreModule(),
+        com.ntsocial.meshlink.feature.wifiprovision.di.FeatureWifiProvisionModule().featureWifiProvisionModule(),
         iosPlatformModule(),
+        iosRadioEndpointKoinModule,
     )
 }
 
@@ -124,6 +155,49 @@ private fun iosPlatformModule() = module {
             scanner = get<BleScanner>(),
             bluetoothRepository = get<BluetoothRepository>(),
             connectionFactory = get<BleConnectionFactory>(),
+            dispatchers = get(),
+        )
+    }
+    single<RadioScopedDataStoreFactory> { IosRadioScopedDataStoreFactory(get()) }
+    single { IosRadioEndpointScopeRegistry() }
+    single<RadioEndpointSessionFactory> {
+        IosRadioEndpointSessionFactory(
+            koin = getKoin(),
+            databaseCatalog = get(),
+            scopedDataStoreFactory = get(),
+            meshPrefs = get(),
+            dispatchers = get(),
+            scopeRegistry = get(),
+            primaryRadio = get(),
+            primaryServiceRepository = get(),
+        )
+    }
+    single<RadioFleetManager> {
+        DefaultRadioFleetManager(
+            endpointStore = get(),
+            sessionFactory = get(),
+            scope = CoroutineScope(SupervisorJob() + get<CoroutineDispatchers>().default),
+        )
+    }
+    single { IosEndpointConversationSourceRegistry() }
+    single<EndpointConversationSourceRegistry> { get<IosEndpointConversationSourceRegistry>() }
+    single<MutableEndpointConversationSourceRegistry> { get<IosEndpointConversationSourceRegistry>() }
+    single<FleetChannelsRepository> {
+        DefaultFleetChannelsRepository(
+            fleetManager = get(),
+            sourceRegistry = get(),
+            appearanceStore = get<EndpointAppearanceStore>(),
+            scope = CoroutineScope(SupervisorJob() + get<CoroutineDispatchers>().default),
+        )
+    }
+    single {
+        IosEndpointConversationSourceCoordinator(
+            fleetManager = get(),
+            scopeRegistry = get(),
+            sourceRegistry = get(),
+            appearanceStore = get(),
+            rootRadioConfigRepository = get(),
+            rootPacketRepository = get(),
             dispatchers = get(),
         )
     }
@@ -161,7 +235,12 @@ private fun iosPlatformModule() = module {
     single<NotificationManager> { IosNotificationManager }
     single<MeshLocationManager> { IosMeshLocationManager }
     single<LocationRepository> { IosLocationRepository }
+    single<LocationService> { IosLocationService }
+    single<FileService> { IosFileService }
     single<MQTTRepository> { IosMqttRepository }
+    single<CompassHeadingProvider> { IosCompassHeadingProvider }
+    single<PhoneLocationProvider> { IosPhoneLocationProvider }
+    single<MagneticFieldProvider> { IosMagneticFieldProvider }
     single<NetworkMonitor> { IosNetworkMonitor }
     single<ServiceDiscovery> { IosServiceDiscovery }
     single<ApiService> { IosApiService }
@@ -247,7 +326,7 @@ internal fun iosApplicationSupportDirectory(): String {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun iosDataStoreDirectory(): String {
+internal fun iosDataStoreDirectory(): String {
     val directory = iosApplicationSupportDirectory() + "/datastore"
     NSFileManager.defaultManager.createDirectoryAtPath(directory, true, null, null)
     return directory

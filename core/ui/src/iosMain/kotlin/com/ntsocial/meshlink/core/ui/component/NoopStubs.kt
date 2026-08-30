@@ -25,9 +25,8 @@
 package com.ntsocial.meshlink.core.ui.component
 
 import androidx.compose.runtime.Composable
+import com.ntsocial.meshlink.core.common.util.nowMillis
 
-@Composable actual fun rememberTimeTickWithLifecycle(): Long = 0L
+@Composable actual fun rememberTimeTickWithLifecycle(): Long = nowMillis
 
-internal actual fun <T : Enum<T>> enumEntriesOf(selectedItem: T): List<T> = emptyList()
-
-internal actual fun Enum<*>.isDeprecatedEnumEntry(): Boolean = false
+@PublishedApi internal actual fun Enum<*>.isDeprecatedEnumEntry(): Boolean = false

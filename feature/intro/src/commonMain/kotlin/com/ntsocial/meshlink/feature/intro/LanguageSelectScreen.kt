@@ -64,7 +64,7 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
-/** The first-install Android language selector, matching the released NTsocial Android layout and source assets. */
+/** The shared first-install language selector used by Android and iOS with the same layout and source assets. */
 @Composable
 fun LanguageSelectScreen(currentTag: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     var selected by remember(currentTag) { mutableStateOf(currentTag.takeIf { it.isNotBlank() } ?: ENGLISH_TAG) }
