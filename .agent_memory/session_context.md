@@ -1,6 +1,36 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
 
+## 2026-08-31 - Android simultaneous multi-node BLE runtime remediation
+- On branch `multi_nodes_` from HEAD `98663d1e8e4c421b6d5dc7ce7d4be00eb1914a2a`, reproduced the user's S24 failure:
+  the primary Meshtastic radio completed Stage 2 while the secondary endpoint stopped in Error and owned no MeshLink
+  GATT client. The Android Bluetooth stack and both radios supported concurrent LE connections; the failure was inside
+  the secondary App graph.
+- Root cause was Koin constructor-reference scope wiring that lost the required `ProcessLifecycle`/`ServiceScope`
+  qualifiers and tried to resolve Kotlin `Lazy<T>` as a raw dependency. Replaced every affected secondary registration
+  with an explicit scoped factory, bound secondary Gateway access to fail-closed `SecondaryGatewayRepository`, and
+  moved the session `wired` latch after complete graph resolution so a failed attempt cannot poison a retry.
+- Added `SecondaryRadioEndpointScopeRuntimeTest`, which creates production secondary Room/DataStore/Koin resources,
+  resolves the complete `MeshConnectionManagerImpl`, verifies fail-closed Gateway ownership, and closes the session.
+  Focused Koin/App tests pass 4/4, `:app:detekt` passes, and Google Debug assembly passes. Existing radio-fleet tests
+  retain four independent session/generation and hard-capacity coverage.
+- The final JDK-21/en-US gate completed 2,018 tasks (394 executed, 2 from cache, 1,622 up-to-date) in 2m31s. Formatting,
+  both Android Debug assemblies, tests/`allTests`, Desktop/JVM, shared KMP/iOS Simulator compilation, and F-Droid plus
+  Google Debug lints passed. Exit 1 is exclusively the six recorded pre-existing Detekt findings in unmodified BLE
+  (3), domain (1), model (1), and network (1).
+- The final 52,961,456-byte Google arm64 Debug APK, SHA-256
+  `19CF41C5125DDA5970229A43D35C9920459294CD7BEBEAB7387E5AF6167D019D`, was data-preserving installed on the Android 16
+  SM-S9280. Radios `5d6e` and `1407` simultaneously completed Stage 2 and remained two distinct MeshLink GATT clients
+  in one stable PID. A secondary-only disconnect/reconnect removed and recreated only `1407`; `5d6e` stayed connected.
+  After the full gate rebuilt and re-signed the APK, that exact artifact was installed and both radios again completed
+  Stage 2; the UI showed `2 / 4` with both connected, and both clients remained through the final 30-second background
+  check with no fatal, ANR, Koin-definition, or setup-timeout signal. The installed base APK hash matches the artifact.
+- This proves the reported two-radio Android failure is fixed on available hardware and, together with the fleet/source
+  tests, supports one-to-four endpoint capacity. Do not claim a three/four-radio physical run, RF send/remote receipt,
+  connected-radio mutation isolation, Doze, long soak, Profile/Release-device, signed/store, Windows-device, or
+  iOS-device evidence. Full report: `ANDROID_SIMULTANEOUS_MULTI_NODE_BLE_REMEDIATION_REPORT_2026-08-31.md`.
+
+
 ## 2026-08-30 - iOS four-Meshtastic endpoint isolation and UI phase 1
 - On branch `multi_nodes_` from HEAD `61109fe184d1891401703586de2977f66b0a8ca7`, iOS now uses the shared durable
   maximum-four endpoint catalog and serialized fleet bootstrap. The first endpoint retains the established root
