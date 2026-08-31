@@ -1713,6 +1713,26 @@
   group, parent built with full entitlements, Bluetooth enabled, and Meshtastic hardware. Only then rerun the mailbox,
   HMAC, Darwin hint/deep-link, missed-hint/restart, connected-radio, and two-radio RF matrix.
 
+## 2026-08-31 - Four-phone clean Debug deployment
+- Affected Android and iOS product tracks only; no product source was changed. Built from clean `multi_nodes_` HEAD
+  `fe720752c20cef1a3b0ada8f45f932fda8831be5` after the mandatory project bootstrap with JDK 21, the configured
+  Android SDK, initialized proto submodule, and en-US JVM settings.
+- Rebuilt Google arm64 Debug `1.0.7 (8)` (`com.ntsocial.meshlink.google.debug`). The 52,961,456-byte APK has SHA-256
+  `A577632DAF0622A509FB80DCE4CF07AFDBFF83B97D9368A38BB115600791C474`, passed the no-cloud manifest guard,
+  Android Debug v2 signature verification, and 16 KiB zipalign.
+- Clean-installed that exact APK on the connected Samsung SM-S9280 and OPPO CPH2695, both Android 16/arm64. Both
+  installed `base.apk` hashes exactly matched the local artifact, cold launch returned `Status: ok`, the English /
+  Traditional Chinese / Japanese selector was present, PIDs remained stable across the follow-up sample, and no
+  package exit-info or matching fatal/ANR/Koin startup log was present.
+- Built a signed arm64 iOS Debug App (`com.ntsocial.meshlink.ios` `1.0.0 (1)`, `get-task-allow=true`) from the same
+  source and clean-installed it on both wired iPhone 15 devices running iOS 26.6.1. Both installs read back as
+  Developer Apps, launched after the personal-team developer certificate was trusted on-device, retained stable PIDs,
+  and produced no MeshLink crash log.
+- The available iOS provisioning profile still omits the required App Group/shared-Keychain capabilities, so this
+  deployment used the existing diagnostic `CODE_SIGN_ENTITLEMENTS=` build override. Apple Gateway cross-App behavior
+  remains fail closed; this is Debug install/startup integrity only, not Apple Gateway, BLE/Stage-2, RF, release,
+  TestFlight, App Store, Play, or remote-receipt evidence.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.
