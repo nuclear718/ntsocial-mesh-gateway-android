@@ -235,9 +235,11 @@ private class IosSecondaryRadioEndpointSession(
 
     private fun wireGraphOnce() {
         if (wired) return
-        wired = true
+        // Do not poison retry after a partial Koin resolution failure. The graph is ready only
+        // after its activation root has resolved and the endpoint transport buffer is reset.
         endpointScope.get<com.ntsocial.meshlink.core.repository.MeshConnectionManager>()
         radio.resetReceivedBuffer()
+        wired = true
         serviceScope.handledLaunch {
             radio.receivedData.collect { bytes -> messageProcessor.handleFromRadio(bytes, nodeManager.myNodeNum.value) }
         }

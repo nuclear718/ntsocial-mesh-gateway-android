@@ -26,16 +26,23 @@ package com.ntsocial.meshlink.ios.runtime
 
 import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.model.ConnectionState
+import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.MessageStatus
 import com.ntsocial.meshlink.core.model.RadioController
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialCachedEnvelope
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialDefaultChannelStatus
 import com.ntsocial.meshlink.core.repository.MeshWorkerManager
 import com.ntsocial.meshlink.core.repository.MessageQueue
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import com.ntsocial.meshlink.core.repository.PacketRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okio.ByteString
+import org.meshtastic.proto.MeshPacket
 
 /** Endpoint-local queue backed by the endpoint's own Room database. */
 internal class IosEndpointMessageQueue(
@@ -84,4 +91,67 @@ internal class IosEndpointMessageQueue(
 
 internal class IosEndpointMeshWorkerManager(private val messageQueue: IosEndpointMessageQueue) : MeshWorkerManager {
     override fun enqueueSendMessage(packetId: Int) = messageQueue.enqueueFromConnection(packetId)
+}
+
+/** Apple Gateway has no endpoint selector, so every non-primary iOS session fails closed at this boundary. */
+internal class IosSecondaryGatewayRepository : NtsocialGatewayRepository {
+    override val cachedEnvelopes = MutableStateFlow<List<NtsocialCachedEnvelope>>(emptyList())
+    override val inboundSessionRevision = MutableStateFlow(0L)
+    override val defaultChannelStatus = MutableStateFlow(NtsocialDefaultChannelStatus())
+
+    override suspend fun activateInboundSession(expectedRadioSessionEpoch: Long): Boolean = false
+
+    override fun invalidateInboundSession() {
+        inboundSessionRevision.value += 1
+    }
+
+    override fun isInboundSessionActive(expectedRadioSessionEpoch: Long): Boolean = false
+
+    override fun cacheInbound(packet: MeshPacket, dataPacket: DataPacket): Boolean = false
+
+    override fun sendTestPayload(
+        payload: ByteString,
+        to: String?,
+        channelIndex: Int,
+        wantAck: Boolean,
+        headerMsgId: ByteString?,
+    ): NtsocialCachedEnvelope = secondaryGatewayUnavailable()
+
+    override fun sendRawEnvelope(
+        rawEnvelope: ByteString,
+        to: String?,
+        channelIndex: Int,
+        hopLimit: Int,
+        wantAck: Boolean,
+        packetId: Int?,
+    ): NtsocialCachedEnvelope = secondaryGatewayUnavailable()
+
+    override suspend fun persistAndQueueRawEnvelope(
+        rawEnvelope: ByteString,
+        sourceChannelId: String?,
+        to: String?,
+        channelIndex: Int,
+        hopLimit: Int,
+        wantAck: Boolean,
+        packetId: Int,
+    ): NtsocialCachedEnvelope = secondaryGatewayUnavailable()
+
+    override suspend fun persistAndQueueNativeBroadcastText(
+        text: String,
+        sourceChannelId: String,
+        channelIndex: Int,
+        packetId: Int,
+        originClientMessageId: String,
+    ): DataPacket = secondaryGatewayUnavailable()
+
+    override fun updateDefaultChannelStatus(status: NtsocialDefaultChannelStatus) {
+        defaultChannelStatus.value = status
+    }
+
+    override fun clearCache() {
+        cachedEnvelopes.value = emptyList()
+    }
+
+    private fun secondaryGatewayUnavailable(): Nothing =
+        error("Apple Gateway is available only on the legacy-primary radio")
 }

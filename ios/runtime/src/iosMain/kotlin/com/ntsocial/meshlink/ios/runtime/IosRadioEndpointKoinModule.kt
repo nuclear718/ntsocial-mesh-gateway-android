@@ -64,7 +64,6 @@ import com.ntsocial.meshlink.core.data.repository.DeviceLinkRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.FirmwareReleaseRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.MeshLogRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.NodeRepositoryImpl
-import com.ntsocial.meshlink.core.data.repository.NtsocialGatewayRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.PacketRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.QuickChatActionRepositoryImpl
 import com.ntsocial.meshlink.core.data.repository.RadioConfigRepositoryImpl
@@ -154,7 +153,9 @@ import org.koin.dsl.module
 
 internal val iosRadioEndpointScopeQualifier = named("IosMeshtasticEndpoint")
 
-/** One complete, isolated radio graph for every non-primary iOS endpoint. */
+/**
+ * Radio-owned definitions are repeated once per secondary endpoint; app-global services continue to resolve at root.
+ */
 internal val iosRadioEndpointKoinModule = module {
     scope(iosRadioEndpointScopeQualifier) {
         scoped<EndpointDatabaseHandle> { get<IosRadioEndpointScopeContext>().database }
@@ -173,11 +174,23 @@ internal val iosRadioEndpointKoinModule = module {
         scoped<MeshServiceNotifications> { IosMeshServiceNotifications }
         scoped<MeshLocationManager> { IosMeshLocationManager }
         scoped<AppWidgetUpdater> { IosAppWidgetUpdater }
-        scopedOf(::NtsocialGatewayRepositoryImpl).bind<NtsocialGatewayRepository>()
+        // Apple Gateway remains owned by the legacy-primary graph. A secondary endpoint must
+        // never inherit the root parent-App route or publish through an endpoint-less contract.
+        scoped<NtsocialGatewayRepository> { IosSecondaryGatewayRepository() }
 
         scopedOf(::SwitchingNodeInfoReadDataSource).bind<NodeInfoReadDataSource>()
         scopedOf(::SwitchingNodeInfoWriteDataSource).bind<NodeInfoWriteDataSource>()
-        scopedOf(::NodeRepositoryImpl).bind<NodeRepository>()
+        scoped {
+            NodeRepositoryImpl(
+                processLifecycle = get(named("ProcessLifecycle")),
+                nodeInfoReadDataSource = get(),
+                nodeInfoWriteDataSource = get(),
+                dispatchers = get(),
+                localStatsDataSource = get(),
+                ingressWorkTracker = get(),
+            )
+        }
+            .bind<NodeRepository>()
         scopedOf(::PacketRepositoryImpl).bind<PacketRepository>()
         scopedOf(::QuickChatActionRepositoryImpl).bind<QuickChatActionRepository>()
         scopedOf(::MeshLogRepositoryImpl).bind<MeshLogRepository>()
@@ -194,31 +207,224 @@ internal val iosRadioEndpointKoinModule = module {
         scopedOf(::ChannelOperationLock)
         scopedOf(::ChannelMutationLock)
         scopedOf(::SessionManagerImpl).bind<SessionManager>()
-        scopedOf(::NodeManagerImpl).binds(arrayOf(NodeManager::class, NodeIdLookup::class))
+        scoped {
+            NodeManagerImpl(
+                nodeRepository = get(),
+                serviceBroadcasts = get(),
+                notificationManager = get(),
+                ingressWorkTracker = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .binds(arrayOf(NodeManager::class, NodeIdLookup::class))
         scoped { MeshDataMapper(get()) }
 
         scopedOf(::ServiceRepositoryImpl).bind<ServiceRepository>()
-        scopedOf(::SharedRadioInterfaceService).bind<RadioInterfaceService>()
-        scopedOf(::PacketHandlerImpl).bind<PacketHandler>()
-        scopedOf(::CommandSenderImpl).bind<CommandSender>()
+        scoped {
+            SharedRadioInterfaceService(
+                dispatchers = get(),
+                bluetoothRepository = get(),
+                networkRepository = get(),
+                processLifecycle = get(named("ProcessLifecycle")),
+                radioPrefs = get(),
+                transportFactory = get(),
+                analytics = get(),
+            )
+        }
+            .bind<RadioInterfaceService>()
+        scoped {
+            PacketHandlerImpl(
+                packetRepository = lazy { get<PacketRepository>() },
+                serviceBroadcasts = get(),
+                radioInterfaceService = get(),
+                meshLogRepository = lazy { get<MeshLogRepository>() },
+                serviceRepository = get(),
+                ingressWorkTracker = get(),
+                channelOperationLock = get(),
+                radioConfigRepository = get(),
+                gatewayIngressSessionGate = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<PacketHandler>()
+        scoped {
+            CommandSenderImpl(
+                packetHandler = get(),
+                nodeManager = get(),
+                radioConfigRepository = get(),
+                tracerouteHandler = get(),
+                neighborInfoHandler = get(),
+                sessionManager = get(),
+                radioInterfaceService = get(),
+                channelOperationLock = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<CommandSender>()
         scopedOf(::HandshakeChannelSetCollector)
-        scopedOf(::MeshConfigHandlerImpl).bind<MeshConfigHandler>()
-        scopedOf(::AdminPacketHandlerImpl).bind<AdminPacketHandler>()
-        scopedOf(::TracerouteHandlerImpl).bind<TracerouteHandler>()
+        scoped {
+            MeshConfigHandlerImpl(
+                radioConfigRepository = get(),
+                serviceRepository = get(),
+                nodeManager = get(),
+                channelSetCollector = get(),
+                ingressWorkTracker = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<MeshConfigHandler>()
+        scoped {
+            AdminPacketHandlerImpl(
+                nodeManager = get(),
+                configHandler = lazy { get<MeshConfigHandler>() },
+                configFlowManager = lazy { get<MeshConfigFlowManager>() },
+                sessionManager = get(),
+            )
+        }
+            .bind<AdminPacketHandler>()
+        scoped {
+            TracerouteHandlerImpl(
+                serviceRepository = get(),
+                nodeRepository = get(),
+                ingressWorkTracker = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<TracerouteHandler>()
         scopedOf(::NeighborInfoHandlerImpl).bind<NeighborInfoHandler>()
-        scopedOf(::TelemetryPacketHandlerImpl).bind<TelemetryPacketHandler>()
+        scoped {
+            TelemetryPacketHandlerImpl(
+                nodeManager = get(),
+                connectionManager = lazy { get<MeshConnectionManager>() },
+                notificationManager = get(),
+                ingressWorkTracker = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<TelemetryPacketHandler>()
         scopedOf(::HistoryManagerImpl).bind<HistoryManager>()
-        scopedOf(::StoreForwardPacketHandlerImpl).bind<StoreForwardPacketHandler>()
+        scoped {
+            StoreForwardPacketHandlerImpl(
+                nodeManager = get(),
+                packetRepository = lazy { get<PacketRepository>() },
+                serviceBroadcasts = get(),
+                historyManager = get(),
+                dataHandler = lazy { get<MeshDataHandler>() },
+                ingressWorkTracker = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<StoreForwardPacketHandler>()
         scopedOf(::MessageFilterImpl).bind<MessageFilter>()
-        scopedOf(::MqttManagerImpl).bind<MqttManager>()
-        scopedOf(::MeshDataHandlerImpl).bind<MeshDataHandler>()
-        scopedOf(::MeshConfigFlowManagerImpl).bind<MeshConfigFlowManager>()
-        scopedOf(::FromRadioPacketHandlerImpl).bind<FromRadioPacketHandler>()
-        scopedOf(::MeshMessageProcessorImpl).bind<MeshMessageProcessor>()
+        scoped {
+            MqttManagerImpl(
+                mqttRepository = get(),
+                packetHandler = get(),
+                serviceRepository = get(),
+                nodeRepository = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<MqttManager>()
+        scoped {
+            MeshDataHandlerImpl(
+                nodeManager = get(),
+                packetHandler = get(),
+                serviceRepository = get(),
+                packetRepository = lazy { get<PacketRepository>() },
+                serviceBroadcasts = get(),
+                notificationManager = get(),
+                serviceNotifications = get(),
+                analytics = get(),
+                dataMapper = get(),
+                tracerouteHandler = get(),
+                neighborInfoHandler = get(),
+                radioConfigRepository = get(),
+                messageFilter = get(),
+                storeForwardHandler = get(),
+                telemetryHandler = get(),
+                adminPacketHandler = get(),
+                ntsocialGatewayRepository = get(),
+                ingressWorkTracker = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<MeshDataHandler>()
+        scoped {
+            MeshConfigFlowManagerImpl(
+                nodeManager = get(),
+                connectionManager = lazy { get<MeshConnectionManager>() },
+                radioInterfaceService = get(),
+                nodeRepository = get(),
+                radioConfigRepository = get(),
+                serviceRepository = get(),
+                serviceBroadcasts = get(),
+                analytics = get(),
+                commandSender = get(),
+                heartbeatSender = get(),
+                notificationPrefs = get(),
+                channelSetCollector = get(),
+                channelOperationLock = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<MeshConfigFlowManager>()
+        scoped {
+            FromRadioPacketHandlerImpl(
+                serviceRepository = get(),
+                router = lazy { get<MeshRouter>() },
+                mqttManager = get(),
+                packetHandler = get(),
+                notificationManager = get(),
+            )
+        }
+            .bind<FromRadioPacketHandler>()
+        scoped {
+            MeshMessageProcessorImpl(
+                nodeManager = get(),
+                serviceRepository = get(),
+                meshLogRepository = lazy { get<MeshLogRepository>() },
+                router = lazy { get<MeshRouter>() },
+                fromRadioDispatcher = get(),
+                ingressWorkTracker = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<MeshMessageProcessor>()
         scopedOf(::DataLayerHeartbeatSender)
         scopedOf(::XModemManagerImpl).bind<XModemManager>()
-        scopedOf(::MeshActionHandlerImpl).bind<MeshActionHandler>()
-        scopedOf(::MeshRouterImpl).bind<MeshRouter>()
+        scoped {
+            MeshActionHandlerImpl(
+                nodeManager = get(),
+                commandSender = get(),
+                packetRepository = lazy { get<PacketRepository>() },
+                serviceBroadcasts = get(),
+                dataHandler = lazy { get<MeshDataHandler>() },
+                analytics = get(),
+                meshPrefs = get(),
+                uiPrefs = get(),
+                databaseManager = get(),
+                notificationManager = get(),
+                messageProcessor = lazy { get<MeshMessageProcessor>() },
+                radioConfigRepository = get(),
+                channelMutationLock = get(),
+                scope = get(named("ServiceScope")),
+            )
+        }
+            .bind<MeshActionHandler>()
+        scoped {
+            MeshRouterImpl(
+                dataHandlerLazy = lazy { get<MeshDataHandler>() },
+                configHandlerLazy = lazy { get<MeshConfigHandler>() },
+                tracerouteHandlerLazy = lazy { get<TracerouteHandler>() },
+                neighborInfoHandlerLazy = lazy { get<NeighborInfoHandler>() },
+                configFlowManagerLazy = lazy { get<MeshConfigFlowManager>() },
+                mqttManagerLazy = lazy { get<MqttManager>() },
+                actionHandlerLazy = lazy { get<MeshActionHandler>() },
+                xmodemManagerLazy = lazy { get<XModemManager>() },
+            )
+        }
+            .bind<MeshRouter>()
         scoped {
             MeshConnectionManagerImpl(
                 radioInterfaceService = get(),
@@ -250,10 +456,46 @@ internal val iosRadioEndpointKoinModule = module {
         }
             .bind<MeshConnectionManager>()
 
-        scopedOf(::NtsocialChannelProvisioner)
-        scopedOf(::EnsureRemoteAdminSessionUseCase)
+        scoped {
+            NtsocialChannelProvisioner(
+                commandSender = get(),
+                radioConfigRepository = get(),
+                sessionManager = get(),
+                channelOperationLock = get(),
+                channelMutationLock = get(),
+                radioInterfaceService = get(),
+                ntsocialGatewayRepository = get(),
+                meshConfigFlowManager = lazy { get<MeshConfigFlowManager>() },
+            )
+        }
+        scoped {
+            EnsureRemoteAdminSessionUseCase(
+                sessionManager = get(),
+                meshActionHandler = get(),
+                serviceRepository = get(),
+                commandSender = get(),
+                radioInterfaceService = get(),
+                serviceScope = get(named("ServiceScope")),
+            )
+        }
         scopedOf(::ObserveRemoteAdminSessionStatusUseCase)
-        scopedOf(::ChannelReliabilityManagerImpl).bind<ChannelReliabilityManager>()
+        scoped {
+            ChannelReliabilityManagerImpl(
+                commandSender = get(),
+                serviceRepository = get(),
+                nodeRepository = get(),
+                radioConfigRepository = get(),
+                channelSnapshotRepository = get(),
+                ensureRemoteAdminSession = get(),
+                meshConfigFlowManager = lazy { get<MeshConfigFlowManager>() },
+                operationLock = get(),
+                mutationLock = get(),
+                radioInterfaceService = get(),
+                ntsocialGatewayRepository = get(),
+                serviceScope = get(named("ServiceScope")),
+            )
+        }
+            .bind<ChannelReliabilityManager>()
         scopedOf(::DirectRadioControllerImpl).bind<RadioController>()
 
         scoped { IosEndpointMessageQueue(get(), lazy { get<RadioController>() }, get(named("ServiceScope"))) }

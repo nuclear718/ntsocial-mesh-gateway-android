@@ -1763,6 +1763,27 @@
   remains fail closed; this is Debug install/startup integrity only, not Apple Gateway, BLE/Stage-2, RF, release,
   TestFlight, App Store, Play, or remote-receipt evidence.
 
+## 2026-08-31 - iOS simultaneous multi-node production-graph remediation
+- Compared current iOS multi-node source against Android remediation commit
+  `5b856b5fa468327f7fc9a24eebe5d36dfc86b2da` and confirmed the same Koin architecture defect: secondary iOS scopes
+  retained constructor-reference registrations that could not preserve qualified `ProcessLifecycle`/`ServiceScope`
+  or Kotlin `Lazy<T>` dependencies. The session also marked itself wired before the activation root resolved.
+- Replaced every affected iOS secondary graph definition with an explicit scoped factory, preserving endpoint-local
+  lifecycle/scope and dependency-cycle boundaries. Added `IosSecondaryGatewayRepository` so only the legacy-primary
+  endpoint can own Apple Gateway, and moved the wired marker after successful graph resolution and buffer reset.
+- Added a Kotlin/Native production-graph regression that creates a real secondary endpoint scope, resolves
+  `MeshConnectionManagerImpl`, and verifies the fail-closed Gateway binding. Native test execution remains disabled by
+  convention, so this regression is compile-only in current gates.
+- Focused iOS validation passed 398 tasks (71 executed, 327 up-to-date): runtime Spotless/Detekt/JVM tests, Simulator
+  and arm64 compilation, Simulator test compilation, and Debug framework link.
+- The full required gate completed 2,018 tasks (186 executed, 1,832 up-to-date). Formatting, both Android Debug
+  assemblies, tests/`allTests`, Desktop/JVM, KMP/iOS compilation, and both Android lints passed; exit 1 was solely the
+  six existing findings in unmodified BLE (3), domain (1), model (1), and network (1) files.
+- A fresh signing-disabled Simulator Debug Xcode host built, installed, and cold-launched on `Codex iPhone 17`
+  (`E3249756-57AF-4D9C-AA2B-3332E9309529`) as PID 12071; the follow-up launch returned the same PID. No physical
+  concurrent-radio, Stage-2/control, restoration/background, RF/remote-receipt, signing, TestFlight, or App Store
+  evidence was produced.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.

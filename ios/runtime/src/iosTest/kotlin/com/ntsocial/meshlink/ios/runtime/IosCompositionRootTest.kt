@@ -24,12 +24,22 @@
  */
 package com.ntsocial.meshlink.ios.runtime
 
+import com.ntsocial.meshlink.core.data.manager.MeshConnectionManagerImpl
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointProfile
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSessionFactory
+import com.ntsocial.meshlink.core.radiofleet.RadioProtocol
+import com.ntsocial.meshlink.core.repository.MeshConnectionManager
+import com.ntsocial.meshlink.core.repository.NtsocialGatewayRepository
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.toByteString
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 import kotlin.test.Test
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 class IosCompositionRootTest {
     @Test
@@ -47,6 +57,32 @@ class IosCompositionRootTest {
         } finally {
             root.close()
             NSFileManager.defaultManager.removeItemAtPath(directory, null)
+        }
+    }
+
+    @Test
+    fun secondaryScopeResolvesCompleteConnectionGraphAndFailsGatewayAccessClosed() = runTest {
+        val root = IosCompositionRoot()
+        val endpointId = RadioEndpointId("secondary-runtime-${NSUUID().UUIDString}")
+        val session =
+            root.koin
+                .get<RadioEndpointSessionFactory>()
+                .create(
+                    RadioEndpointProfile(
+                        id = endpointId,
+                        protocol = RadioProtocol.MESHTASTIC,
+                        transportAddress = "AA:BB:CC:DD:EE:02",
+                        displayName = "Secondary",
+                    ),
+                )
+
+        try {
+            val endpointScope = assertNotNull(root.koin.get<IosRadioEndpointScopeRegistry>().scopes.value[endpointId])
+            assertIs<MeshConnectionManagerImpl>(endpointScope.get<MeshConnectionManager>())
+            assertIs<IosSecondaryGatewayRepository>(endpointScope.get<NtsocialGatewayRepository>())
+        } finally {
+            session.close()
+            root.close()
         }
     }
 }
