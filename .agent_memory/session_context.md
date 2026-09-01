@@ -1784,6 +1784,40 @@
   concurrent-radio, Stage-2/control, restoration/background, RF/remote-receipt, signing, TestFlight, or App Store
   evidence was produced.
 
+## 2026-09-01 - iOS AppIcon visual-scale remediation
+- Affected only the iOS product track. The original 1024 AppIcon was effectively the Android black-background store
+  icon enlarged 2x, so it retained adaptive-icon safe padding that iOS does not crop away and looked undersized on
+  SpringBoard.
+- Rebuilt `iosApp/NTsocialMeshLink/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` from the established shared
+  green butterfly source on black with a centered 960-by-960 foreground canvas. The final asset is 1024-by-1024,
+  8-bit RGB, no-alpha, embedded sRGB, SHA-256
+  `528F504199FC4730993365992B43ED880D5AD96E688EAE78B75661B891F68B14`; the thresholded visible mark changed from
+  548-by-426 to 798-by-614 pixels. Android and Desktop assets were not changed.
+- A signing-disabled Simulator Debug Xcode build succeeded, generated the AppIcon catalog without icon warnings,
+  installed and launched on `Codex iPhone 17`, and a SpringBoard screenshot confirmed the larger green butterfly is
+  centered, uncropped, and visually comparable to the neighboring NTsocial butterfly icon.
+- The JDK-21/en-US full/focused gate completed 1,782 tasks (100 executed, 1,682 up-to-date). Formatting, Android Debug
+  assembly, tests/`allTests`, KMP smoke compilation, iOS JVM tests, Simulator/arm64 compilation, Simulator test-source
+  compilation, and Debug framework link passed. Exit 1 was only the six existing Detekt findings in unmodified BLE
+  (3), domain (1), model (1), and network (1) sources. No physical-device, signed archive, TestFlight, or App Store
+  evidence was produced.
+
+## 2026-09-01 - Four-phone clean Debug redeployment
+- Removed only the exact MeshLink packages from the two connected Android phones and two connected iPhone 15
+  devices, verified each package was absent, and then installed current-source Debug artifacts from scratch. This
+  intentionally reset MeshLink app-container data; parent NTsocial Apps were not removed.
+- Samsung SM-S9280 and OPPO CPH2695 now run `com.ntsocial.meshlink.google.debug` `1.0.8 (9)`. Both installed APK
+  hashes exactly match the 51,640,587-byte local arm64 APK SHA-256
+  `719589AB776C611A6FF52DF3B333725EFDE8A33B90612E97D242D522B00E5113`. Both cold launches returned `Status: ok`
+  and retained their initial PIDs through the follow-up check.
+- Both connected iPhone 15 devices now run `com.ntsocial.meshlink.ios` `1.0.0 (1)` from the current arm64 Debug host
+  build containing the enlarged green AppIcon. Install, launch, and follow-up process lookup succeeded on both with
+  stable PIDs. The build is signed with the existing diagnostic personal-team profile, has `get-task-allow=true`, and
+  omits the unavailable App Group entitlement, so Apple Gateway remains fail closed.
+- This is four-device clean-install and immediate-startup integrity evidence only. Physical AppIcon appearance, BLE
+  permission/scan, concurrent radios, Stage 2, channel mutation, restoration/background, LoRa/RF/remote receipt,
+  release signing, TestFlight/App Store, and Play delivery were not tested by this deployment.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.
