@@ -61,14 +61,18 @@ import com.ntsocial.meshlink.core.resources.radio_fleet_title
 import com.ntsocial.meshlink.core.resources.radio_legacy_primary
 import com.ntsocial.meshlink.core.resources.remove
 import com.ntsocial.meshlink.core.resources.select
+import com.ntsocial.meshlink.feature.connections.IosScannerViewModel
+import com.ntsocial.meshlink.feature.connections.ScannerViewModel
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
 /** iOS fleet cards intentionally mirror Android's four-radio Connections hierarchy. */
 @Composable
 actual fun RadioFleetPanel(modifier: Modifier) {
     val fleetManager = koinInject<RadioFleetManager>()
+    val scanModel = koinViewModel<ScannerViewModel>()
     val snapshots by fleetManager.snapshots.collectAsStateWithLifecycle()
     val selectedEndpointId by fleetManager.selectedEndpointId.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -103,6 +107,11 @@ actual fun RadioFleetPanel(modifier: Modifier) {
                         scope.launch {
                             if (snapshot.state.isActive) {
                                 fleetManager.disconnect(snapshot.profile.id)
+                            } else if (scanModel is IosScannerViewModel) {
+                                scanModel.requestFleetConnection(
+                                    endpointId = snapshot.profile.id,
+                                    deviceName = snapshot.profile.displayName,
+                                )
                             } else {
                                 fleetManager.connect(snapshot.profile.id)
                             }

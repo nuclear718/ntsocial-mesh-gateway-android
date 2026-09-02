@@ -53,6 +53,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ScannerViewModelTest {
@@ -157,6 +158,32 @@ class ScannerViewModelTest {
         viewModel.changeDeviceAddress("test_address")
 
         assertEquals("test_address", radioController.lastSetDeviceAddress)
+    }
+
+    @Test
+    fun `bluetooth pairing guidance confirms pending action exactly once`() {
+        var connectCalls = 0
+
+        viewModel.requestBluetoothPairingGuidance(deviceName = "Meshtastic 1234") { connectCalls++ }
+
+        assertEquals("Meshtastic 1234", viewModel.bluetoothPairingGuidance.value?.deviceName)
+        viewModel.continueBluetoothPairing()
+        assertEquals(1, connectCalls)
+        assertNull(viewModel.bluetoothPairingGuidance.value)
+
+        viewModel.continueBluetoothPairing()
+        assertEquals(1, connectCalls)
+    }
+
+    @Test
+    fun `dismissing bluetooth pairing guidance does not start connection`() {
+        var connectCalls = 0
+
+        viewModel.requestBluetoothPairingGuidance(deviceName = "Meshtastic 5678") { connectCalls++ }
+        viewModel.dismissBluetoothPairingGuidance()
+
+        assertEquals(0, connectCalls)
+        assertNull(viewModel.bluetoothPairingGuidance.value)
     }
 
     @Test

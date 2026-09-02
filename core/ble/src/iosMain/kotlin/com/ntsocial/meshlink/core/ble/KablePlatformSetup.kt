@@ -30,6 +30,10 @@ import com.juul.kable.Peripheral
 import com.juul.kable.PeripheralBuilder
 import com.juul.kable.WriteType
 import com.juul.kable.toIdentifier
+import kotlinx.atomicfu.atomic
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.uuid.Uuid
 
 private object AppleKableCentralManagerConfiguration {
     init {
@@ -49,11 +53,46 @@ internal actual fun initializePlatformBle() {
 
 internal actual fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean) {
     // CoreBluetooth owns reconnect scheduling; Kable has no Apple auto-connect builder option.
+    // Authentication failures from the encrypted FROMNUM subscription are connection failures, not optional
+    // observation noise. Propagating them also lets a cancelled or incorrect PIN fail immediately.
+    observationExceptionHandler { cause -> throw cause }
 }
+
+private val IOS_FIRST_PAIRING_PROFILE_TIMEOUT = 90.seconds
+
+internal actual fun platformProfileSetupTimeout(serviceUuid: Uuid, requested: Duration): Duration =
+    if (serviceUuid == MeshtasticBleConstants.SERVICE_UUID && requested < IOS_FIRST_PAIRING_PROFILE_TIMEOUT) {
+        IOS_FIRST_PAIRING_PROFILE_TIMEOUT
+    } else {
+        requested
+    }
 
 internal actual fun createPeripheral(address: String, builderAction: PeripheralBuilder.() -> Unit): Peripheral {
     initializePlatformBle()
     return com.juul.kable.Peripheral(address.toIdentifier(), builderAction)
+}
+
+private val preparedPeripherals = atomic<Map<String, PlatformPreparedPeripheral>>(emptyMap())
+
+internal fun replacePlatformPreparedPeripheral(
+    address: String,
+    prepared: PlatformPreparedPeripheral,
+): PlatformPreparedPeripheral? {
+    val key = address.lowercase()
+    while (true) {
+        val current = preparedPeripherals.value
+        val previous = current[key]
+        if (preparedPeripherals.compareAndSet(current, current + (key to prepared))) return previous
+    }
+}
+
+internal actual fun takePlatformPreparedPeripheral(address: String): PlatformPreparedPeripheral? {
+    val key = address.lowercase()
+    while (true) {
+        val current = preparedPeripherals.value
+        val prepared = current[key] ?: return null
+        if (preparedPeripherals.compareAndSet(current, current - key)) return prepared
+    }
 }
 
 internal actual suspend fun Peripheral.negotiatedMaxWriteLength(writeType: BleWriteType): Int? =

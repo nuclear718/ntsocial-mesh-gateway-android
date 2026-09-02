@@ -41,12 +41,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,6 +67,10 @@ import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.navigation.Route
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
 import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.bluetooth_pairing_continue
+import com.ntsocial.meshlink.core.resources.bluetooth_pairing_instructions
+import com.ntsocial.meshlink.core.resources.bluetooth_pairing_title
+import com.ntsocial.meshlink.core.resources.cancel
 import com.ntsocial.meshlink.core.resources.connections
 import com.ntsocial.meshlink.core.resources.img_ntsocial_background_butterfly
 import com.ntsocial.meshlink.core.resources.no_device_selected
@@ -116,6 +122,7 @@ fun ConnectionsScreen(
 ) {
     val radioConfigState by radioConfigViewModel.radioConfigState.collectAsStateWithLifecycle()
     val connectionProgress by scanModel.connectionProgressText.collectAsStateWithLifecycle()
+    val bluetoothPairingGuidance by scanModel.bluetoothPairingGuidance.collectAsStateWithLifecycle()
     val connectionStatus by connectionsViewModel.connectionStatus.collectAsStateWithLifecycle()
     val connectionState by connectionsViewModel.connectionState.collectAsStateWithLifecycle()
     val ourNode by connectionsViewModel.ourNodeForDisplay.collectAsStateWithLifecycle()
@@ -128,6 +135,24 @@ fun ConnectionsScreen(
     val isBleScanning by scanModel.isBleScanning.collectAsStateWithLifecycle()
 
     val bleAutoScan by scanModel.bleAutoScan.collectAsStateWithLifecycle()
+
+    bluetoothPairingGuidance?.let { guidance ->
+        AlertDialog(
+            onDismissRequest = scanModel::dismissBluetoothPairingGuidance,
+            title = { Text(stringResource(Res.string.bluetooth_pairing_title, guidance.deviceName)) },
+            text = { Text(stringResource(Res.string.bluetooth_pairing_instructions)) },
+            confirmButton = {
+                TextButton(onClick = scanModel::continueBluetoothPairing) {
+                    Text(stringResource(Res.string.bluetooth_pairing_continue))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = scanModel::dismissBluetoothPairingGuidance) {
+                    Text(stringResource(Res.string.cancel))
+                }
+            },
+        )
+    }
 
     var isScreenResumed by remember { mutableStateOf(false) }
     LifecycleResumeEffect(Unit) {

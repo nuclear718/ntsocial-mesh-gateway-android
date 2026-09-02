@@ -25,11 +25,13 @@
 package com.ntsocial.meshlink.ios.runtime
 
 import com.ntsocial.meshlink.core.ble.BluetoothState
+import com.ntsocial.meshlink.core.gateway.apple.AppleGatewayContract
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.repository.RadioSessionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.ChannelSet
@@ -63,6 +65,41 @@ class IosGatewayProjectionSignalsTest {
         collector.join()
 
         assertEquals(1, drainCount)
+    }
+
+    @Test
+    fun `foreground route refresh continues beyond route ttl and stops when inactive`() = runTest {
+        val active = MutableStateFlow(false)
+        var refreshCount = 0
+        val collector = backgroundScope.launch { iosGatewayRouteRefreshSignals(active).collect { refreshCount += 1 } }
+        runCurrent()
+
+        advanceTimeBy(AppleGatewayContract.ROUTE_TTL_MILLIS * 2)
+        runCurrent()
+        assertEquals(0, refreshCount)
+
+        active.value = true
+        runCurrent()
+        advanceTimeBy(IOS_GATEWAY_ROUTE_REFRESH_INTERVAL_MILLIS)
+        runCurrent()
+        assertEquals(1, refreshCount)
+
+        advanceTimeBy(AppleGatewayContract.ROUTE_TTL_MILLIS)
+        runCurrent()
+        assertEquals(3, refreshCount)
+
+        active.value = false
+        runCurrent()
+        advanceTimeBy(AppleGatewayContract.ROUTE_TTL_MILLIS * 2)
+        runCurrent()
+        assertEquals(3, refreshCount)
+
+        active.value = true
+        runCurrent()
+        collector.cancel()
+        advanceTimeBy(AppleGatewayContract.ROUTE_TTL_MILLIS * 2)
+        runCurrent()
+        assertEquals(3, refreshCount)
     }
 
     private fun readySession() = RadioSessionState(

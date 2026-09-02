@@ -27,27 +27,47 @@
 package com.ntsocial.meshlink.core.ble
 
 import com.juul.kable.Bluetooth
+import com.juul.kable.NotConnectedException
+import com.juul.kable.Peripheral
+import com.juul.kable.PeripheralBuilder
 import com.juul.kable.Reason
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.koin.core.annotation.Single
 import kotlin.concurrent.Volatile
+import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
 /** iOS Bluetooth state and pairing semantics backed by Kable/CoreBluetooth. */
 @Single(binds = [BluetoothRepository::class])
-class IosBluetoothRepository : BluetoothRepository {
+class IosBluetoothRepository(private val loggingConfig: BleLoggingConfig) : BluetoothRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow(BluetoothState())
     override val state: StateFlow<BluetoothState> = _state.asStateFlow()
+    private val pairingMutex = Mutex()
 
     @Volatile private var stateJob: Job? = null
+
+    /** Process-local proof that the protected FROMNUM subscription completed for this peripheral. */
+    @Volatile private var pairingVerifiedAddresses: Set<String> = emptySet()
 
     init {
         refreshState()
@@ -61,10 +81,10 @@ class IosBluetoothRepository : BluetoothRepository {
                 Bluetooth.availability.collect { availability ->
                     _state.value =
                         when (availability) {
-                            Bluetooth.Availability.Available -> BluetoothState(hasPermissions = true, enabled = true)
+                            Bluetooth.Availability.Available -> _state.value.copy(hasPermissions = true, enabled = true)
 
                             is Bluetooth.Availability.Unavailable ->
-                                BluetoothState(
+                                _state.value.copy(
                                     hasPermissions =
                                     when (availability.reason) {
                                         Reason.Unauthorized -> false
@@ -80,10 +100,131 @@ class IosBluetoothRepository : BluetoothRepository {
 
     override fun isValid(bleAddress: String): Boolean = runCatching { Uuid.parse(bleAddress) }.isSuccess
 
-    // CoreBluetooth does not expose a public bond database; protected characteristics trigger OS-managed pairing.
-    override fun isBonded(address: String): Boolean = isValid(address)
+    // CoreBluetooth does not expose a public bond database. A valid UUID is only an address, never proof of pairing.
+    override fun isBonded(address: String): Boolean = normalizedAddress(address) in pairingVerifiedAddresses
 
+    @Suppress("TooGenericExceptionCaught")
     override suspend fun bond(device: BleDevice) {
-        require(isValid(device.address)) { "Invalid CoreBluetooth peripheral identifier: ${device.address}" }
+        val meshtasticDevice =
+            device as? MeshtasticBleDevice
+                ?: throw BlePairingException(
+                    failure = BlePairingFailure.PLATFORM_FAILURE,
+                    message = "Unsupported Bluetooth peripheral",
+                )
+        val normalized = normalizedAddress(device.address)
+        if (normalized.isEmpty()) {
+            throw BlePairingException(
+                failure = BlePairingFailure.DEVICE_NOT_FOUND,
+                message = "The Bluetooth peripheral identifier is invalid",
+            )
+        }
+
+        pairingMutex.withLock {
+            if (normalized in pairingVerifiedAddresses) return@withLock
+
+            fun PeripheralBuilder.configurePairingPeripheral() {
+                logging { applyConfig(loggingConfig, identifier = "ios-pairing") }
+                observationExceptionHandler { cause -> throw cause }
+                platformConfig(device) { false }
+            }
+
+            initializePlatformBle()
+            val peripheral =
+                meshtasticDevice.advertisement?.let { advertisement ->
+                    Peripheral(advertisement) { configurePairingPeripheral() }
+                } ?: createPeripheral(device.address) { configurePairingPeripheral() }
+
+            var transferredToTransport = false
+            try {
+                val preparedConnectionScope =
+                    withTimeout(IOS_NATIVE_PAIRING_TIMEOUT) {
+                        val connectionScope = peripheral.connect()
+                        val service = KableBleService(peripheral, MeshtasticBleConstants.SERVICE_UUID)
+                        val fromNum = service.characteristic(MeshtasticBleConstants.FROMNUM_CHARACTERISTIC)
+                        if (!service.hasCharacteristic(fromNum)) {
+                            throw BlePairingException(
+                                failure = BlePairingFailure.PLATFORM_FAILURE,
+                                message = "The node does not expose the Meshtastic pairing characteristic",
+                            )
+                        }
+
+                        val subscriptionReady = CompletableDeferred<Unit>()
+                        val observationJob = launch {
+                            service
+                                .observe(fromNum) { subscriptionReady.complete(Unit) }
+                                .catch { error ->
+                                    if (error is CancellationException) throw error
+                                    subscriptionReady.completeExceptionally(error)
+                                    throw error
+                                }
+                                .collect()
+                        }
+                        try {
+                            // The encrypted CCCD write triggers and authoritatively completes native iOS pairing.
+                            subscriptionReady.await()
+                        } finally {
+                            observationJob.cancelAndJoin()
+                        }
+                        connectionScope
+                    }
+
+                val previous =
+                    replacePlatformPreparedPeripheral(
+                        address = normalized,
+                        prepared = PlatformPreparedPeripheral(peripheral, preparedConnectionScope),
+                    )
+                previous?.peripheral?.let { closePeripheral(it) }
+                pairingVerifiedAddresses = pairingVerifiedAddresses + normalized
+                _state.update { current ->
+                    current.copy(
+                        bondedDevices =
+                        current.bondedDevices.filterNot { normalizedAddress(it.address) == normalized } +
+                            meshtasticDevice,
+                    )
+                }
+                transferredToTransport = true
+            } catch (timeout: TimeoutCancellationException) {
+                throw BlePairingException(
+                    failure = BlePairingFailure.TIMED_OUT,
+                    message = "Bluetooth pairing timed out. Confirm the node PIN and try again.",
+                    cause = timeout,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (pairing: BlePairingException) {
+                throw pairing
+            } catch (error: Exception) {
+                throw BlePairingException(
+                    failure = BlePairingFailure.AUTHENTICATION_FAILED,
+                    message = "Bluetooth pairing did not complete. Confirm the node PIN and try again.",
+                    cause = error,
+                )
+            } finally {
+                if (!transferredToTransport) closePeripheral(peripheral)
+            }
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun closePeripheral(peripheral: Peripheral) = withContext(NonCancellable) {
+        try {
+            peripheral.disconnect()
+        } catch (_: NotConnectedException) {
+            // The attempt may already have disconnected after a rejected or cancelled PIN.
+        } catch (_: Exception) {
+            // close() below remains authoritative for releasing CoreBluetooth resources.
+        }
+        try {
+            peripheral.close()
+        } catch (_: Exception) {
+            // Nothing else can be recovered after the temporary peripheral is closed.
+        }
+    }
+
+    private fun normalizedAddress(address: String): String =
+        runCatching { Uuid.parse(address).toString().lowercase() }.getOrDefault("")
+
+    private companion object {
+        val IOS_NATIVE_PAIRING_TIMEOUT = 90.seconds
     }
 }

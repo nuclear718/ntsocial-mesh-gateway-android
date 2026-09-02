@@ -30,6 +30,8 @@ import com.juul.kable.Peripheral
 import com.juul.kable.PeripheralBuilder
 import com.juul.kable.PooledThreadingStrategy
 import com.juul.kable.toIdentifier
+import kotlin.time.Duration
+import kotlin.uuid.Uuid
 
 /**
  * Shared thread pool for Kable BLE connections.
@@ -72,8 +74,12 @@ internal actual fun PeripheralBuilder.platformConfig(device: BleDevice, autoConn
     }
 }
 
+internal actual fun platformProfileSetupTimeout(serviceUuid: Uuid, requested: Duration): Duration = requested
+
 internal actual fun createPeripheral(address: String, builderAction: PeripheralBuilder.() -> Unit): Peripheral =
     com.juul.kable.Peripheral(address.toIdentifier(), builderAction)
+
+internal actual fun takePlatformPreparedPeripheral(address: String): PlatformPreparedPeripheral? = null
 
 /** ATT protocol header size (opcode + handle) subtracted from MTU to get the usable payload. */
 private const val ATT_HEADER_SIZE = 3

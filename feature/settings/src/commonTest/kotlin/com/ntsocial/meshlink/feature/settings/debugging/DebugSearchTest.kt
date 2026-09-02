@@ -42,7 +42,13 @@ import androidx.compose.ui.unit.dp
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.debug_active_filters
 import com.ntsocial.meshlink.core.resources.debug_default_search
+import com.ntsocial.meshlink.core.resources.debug_filter_add
+import com.ntsocial.meshlink.core.resources.debug_filter_add_custom
+import com.ntsocial.meshlink.core.resources.debug_filter_clear
 import com.ntsocial.meshlink.core.resources.debug_filters
+import com.ntsocial.meshlink.core.resources.debug_search_clear
+import com.ntsocial.meshlink.core.resources.debug_search_next
+import com.ntsocial.meshlink.core.resources.debug_search_prev
 import com.ntsocial.meshlink.core.resources.getString
 import com.ntsocial.meshlink.feature.settings.debugging.DebugViewModel.UiMeshLog
 import com.ntsocial.meshlink.feature.settings.debugging.LogSearchManager.SearchMatch
@@ -70,6 +76,7 @@ class DebugSearchTest {
     @Test
     fun debugSearchBar_showsClearButtonWhenTextEntered() = runComposeUiTest {
         val placeholder = getString(Res.string.debug_default_search)
+        val clearSearch = getString(Res.string.debug_search_clear)
         setContent {
             var searchText by remember { mutableStateOf("test") }
             DebugSearchBar(
@@ -80,7 +87,7 @@ class DebugSearchTest {
                 onClearSearch = { searchText = "" },
             )
         }
-        onNodeWithContentDescription("Clear search").assertIsDisplayed().performClick()
+        onNodeWithContentDescription(clearSearch).assertIsDisplayed().performClick()
         onNodeWithText(placeholder).assertIsDisplayed()
     }
 
@@ -89,6 +96,9 @@ class DebugSearchTest {
         val searchText = "test"
         val matchCount = 3
         val currentMatchIndex = 1
+        val previousMatch = getString(Res.string.debug_search_prev)
+        val nextMatch = getString(Res.string.debug_search_next)
+        val clearSearch = getString(Res.string.debug_search_clear)
 
         setContent {
             DebugSearchBar(
@@ -108,10 +118,10 @@ class DebugSearchTest {
         // Check the match count display (e.g., '2/3')
         onNodeWithText("${currentMatchIndex + 1}/$matchCount").assertIsDisplayed()
         // Check the navigation arrows
-        onNodeWithContentDescription("Previous match").assertIsDisplayed()
-        onNodeWithContentDescription("Next match").assertIsDisplayed()
+        onNodeWithContentDescription(previousMatch).assertIsDisplayed()
+        onNodeWithContentDescription(nextMatch).assertIsDisplayed()
         // Check the clear button
-        onNodeWithContentDescription("Clear search").assertIsDisplayed()
+        onNodeWithContentDescription(clearSearch).assertIsDisplayed()
     }
 
     @Test
@@ -146,6 +156,8 @@ class DebugSearchTest {
     @Test
     fun debugFilterBar_addCustomFilter_displaysActiveFilter() = runComposeUiTest {
         val activeFiltersLabel = getString(Res.string.debug_active_filters)
+        val addCustomFilter = getString(Res.string.debug_filter_add_custom)
+        val addFilter = getString(Res.string.debug_filter_add)
         setContent {
             var filterTexts by remember { mutableStateOf(listOf<String>()) }
             var customFilterText by remember { mutableStateOf("") }
@@ -164,8 +176,8 @@ class DebugSearchTest {
                 )
             }
         }
-        onNodeWithText("Add custom filter").performTextInput("MyFilter")
-        onNodeWithContentDescription("Add filter").performClick()
+        onNodeWithText(addCustomFilter).performTextInput("MyFilter")
+        onNodeWithContentDescription(addFilter).performClick()
         onNodeWithText(activeFiltersLabel).assertIsDisplayed()
         onNodeWithText("MyFilter").assertIsDisplayed()
     }
@@ -173,6 +185,7 @@ class DebugSearchTest {
     @Test
     fun debugActiveFilters_clearAllFilters_removesFilters() = runComposeUiTest {
         val activeFiltersLabel = getString(Res.string.debug_active_filters)
+        val clearAllFilters = getString(Res.string.debug_filter_clear)
         setContent {
             var filterTexts by remember { mutableStateOf(listOf("A", "B")) }
             DebugActiveFilters(
@@ -187,7 +200,7 @@ class DebugSearchTest {
         onNodeWithText("A").assertIsDisplayed()
         onNodeWithText("B").assertIsDisplayed()
         // Click the clear all filters button
-        onNodeWithContentDescription("Clear all filters").performClick()
+        onNodeWithContentDescription(clearAllFilters).performClick()
         // The filter chips should no longer be visible
         onNodeWithText("A").assertDoesNotExist()
         onNodeWithText("B").assertDoesNotExist()

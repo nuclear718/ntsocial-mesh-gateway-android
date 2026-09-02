@@ -26,6 +26,9 @@ package com.ntsocial.meshlink.core.ble
 
 import com.juul.kable.Peripheral
 import com.juul.kable.PeripheralBuilder
+import kotlinx.coroutines.CoroutineScope
+import kotlin.time.Duration
+import kotlin.uuid.Uuid
 
 /** Initializes platform BLE facilities before Kable creates its central manager or a peripheral. */
 internal expect fun initializePlatformBle()
@@ -33,8 +36,17 @@ internal expect fun initializePlatformBle()
 /** Platform-specific configuration for the Peripheral builder based on device type. */
 internal expect fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean)
 
+/** Adjusts a GATT profile setup timeout for platform-owned flows such as the first iOS PIN pairing sheet. */
+internal expect fun platformProfileSetupTimeout(serviceUuid: Uuid, requested: Duration): Duration
+
 /** Platform-specific instantiation of a Peripheral by address. */
 internal expect fun createPeripheral(address: String, builderAction: PeripheralBuilder.() -> Unit): Peripheral
+
+/** A connected Apple peripheral prepared by the native pairing flow and ready for transport ownership. */
+internal data class PlatformPreparedPeripheral(val peripheral: Peripheral, val connectionScope: CoroutineScope)
+
+/** Takes a connected peripheral prepared by the platform pairing flow, or `null` when none is available. */
+internal expect fun takePlatformPreparedPeripheral(address: String): PlatformPreparedPeripheral?
 
 /**
  * Returns the negotiated maximum write payload length in bytes (i.e. ATT MTU minus the 3-byte ATT header), or `null` if

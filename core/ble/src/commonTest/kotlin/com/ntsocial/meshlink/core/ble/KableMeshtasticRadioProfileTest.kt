@@ -27,13 +27,16 @@ package com.ntsocial.meshlink.core.ble
 import com.ntsocial.meshlink.core.testing.FakeBleService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -63,6 +66,41 @@ class KableMeshtasticRadioProfileTest {
 
         // Should not hang — FakeBleService's default observe(char, onSubscription) fires onSubscription eagerly
         profile.awaitSubscriptionReady()
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `awaitSubscriptionReady fails when encrypted notification subscription fails`() = runTest {
+        val expected = IllegalStateException("pairing rejected")
+        val service =
+            object : BleService {
+                override fun hasCharacteristic(characteristic: BleCharacteristic): Boolean = true
+
+                override fun observe(characteristic: BleCharacteristic): Flow<ByteArray> = emptyFlow()
+
+                override fun observe(
+                    characteristic: BleCharacteristic,
+                    onSubscription: suspend () -> Unit,
+                ): Flow<ByteArray> = flow { throw expected }
+
+                override suspend fun read(characteristic: BleCharacteristic): ByteArray = ByteArray(0)
+
+                override fun preferredWriteType(characteristic: BleCharacteristic): BleWriteType =
+                    BleWriteType.WITH_RESPONSE
+
+                override suspend fun write(
+                    characteristic: BleCharacteristic,
+                    data: ByteArray,
+                    writeType: BleWriteType,
+                ) = Unit
+            }
+        val profile = KableMeshtasticRadioProfile(service)
+        val collectJob = launch { runCatching { profile.fromRadio.collect {} } }
+        advanceUntilIdle()
+
+        val actual = assertFailsWith<IllegalStateException> { profile.awaitSubscriptionReady() }
+        assertEquals(expected.message, actual.message)
 
         collectJob.cancel()
     }

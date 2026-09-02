@@ -54,6 +54,7 @@ sealed interface AppleGatewayProcessOutcome {
  * The shared database is only a mailbox/projection. Route resolution is always performed against [routeRegistry], and
  * restart-stable idempotency is always performed against [ledger], which must point at MeshLink-private storage.
  */
+@Suppress("TooManyFunctions")
 class AppleGatewayProviderEngine(
     private val store: AppleGatewayStore,
     private val ledger: AppleGatewayLedger,
@@ -70,6 +71,23 @@ class AppleGatewayProviderEngine(
     /** Atomically replaces status, caller and channel projections from one radio snapshot. */
     suspend fun refreshProjection(nowMillis: Long): AppleGatewayStatus {
         val snapshot = radioPort.snapshot()
+        return publishProjection(snapshot, nowMillis)
+    }
+
+    /**
+     * Renews a usable projection without periodically publishing routes for a non-ready radio.
+     *
+     * The readiness check and published channel data come from the same immutable radio snapshot. A caller must still
+     * serialize this with command processing; route generation and source/slot validation remain owned by
+     * [routeRegistry].
+     */
+    suspend fun refreshProjectionIfReady(nowMillis: Long): AppleGatewayStatus? {
+        val snapshot = radioPort.snapshot()
+        if (snapshot.readiness != AppleGatewayReadiness.READY) return null
+        return publishProjection(snapshot, nowMillis)
+    }
+
+    private suspend fun publishProjection(snapshot: AppleGatewayRadioSnapshot, nowMillis: Long): AppleGatewayStatus {
         val issuedRoutes =
             routeRegistry.issueRoutes(
                 callerId = credentials.callerId,

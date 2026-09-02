@@ -129,7 +129,8 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
     override suspend fun connect(device: BleDevice) {
         initializePlatformBle()
         val meshtasticDevice = device as? MeshtasticBleDevice ?: error("Unsupported BleDevice type: ${device::class}")
-        var autoConnect = meshtasticDevice.advertisement == null
+        val prepared = takePlatformPreparedPeripheral(device.address)
+        var autoConnect = prepared == null && meshtasticDevice.advertisement == null
 
         /** Applies logging, observation exception handling, and platform config shared by both peripheral types. */
         fun PeripheralBuilder.commonConfig() {
@@ -141,7 +142,8 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
         }
 
         val p =
-            meshtasticDevice.advertisement?.let { adv -> Peripheral(adv) { commonConfig() } }
+            prepared?.peripheral
+                ?: meshtasticDevice.advertisement?.let { adv -> Peripheral(adv) { commonConfig() } }
                 ?: createPeripheral(device.address) { commonConfig() }
 
         // Install ownership of the new peripheral atomically. Cancellation between
@@ -153,6 +155,7 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
         withContext(NonCancellable) {
             cleanUpPeripheral(device.address)
             peripheral = p
+            connectionScope = prepared?.connectionScope
             negotiatedWriteLengths = NegotiatedWriteLengths()
             ActiveBleConnections.register(ActiveConnection(p, device.address))
         }
@@ -174,6 +177,10 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
                     _connectionState.emit(mappedState)
                 }
                 .launchIn(scope)
+
+        if (prepared != null && p.state.value is State.Connected) {
+            cacheNegotiatedWriteLengths(p, device.address)
+        }
 
         while (p.state.value !is State.Connected) {
             autoConnect =
@@ -253,7 +260,7 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
         val p = peripheral ?: error("Not connected")
         val cScope = connectionScope ?: error("No active connection scope")
         val service = KableBleService(p, serviceUuid)
-        return withTimeout(timeout) { cScope.setup(service) }
+        return withTimeout(platformProfileSetupTimeout(serviceUuid, timeout)) { cScope.setup(service) }
     }
 
     override fun maximumWriteValueLength(writeType: BleWriteType): Int? = when (writeType) {

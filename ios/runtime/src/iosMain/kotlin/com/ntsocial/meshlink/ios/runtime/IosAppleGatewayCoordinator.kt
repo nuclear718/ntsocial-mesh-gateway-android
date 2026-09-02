@@ -56,6 +56,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -87,6 +88,7 @@ internal class IosAppleGatewayCoordinator(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatchers.io)
     private val operationMutex = Mutex()
+    private val hostActive = MutableStateFlow(false)
     private val processedOverlayKeys = LinkedHashSet<String>()
     private val store = AppleGatewayStore("${configuration.sharedContainerPath}/${AppleGatewaySchema.FILE_NAME}")
     private val engine =
@@ -141,10 +143,12 @@ internal class IosAppleGatewayCoordinator(
         if (initializationJob?.isActive == true) return
         initializationJob =
             scope.launch {
-                safely("initialize Apple Gateway") {
-                    store.initialize()
-                    syncNativeMessageChanges()
-                    engine.refreshProjection(nowMillis)
+                operationMutex.withLock {
+                    safely("initialize Apple Gateway") {
+                        store.initialize()
+                        syncNativeMessageChanges()
+                        engine.refreshProjection(nowMillis)
+                    }
                 }
 
                 projectionSignals
@@ -156,6 +160,16 @@ internal class IosAppleGatewayCoordinator(
                                 if (status.readiness == AppleGatewayReadiness.READY && drainCommands()) {
                                     retryScheduler.schedule()
                                 }
+                            }
+                        }
+                    }
+                    .launchIn(scope)
+                iosGatewayRouteRefreshSignals(hostActive)
+                    .onEach {
+                        operationMutex.withLock {
+                            if (!hostActive.value) return@withLock
+                            safely("renew foreground Apple Gateway routes") {
+                                engine.refreshProjectionIfReady(nowMillis)
                             }
                         }
                     }
@@ -194,7 +208,13 @@ internal class IosAppleGatewayCoordinator(
         }
     }
 
+    fun setHostActive(active: Boolean) {
+        hostActive.value = active
+        if (active) processCommands()
+    }
+
     fun close() {
+        hostActive.value = false
         retryScheduler.cancel()
         scope.cancel()
     }

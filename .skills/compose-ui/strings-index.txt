@@ -89,6 +89,9 @@ bluetooth_feature_config
 bluetooth_feature_config_description
 bluetooth_feature_discovery
 bluetooth_feature_discovery_description
+bluetooth_pairing_continue
+bluetooth_pairing_instructions
+bluetooth_pairing_title
 bluetooth_permission
 bold_heading
 bottom_nav_settings

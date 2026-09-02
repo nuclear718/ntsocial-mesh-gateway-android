@@ -106,6 +106,9 @@
     <string name="bluetooth_available_devices">可連接的藍牙裝置</string>
     <string name="bluetooth_config">藍牙配置</string>
     <string name="bluetooth_enabled">藍牙已啟用</string>
+    <string name="bluetooth_pairing_continue">繼續</string>
+    <string name="bluetooth_pairing_instructions">請留在此畫面。若此節點尚未配對，接下來 iOS 會在 NTsocial MeshLink 上方顯示「藍牙配對要求」。請輸入節點螢幕顯示的 6 位數 PIN 碼，或節點已設定的固定 PIN 碼，然後點選「配對」。NTsocial MeshLink 不會讀取或儲存 PIN 碼。</string>
+    <string name="bluetooth_pairing_title">與 %1$s 配對</string>
     <string name="bluetooth_feature_config">設定</string>
     <string name="bluetooth_feature_config_description">無線管理你的裝置設定與頻道。</string>
     <string name="bluetooth_feature_discovery">探索</string>

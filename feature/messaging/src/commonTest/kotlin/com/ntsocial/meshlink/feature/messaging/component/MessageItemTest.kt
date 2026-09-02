@@ -31,6 +31,10 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.ntsocial.meshlink.core.common.util.nowMillis
 import com.ntsocial.meshlink.core.model.Message
 import com.ntsocial.meshlink.core.model.MessageStatus
+import com.ntsocial.meshlink.core.resources.Res
+import com.ntsocial.meshlink.core.resources.a11y_message_from
+import com.ntsocial.meshlink.core.resources.getString
+import com.ntsocial.meshlink.core.resources.via_mqtt
 import com.ntsocial.meshlink.core.ui.component.preview.NodePreviewParameterProvider
 import kotlin.test.Test
 
@@ -73,7 +77,7 @@ class MessageItemTest {
         }
 
         // Check that the MQTT icon is displayed
-        onNodeWithContentDescription("via MQTT").assertIsDisplayed()
+        onNodeWithContentDescription(getString(Res.string.via_mqtt), useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test
@@ -112,7 +116,7 @@ class MessageItemTest {
         }
 
         // Check that the MQTT icon is not displayed
-        onNodeWithContentDescription("via MQTT").assertDoesNotExist()
+        onNodeWithContentDescription(getString(Res.string.via_mqtt), useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test
@@ -151,6 +155,10 @@ class MessageItemTest {
         }
 
         // Verify that the node containing the message text exists and matches the text
-        onNodeWithContentDescription("Message from ${testNode.user.long_name}: Hello World").assertIsDisplayed()
+        onNodeWithContentDescription(
+            getString(Res.string.a11y_message_from, testNode.user.long_name, "Hello World"),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
     }
 }

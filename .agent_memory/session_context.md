@@ -1818,6 +1818,70 @@
   permission/scan, concurrent radios, Stage 2, channel mutation, restoration/background, LoRa/RF/remote receipt,
   release signing, TestFlight/App Store, and Play delivery were not tested by this deployment.
 
+## 2026-09-02 - Five-phone NTsocial-to-MeshLink channel-binding validation
+- Affected Android and iOS product tracks only. No product source, radio configuration, PSK, pairing, or application
+  data was cleared. Three Android NTsocial parents and two iOS NTsocial parents were launched concurrently twice;
+  the final synchronized launch completed at 19:40:52 Asia/Taipei with all five commands successful. The two iOS
+  parent and MeshLink processes and all three Android parent processes remained present at the final check.
+- The connected Android 16 Samsung SM-S9280 ran NTsocial `1.5.8 (38)` and MeshLink `1.0.8 (9)`. MeshLink retained a
+  foreground `MeshService` plus two encrypted, open Meshtastic GATT clients. The parent projected the current live
+  catalog as two radio endpoints and 13 channels (five on one endpoint and eight on the other).
+- Created one disposable private parent channel with an ephemeral random password and used the production LoRa route
+  dialog to select exactly one current primary route on each endpoint. Save produced two schema-v3
+  `MANUAL_NT_OVERLAY` bindings with distinct endpoint and stable source identities. Reopening the dialog showed
+  `2/2`, both selected rows online, and one binding on each endpoint, proving the saved mapping resolved back to the
+  current catalog instead of relying on the dialog closing alone.
+- Deselected both routes, saved, and left the disposable parent channel. Final parent state had zero joined rows and
+  zero bindings for the test channel; the ordinary leave flow intentionally retained one dormant local channel-name
+  cache entry (and its private local metadata), with no membership, visible channel, route, or send. No message was
+  sent, no Meshtastic channel/config was mutated, and the two MeshLink radio GATT sessions remained open. The parent
+  and MeshLink log windows contained no fatal/ANR, invalid-route, channel-mismatch, Gateway-reject, or queue-failure
+  event attributable to the test.
+- The OPPO CPH2695 and Samsung SM-S9080 Android phones ran the same parent/MeshLink versions but had no current
+  MeshLink radio session, so only launch/no-current-route inventory was applicable; no binding was fabricated there.
+- Both physical iPhone 15 devices ran iOS 26.6.1 with NTsocial and MeshLink `1.0.0 (1)`. One MeshLink container had an
+  active configured channel-set/database consistent with the user's connected-radio setup, but its parent projection
+  contained zero joined/automatic/historical MeshLink channels. App Group container lookup failed on both phones
+  because the installed diagnostic personal-team profiles still omit the shared App Group and Keychain entitlements.
+  The Apple Gateway therefore correctly remained fail closed, and no arbitrary numeric-slot binding was saved or
+  presented as proof. The second iPhone had no configured channel set/current radio evidence.
+- Result boundary: connected-Android local stable channel binding passed. Five-phone cross-platform success did not:
+  signed iOS profiles for both exact bundle IDs must first authorize the same App Group and shared Keychain group,
+  then the iOS catalog/binding test must be rerun. This run proves neither radio queue admission nor RF airtime,
+  remote reception, or end-to-end message delivery.
+
+## 2026-09-02 - iOS Apple Gateway stable-channel binding and entitlement source correction
+- Affected tracks are the legacy-primary Apple Gateway path in this MeshLink iOS repository and the separately signed
+  NTsocial iOS parent in `../NTsocial_release`. Android is the behavioral reference and is not changed by this work;
+  Desktop/Windows gains no IPC or Gateway behavior. Secondary iOS Meshtastic endpoint graphs remain intentionally
+  fail closed for Apple Gateway.
+- MeshLink Debug and Release select the same Apple Gateway entitlement source. Parent Debug now selects a Gateway-only
+  entitlement source while parent Release retains its full capability file. Every source configuration declares App
+  Group `group.com.ntsocial.meshlink.gateway` and Keychain access-group suffix
+  `com.ntsocial.meshlink.gateway`. Source/build settings cannot authorize either capability: both exact bundle IDs still
+  need eligible-team provisioning profiles carrying the same groups. The currently installed personal-team profiles do
+  not, so their correct fail-closed device result remains authoritative until entitled Apps are installed.
+- Parent Channel Info replaces arbitrary `0...255` MeshLink slot entry with current catalog choices that advertise
+  `SEND_NTSOCIAL_ENVELOPE`. A manual logical-channel binding durably stores the opaque stable source identity; the
+  numeric slot is only a last-known display/compatibility locator. At send time the adapter requires that source and
+  resolves its current preferred catalog row, route token, capability, and radio generation. A removed source, expired
+  route, generation mismatch, missing capability, or reused old slot with a different source fails before command
+  publication; no numeric fallback fabricates success.
+- Ordinary channel social overlays plus reconcile, channel-probe, overlay/delivery-receipt, and ATaK reply flows now
+  preserve the stable source through the parent provider boundary. MeshLink renews only READY projections while its
+  host is foreground-active, at half of the 120-second route TTL and serialized with command processing. Foreground
+  exit stops renewal; it does not confer authority on a stale route.
+- MeshLink Gateway/runtime focused tests passed 14/14. The JDK-21/en-US full gate completed 2,018 actionable tasks
+  (100 executed, 1,918 up-to-date): formatting, Android Debug assembly, tests/`allTests`, shared KMP/iOS Simulator
+  compilation, and both Android Debug lints passed; exit 1 was only the six recorded pre-existing Detekt findings.
+  Two stale Compose test classes exposed by the first run were corrected test-only to use resource strings and the
+  right semantics tree; complete messaging and settings JVM modules then passed 25/25 and 62/62. Signing-disabled
+  clean Xcode Simulator Debug and generic iPhoneOS Release builds passed; the Release framework/app build completed
+  243 Gradle tasks (48 executed, 195 up-to-date). The parent source-frozen parity gate passed all 13 steps in 681
+  seconds, including 785/785 SwiftPM tests and its source-state audit. No signed physical two-App mailbox/HMAC round
+  trip, connected-radio queue admission, RF airtime, remote receipt, multi-endpoint Apple Gateway, TestFlight, or App
+  Store evidence follows from the source change.
+
 ## Golden Context (stable across sessions)
 - Always check `.skills/compose-ui/strings-index.txt` before reading `strings.xml`.
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.

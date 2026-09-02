@@ -115,6 +115,9 @@
     <string name="bluetooth_feature_config_description">Wirelessly manage your device settings and channels.</string>
     <string name="bluetooth_feature_discovery">Discovery</string>
     <string name="bluetooth_feature_discovery_description">Find and identify Meshtastic devices near you.</string>
+    <string name="bluetooth_pairing_continue">Continue</string>
+    <string name="bluetooth_pairing_instructions">Keep this screen open. If this node is not paired yet, iOS will show a Bluetooth Pairing Request over NTsocial MeshLink. Enter the 6-digit PIN shown on the node display, or its configured fixed PIN, then tap Pair. NTsocial MeshLink never reads or stores the PIN.</string>
+    <string name="bluetooth_pairing_title">Pair with %1$s</string>
     <string name="bluetooth_permission">Bluetooth</string>
     <string name="bold_heading">Bold Heading</string>
     <string name="bottom_nav_settings">Settings</string>

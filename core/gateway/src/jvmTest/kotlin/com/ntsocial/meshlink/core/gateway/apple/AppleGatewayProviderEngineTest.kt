@@ -36,6 +36,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AppleGatewayProviderEngineTest {
@@ -84,6 +85,62 @@ class AppleGatewayProviderEngineTest {
 
         assertEquals(AppleGatewayRejectionReason.INVALID_ROUTE, outcome.result.reason)
         assertNotEquals(priorGeneration, store.readStatus()?.radioGeneration)
+        assertEquals(0, radio.admissions.size)
+    }
+
+    @Test
+    fun `ready liveness refresh keeps the projected route fresh beyond its original ttl`() = runTest {
+        val radio = FakeRadioPort()
+        val registry = AppleGatewayRouteRegistry(DeterministicAppleGatewayRandomSource())
+        val engine = engine(privateLedger(), radio, registry)
+        engine.refreshProjection(NOW)
+        val original = store.readChannels().single()
+
+        engine.refreshProjectionIfReady(NOW + AppleGatewayContract.ROUTE_TTL_MILLIS / 2)
+        engine.refreshProjectionIfReady(NOW + AppleGatewayContract.ROUTE_TTL_MILLIS + 1)
+        val renewed = store.readChannels().single()
+
+        assertEquals(original.radioGeneration, renewed.radioGeneration)
+        assertNotEquals(original.routeToken, renewed.routeToken)
+        assertEquals(NOW + AppleGatewayContract.ROUTE_TTL_MILLIS * 2 + 1, renewed.routeExpiresAtMillis)
+        assertTrue(renewed.routeExpiresAtMillis > NOW + AppleGatewayContract.ROUTE_TTL_MILLIS)
+    }
+
+    @Test
+    fun `liveness refresh does not publish or wake while radio is not ready`() = runTest {
+        val radio = FakeRadioPort()
+        var wakeCount = 0
+        val engine = engine(ledger = privateLedger(), radio = radio, wakeSink = AppleGatewayWakeSink { wakeCount += 1 })
+        engine.refreshProjection(NOW)
+        val originalStatus = store.readStatus()
+        val originalChannels = store.readChannels()
+        assertEquals(1, wakeCount)
+        radio.snapshotValue =
+            radio.snapshotValue.copy(readiness = AppleGatewayReadiness.DISCONNECTED, channels = emptyList())
+
+        assertNull(engine.refreshProjectionIfReady(NOW + AppleGatewayContract.ROUTE_TTL_MILLIS / 2))
+
+        assertEquals(originalStatus, store.readStatus())
+        assertEquals(originalChannels, store.readChannels())
+        assertEquals(1, wakeCount)
+    }
+
+    @Test
+    fun `liveness refresh rotates private context and cannot revive the stale route`() = runTest {
+        val radio = FakeRadioPort()
+        val engine = engine(privateLedger(), radio)
+        engine.refreshProjection(NOW)
+        val staleCommand = signedCommand(store.readChannels().single())
+        radio.snapshotValue = radio.snapshotValue.copy(routingContext = "changed-context".encodeUtf8())
+
+        engine.refreshProjectionIfReady(NOW + 1)
+        val current = store.readChannels().single()
+        assertNotEquals(staleCommand.radioGeneration, current.radioGeneration)
+        store.enqueueCommand(staleCommand, NOW + 1)
+
+        val outcome = assertIs<AppleGatewayProcessOutcome.Rejected>(engine.processNext(NOW + 2))
+
+        assertEquals(AppleGatewayRejectionReason.INVALID_ROUTE, outcome.result.reason)
         assertEquals(0, radio.admissions.size)
     }
 
@@ -306,6 +363,7 @@ class AppleGatewayProviderEngineTest {
         radio: FakeRadioPort,
         registry: AppleGatewayRouteRegistry = AppleGatewayRouteRegistry(DeterministicAppleGatewayRandomSource()),
         providerId: String = "provider-instance",
+        wakeSink: AppleGatewayWakeSink = NoopAppleGatewayWakeSink,
     ) = AppleGatewayProviderEngine(
         store = store,
         ledger = ledger,
@@ -313,6 +371,7 @@ class AppleGatewayProviderEngineTest {
         routeRegistry = registry,
         credentials = AppleGatewayCallerCredentials(CALLER, 1, KEY),
         providerInstanceId = providerId,
+        wakeSink = wakeSink,
     )
 
     private fun privateLedger() = AppleGatewayPrivateLedger(directory.resolve("private.sqlite").toString())

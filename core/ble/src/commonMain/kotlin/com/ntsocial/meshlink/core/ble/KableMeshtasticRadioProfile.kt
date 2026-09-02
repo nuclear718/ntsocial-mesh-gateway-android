@@ -77,15 +77,23 @@ class KableMeshtasticRadioProfile(private val service: BleService) : MeshtasticR
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
     override val fromRadio: Flow<ByteArray> = channelFlow {
         launch {
-            if (service.hasCharacteristic(fromNum)) {
-                service
-                    .observe(fromNum) {
-                        Logger.d { "FROMNUM CCCD written — notifications enabled" }
-                        subscriptionReady.complete(Unit)
-                    }
-                    .collect { triggerDrain.tryEmit(Unit) }
-            } else {
-                subscriptionReady.complete(Unit)
+            try {
+                if (service.hasCharacteristic(fromNum)) {
+                    service
+                        .observe(fromNum) {
+                            Logger.d { "FROMNUM CCCD written — notifications enabled" }
+                            subscriptionReady.complete(Unit)
+                        }
+                        .collect { triggerDrain.tryEmit(Unit) }
+                } else {
+                    subscriptionReady.complete(Unit)
+                }
+            } catch (error: Exception) {
+                // FROMNUM is encrypted on Meshtastic radios. On iOS this subscription owns the native PIN sheet, so
+                // wrong/cancelled pairing must release awaitSubscriptionReady immediately instead of hanging until the
+                // outer profile timeout.
+                subscriptionReady.completeExceptionally(error)
+                throw error
             }
         }
         triggerDrain.tryEmit(Unit)

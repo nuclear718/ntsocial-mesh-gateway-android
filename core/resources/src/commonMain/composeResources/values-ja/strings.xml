@@ -77,6 +77,9 @@
     <string name="bluetooth">Bluetooth</string>
     <string name="bluetooth_config">Bluetooth 設定</string>
     <string name="bluetooth_enabled">Bluetoothを有効</string>
+    <string name="bluetooth_pairing_continue">続ける</string>
+    <string name="bluetooth_pairing_instructions">この画面を開いたままにしてください。このノードが未ペアリングの場合、iOS が NTsocial MeshLink の上に Bluetooth ペアリング要求を表示します。ノードの画面に表示された6桁のPIN、または設定済みの固定PINを入力してから「ペアリング」をタップしてください。NTsocial MeshLink がPINを読み取ったり保存したりすることはありません。</string>
+    <string name="bluetooth_pairing_title">%1$s とペアリング</string>
     <string name="bluetooth_feature_config">設定</string>
     <string name="bluetooth_feature_config_description">デバイスの設定とチャンネルをワイヤレスで管理します。</string>
     <string name="bluetooth_feature_discovery">ディスカバリー</string>

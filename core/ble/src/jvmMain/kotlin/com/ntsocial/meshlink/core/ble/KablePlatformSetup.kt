@@ -27,6 +27,8 @@ package com.ntsocial.meshlink.core.ble
 import com.juul.kable.Peripheral
 import com.juul.kable.PeripheralBuilder
 import com.juul.kable.toIdentifier
+import kotlin.time.Duration
+import kotlin.uuid.Uuid
 
 internal actual fun initializePlatformBle() = Unit
 
@@ -34,8 +36,12 @@ internal actual fun PeripheralBuilder.platformConfig(device: BleDevice, autoConn
     // Desktop Kable uses direct connections without needing autoConnect.
 }
 
+internal actual fun platformProfileSetupTimeout(serviceUuid: Uuid, requested: Duration): Duration = requested
+
 internal actual fun createPeripheral(address: String, builderAction: PeripheralBuilder.() -> Unit): Peripheral =
     com.juul.kable.Peripheral(address.toIdentifier(), builderAction)
+
+internal actual fun takePlatformPreparedPeripheral(address: String): PlatformPreparedPeripheral? = null
 
 // JVM/desktop Kable does not expose an MTU StateFlow; return a reasonable default (512)
 // so callers can size their writes without falling back to an overly conservative minimum.

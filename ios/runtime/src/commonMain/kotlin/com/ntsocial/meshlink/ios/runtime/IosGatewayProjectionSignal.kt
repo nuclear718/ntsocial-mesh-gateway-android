@@ -25,11 +25,18 @@
 package com.ntsocial.meshlink.ios.runtime
 
 import com.ntsocial.meshlink.core.ble.BluetoothState
+import com.ntsocial.meshlink.core.gateway.apple.AppleGatewayContract
 import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.repository.RadioSessionState
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import org.meshtastic.proto.ChannelSet
 
 internal data class IosGatewayProjectionSignal(
@@ -76,3 +83,25 @@ internal fun iosGatewayProjectionSignals(
     }
         .distinctUntilChanged()
 }
+
+/** Emits only delayed foreground ticks; foreground entry itself is handled by the explicit command/projection wake. */
+internal fun iosGatewayRouteRefreshSignals(
+    hostActive: Flow<Boolean>,
+    refreshIntervalMillis: Long = IOS_GATEWAY_ROUTE_REFRESH_INTERVAL_MILLIS,
+): Flow<Unit> {
+    require(refreshIntervalMillis in 1 until AppleGatewayContract.ROUTE_TTL_MILLIS)
+    return hostActive.distinctUntilChanged().flatMapLatest { active ->
+        if (!active) {
+            emptyFlow()
+        } else {
+            flow {
+                while (currentCoroutineContext().isActive) {
+                    delay(refreshIntervalMillis)
+                    emit(Unit)
+                }
+            }
+        }
+    }
+}
+
+internal const val IOS_GATEWAY_ROUTE_REFRESH_INTERVAL_MILLIS = AppleGatewayContract.ROUTE_TTL_MILLIS / 2

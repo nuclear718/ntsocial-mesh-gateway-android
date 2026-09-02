@@ -60,6 +60,9 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlin.time.Duration.Companion.seconds
 
+/** User-visible, credential-free context shown immediately before iOS requests native Bluetooth pairing. */
+data class BluetoothPairingGuidance(val deviceName: String)
+
 /**
  * Platform-neutral ViewModel that drives the Connections screen: device discovery (BLE/USB/TCP), scan state, current
  * selection, and connection-progress chatter.
@@ -96,6 +99,10 @@ open class ScannerViewModel(
      * `ConnectionsViewModel.connectionStatus` so the UI can choose `progress ?: status`.
      */
     val connectionProgressText: StateFlow<String?> = _connectionProgressText.asStateFlow()
+
+    private val _bluetoothPairingGuidance = MutableStateFlow<BluetoothPairingGuidance?>(null)
+    val bluetoothPairingGuidance: StateFlow<BluetoothPairingGuidance?> = _bluetoothPairingGuidance.asStateFlow()
+    private var pendingBluetoothPairingAction: (() -> Unit)? = null
 
     // ── BLE scanning ──────────────────────────────────────────────────────────────────────────
     private val _isBleScanning = MutableStateFlow(false)
@@ -155,6 +162,8 @@ open class ScannerViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        pendingBluetoothPairingAction = null
+        _bluetoothPairingGuidance.value = null
         stopBleScan()
         stopNetworkScan()
         Logger.d { "ScannerViewModel cleared" }
@@ -362,6 +371,30 @@ open class ScannerViewModel(
      */
     protected open fun requestBonding(entry: DeviceListEntry.Ble) {
         connectSelected(entry)
+    }
+
+    /**
+     * Presents credential-free preparation before a platform-owned pairing prompt.
+     *
+     * The PIN is intentionally absent from both this state and [onContinue]. CoreBluetooth owns the secure input sheet;
+     * MeshLink only explains where the user can find the PIN and starts the protected GATT operation after
+     * confirmation.
+     */
+    internal fun requestBluetoothPairingGuidance(deviceName: String, onContinue: () -> Unit) {
+        pendingBluetoothPairingAction = onContinue
+        _bluetoothPairingGuidance.value = BluetoothPairingGuidance(deviceName = deviceName)
+    }
+
+    fun continueBluetoothPairing() {
+        val action = pendingBluetoothPairingAction ?: return
+        pendingBluetoothPairingAction = null
+        _bluetoothPairingGuidance.value = null
+        action()
+    }
+
+    fun dismissBluetoothPairingGuidance() {
+        pendingBluetoothPairingAction = null
+        _bluetoothPairingGuidance.value = null
     }
 
     protected open fun requestPermission(entry: DeviceListEntry.Usb) = Unit

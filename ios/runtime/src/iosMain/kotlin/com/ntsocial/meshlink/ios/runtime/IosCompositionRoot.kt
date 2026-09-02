@@ -53,6 +53,7 @@ internal class IosCompositionRoot {
         get() = application.koin
 
     private var started = false
+    private var hostActive = false
     private var gatewayConfiguration: AppleGatewayRuntimeConfiguration? = null
     private var gatewayCoordinator: IosAppleGatewayCoordinator? = null
     private val lifecycleScope by lazy { CoroutineScope(SupervisorJob() + koin.get<CoroutineDispatchers>().default) }
@@ -89,8 +90,9 @@ internal class IosCompositionRoot {
     }
 
     fun setHostActive(active: Boolean) {
+        hostActive = active
         koin.get<IosProcessLifecycleOwner>().setActive(active)
-        if (active) gatewayCoordinator?.processCommands()
+        gatewayCoordinator?.setHostActive(active)
     }
 
     fun close() {
@@ -127,7 +129,10 @@ internal class IosCompositionRoot {
                     channelOperationLock = koin.get<ChannelOperationLock>(),
                     dispatchers = koin.get<CoroutineDispatchers>(),
                 )
-                    .also(IosAppleGatewayCoordinator::start)
+                    .also { coordinator ->
+                        coordinator.start()
+                        coordinator.setHostActive(hostActive)
+                    }
             } catch (error: Exception) {
                 Logger.e(error) { "Apple Gateway configuration was rejected" }
                 null

@@ -27,12 +27,17 @@ package com.ntsocial.meshlink.feature.connections
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
+import com.ntsocial.meshlink.core.ble.BleDevice
+import com.ntsocial.meshlink.core.ble.BlePairingException
 import com.ntsocial.meshlink.core.ble.BleScanner
+import com.ntsocial.meshlink.core.ble.BluetoothRepository
+import com.ntsocial.meshlink.core.ble.MeshtasticBleDevice
 import com.ntsocial.meshlink.core.datastore.RecentAddressesDataSource
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.network.repository.NetworkRepository
 import com.ntsocial.meshlink.core.radiofleet.DiscoveredRadio
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
 import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.RadioPrefs
@@ -57,6 +62,7 @@ class IosScannerViewModel(
     dispatchers: CoroutineDispatchers,
     uiPrefs: UiPrefs,
     bleScanner: BleScanner? = null,
+    private val bluetoothRepository: BluetoothRepository,
     private val radioFleetManager: RadioFleetManager,
 ) : ScannerViewModel(
     serviceRepository,
@@ -70,6 +76,36 @@ class IosScannerViewModel(
     uiPrefs,
     bleScanner,
 ) {
+    override fun requestBonding(entry: DeviceListEntry.Ble) {
+        requestBluetoothPairingGuidance(deviceName = entry.name) {
+            viewModelScope.launch { pairAndConnect(device = entry.device) { connectSelected(entry) } }
+        }
+    }
+
+    /** Routes reconnects from an existing iOS fleet card through the same first-pairing preparation. */
+    fun requestFleetConnection(endpointId: RadioEndpointId, deviceName: String) {
+        requestBluetoothPairingGuidance(deviceName = deviceName) {
+            viewModelScope.launch {
+                val profile = radioFleetManager.snapshots.value[endpointId]?.profile ?: return@launch
+                radioFleetManager.disconnect(endpointId)
+                val address = profile.transportAddress.removePrefix("x").removePrefix("!")
+                pairAndConnect(device = MeshtasticBleDevice(address = address, name = deviceName)) {
+                    radioFleetManager.connect(endpointId)
+                }
+            }
+        }
+    }
+
+    private suspend fun pairAndConnect(device: BleDevice, onPaired: suspend () -> Unit) {
+        try {
+            bluetoothRepository.bond(device)
+            onPaired()
+        } catch (pairing: BlePairingException) {
+            Logger.w(pairing) { "iOS native Bluetooth pairing did not complete" }
+            serviceRepository.setErrorMessage(pairing.message.orEmpty(), Severity.Warn)
+        }
+    }
+
     override fun connectSelected(entry: DeviceListEntry) {
         addRecentAddress(entry.fullAddress, entry.name)
         viewModelScope.launch {
@@ -79,12 +115,15 @@ class IosScannerViewModel(
                         candidate = DiscoveredRadio(transportAddress = entry.fullAddress, displayName = entry.name),
                         connect = false,
                     )
+                // A prior failed first-pairing attempt can leave the primary transport in Connecting. Stop it
+                // before
+                // handing the already-connected pairing peripheral to the authoritative endpoint session.
+                radioFleetManager.disconnect(profile.id)
                 if (profile.legacyPrimary) {
                     radioPrefs.setDevName(entry.name)
                     changeDeviceAddress(entry.fullAddress)
-                } else {
-                    radioFleetManager.connect(profile.id)
                 }
+                radioFleetManager.connect(profile.id)
             }
                 .onFailure { error ->
                     Logger.w(error) { "Unable to add iOS Meshtastic endpoint" }
