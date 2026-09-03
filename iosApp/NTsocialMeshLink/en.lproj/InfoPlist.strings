@@ -1,3 +1,12 @@
 /* NTsocial MeshLink original work and modifications. SPDX-License-Identifier: GPL-3.0-or-later */
 "CFBundleDisplayName" = "NTsocial MeshLink";
 "NSBluetoothAlwaysUsageDescription" = "NTsocial MeshLink uses Bluetooth to connect to your selected Meshtastic radio and provide LoRa communication.";
+"NSCameraUsageDescription" = "NTsocial MeshLink uses the camera to scan Meshtastic channel QR codes. QR contents are processed on this device.";
+"NTSocialScannerCancel" = "Cancel";
+"NTSocialScannerOkay" = "OK";
+"NTSocialScannerOpenSettings" = "Open Settings";
+"NTSocialScannerPermissionMessage" = "Allow camera access in Settings to scan Meshtastic channel QR codes. QR contents stay on this device.";
+"NTSocialScannerPermissionTitle" = "Camera Access Needed";
+"NTSocialScannerTitle" = "Scan QR Code";
+"NTSocialScannerUnavailableMessage" = "The camera is unavailable. Close other camera apps and try again.";
+"NTSocialScannerUnavailableTitle" = "Scanner Unavailable";

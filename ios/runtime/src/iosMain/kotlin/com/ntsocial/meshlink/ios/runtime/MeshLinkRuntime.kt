@@ -24,6 +24,10 @@
  */
 package com.ntsocial.meshlink.ios.runtime
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.window.ComposeUIViewController
 import com.ntsocial.meshlink.core.ble.BleScanner
 import com.ntsocial.meshlink.core.ble.BluetoothRepository
@@ -31,6 +35,9 @@ import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.ServiceRepository
+import com.ntsocial.meshlink.core.ui.util.BarcodeScanner
+import com.ntsocial.meshlink.core.ui.util.LocalChannelBarcodeScannerProvider
+import com.ntsocial.meshlink.core.ui.util.LocalChannelBarcodeScannerSupported
 import kotlinx.coroutines.MainScope
 import org.koin.compose.KoinIsolatedContext
 import platform.UIKit.UIViewController
@@ -39,6 +46,7 @@ import platform.UIKit.UIViewController
 object MeshLinkRuntime {
     private val compositionRoot = IosCompositionRoot()
     private val controllerScope = MainScope()
+    private val barcodeScannerCoordinator = IosBarcodeScannerCoordinator()
     private val shellController: IosShellController by lazy {
         val koin = compositionRoot.koin
         IosShellController(
@@ -67,10 +75,22 @@ object MeshLinkRuntime {
         compositionRoot.processGatewayCommands()
     }
 
+    fun configureBarcodeScanner(host: IosBarcodeScannerHost) {
+        barcodeScannerCoordinator.install(host)
+    }
+
+    fun removeBarcodeScanner(host: IosBarcodeScannerHost) {
+        barcodeScannerCoordinator.uninstall(host)
+    }
+
+    fun handleBarcodeScanResult(requestId: Long, contents: String?) {
+        barcodeScannerCoordinator.complete(requestId, contents)
+    }
+
     fun makeRootViewController(): UIViewController {
         compositionRoot.start()
         return ComposeUIViewController {
-            KoinIsolatedContext(context = compositionRoot.application) { IosShellApp(shellController) }
+            KoinIsolatedContext(context = compositionRoot.application) { IosPlatformProviders() }
         }
     }
 
@@ -83,6 +103,28 @@ object MeshLinkRuntime {
         shellController.handleOpenUrl(url)
         if (url == com.ntsocial.meshlink.core.gateway.apple.AppleGatewayContract.PROCESS_DEEP_LINK) {
             compositionRoot.processGatewayCommands()
+        }
+    }
+
+    @Composable
+    private fun IosPlatformProviders() {
+        CompositionLocalProvider(
+            LocalChannelBarcodeScannerProvider provides { onResult -> rememberIosBarcodeScanner(onResult) },
+            LocalChannelBarcodeScannerSupported provides barcodeScannerCoordinator.isSupported,
+        ) {
+            IosShellApp(shellController)
+        }
+    }
+
+    @Composable
+    private fun rememberIosBarcodeScanner(onResult: (String?) -> Unit): BarcodeScanner {
+        val currentOnResult = rememberUpdatedState(onResult)
+        return remember {
+            object : BarcodeScanner {
+                override fun startScan() {
+                    barcodeScannerCoordinator.startScan { contents -> currentOnResult.value(contents) }
+                }
+            }
         }
     }
 }

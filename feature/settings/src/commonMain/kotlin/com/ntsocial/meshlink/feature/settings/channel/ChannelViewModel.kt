@@ -25,7 +25,6 @@
 package com.ntsocial.meshlink.feature.settings.channel
 
 import androidx.lifecycle.ViewModel
-import co.touchlab.kermit.Logger
 import com.ntsocial.meshlink.core.common.util.CommonUri
 import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.model.util.toChannelSet
@@ -99,11 +98,7 @@ class ChannelViewModel(
      * Accepts any string that [CommonUri.parse] can handle (e.g. the result of `android.net.Uri.toString()`).
      */
     fun requestChannelUrl(url: String, onError: () -> Unit) =
-        runCatching { _requestChannelSet.value = CommonUri.parse(url).toChannelSet() }
-            .onFailure { ex ->
-                Logger.e(ex) { "Channel url error" }
-                onError()
-            }
+        runCatching { _requestChannelSet.value = CommonUri.parse(url).toChannelSet() }.onFailure { onError() }
 
     fun clearRequestChannelUrl() {
         _requestChannelSet.value = null

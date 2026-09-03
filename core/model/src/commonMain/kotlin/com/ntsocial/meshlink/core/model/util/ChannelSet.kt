@@ -47,22 +47,28 @@ fun CommonUri.toChannelSet(): ChannelSet {
     val isCorrectPath = segments.any { it.equals("e", ignoreCase = true) }
 
     if (fragment.isNullOrBlank() || !isCorrectHost || !isCorrectPath) {
-        throw MalformedMeshtasticUrlException("Not a valid Meshtastic URL: ${toString().take(40)}")
+        malformedChannelUrl("Not a valid Meshtastic channel URL")
     }
 
     // Older versions of Meshtastic clients (Apple/web) included `?add=true` within the URL fragment.
     // This gracefully handles those cases until the newer version are generally available/used.
     val fragmentBase64 = fragment!!.substringBefore('?').replace('-', '+').replace('_', '/')
     val fragmentBytes =
-        fragmentBase64.decodeBase64()
-            ?: throw MalformedMeshtasticUrlException("Invalid Base64 in URL fragment: $fragmentBase64")
-    val url = ChannelSet.ADAPTER.decode(fragmentBytes)
+        fragmentBase64.decodeBase64() ?: malformedChannelUrl("Invalid Meshtastic channel payload encoding")
+    val url =
+        try {
+            ChannelSet.ADAPTER.decode(fragmentBytes)
+        } catch (_: Exception) {
+            malformedChannelUrl("Invalid Meshtastic channel payload")
+        }
     val shouldAdd =
         fragment?.substringAfter('?', "")?.takeUnless { it.isBlank() }?.equals("add=true")
             ?: getBooleanQueryParameter("add", false)
 
     return if (shouldAdd) url.copy(lora_config = null) else url
 }
+
+private fun malformedChannelUrl(message: String): Nothing = throw MalformedMeshtasticUrlException(message)
 
 /** @return A list of globally unique channel IDs usable with MQTT subscribe() */
 val ChannelSet.subscribeList: List<String>

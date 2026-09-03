@@ -41,6 +41,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -78,6 +79,7 @@ import com.ntsocial.meshlink.core.resources.apply
 import com.ntsocial.meshlink.core.resources.are_you_sure_change_default
 import com.ntsocial.meshlink.core.resources.cancel
 import com.ntsocial.meshlink.core.resources.channel_apply_verified
+import com.ntsocial.meshlink.core.resources.channel_invalid
 import com.ntsocial.meshlink.core.resources.channel_protection_disabled
 import com.ntsocial.meshlink.core.resources.channel_protection_save
 import com.ntsocial.meshlink.core.resources.channel_protection_saved
@@ -92,6 +94,7 @@ import com.ntsocial.meshlink.core.resources.navigate_into_label
 import com.ntsocial.meshlink.core.resources.replace
 import com.ntsocial.meshlink.core.resources.reset
 import com.ntsocial.meshlink.core.resources.reset_to_defaults
+import com.ntsocial.meshlink.core.resources.scan_channels_qr
 import com.ntsocial.meshlink.core.resources.share_channels_qr
 import com.ntsocial.meshlink.core.ui.component.AdaptiveTwoPane
 import com.ntsocial.meshlink.core.ui.component.ChannelApplyStatus
@@ -104,7 +107,13 @@ import com.ntsocial.meshlink.core.ui.component.QrDialog
 import com.ntsocial.meshlink.core.ui.icon.ChevronRight
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.QrCode
+import com.ntsocial.meshlink.core.ui.icon.QrCodeScanner
 import com.ntsocial.meshlink.core.ui.qr.ScannedQrCodeDialog
+import com.ntsocial.meshlink.core.ui.util.LocalBarcodeScannerProvider
+import com.ntsocial.meshlink.core.ui.util.LocalBarcodeScannerSupported
+import com.ntsocial.meshlink.core.ui.util.LocalChannelBarcodeScannerProvider
+import com.ntsocial.meshlink.core.ui.util.LocalChannelBarcodeScannerSupported
+import com.ntsocial.meshlink.core.ui.util.SnackbarManager
 import com.ntsocial.meshlink.core.ui.util.rememberQrCodePainter
 import com.ntsocial.meshlink.core.ui.util.rememberShowToastResource
 import com.ntsocial.meshlink.feature.settings.channel.ChannelViewModel
@@ -113,6 +122,7 @@ import com.ntsocial.meshlink.feature.settings.navigation.getNavRouteFrom
 import com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel
 import com.ntsocial.meshlink.feature.settings.radio.component.PacketResponseStateDialog
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
@@ -187,6 +197,20 @@ fun ChannelScreen(
         channelSet.copy(settings = channelSet.settings.filterIndexed { i, _ -> channelSelections.getOrNull(i) == true })
 
     val showToast = rememberShowToastResource()
+    val snackbarManager = koinInject<SnackbarManager>()
+    val invalidChannelMessage = stringResource(Res.string.channel_invalid)
+    val isGeneralBarcodeScannerSupported = LocalBarcodeScannerSupported.current
+    val generalBarcodeScannerProvider = LocalBarcodeScannerProvider.current
+    val isChannelBarcodeScannerSupported = LocalChannelBarcodeScannerSupported.current
+    val channelBarcodeScannerProvider = LocalChannelBarcodeScannerProvider.current
+    val isBarcodeScannerSupported = isGeneralBarcodeScannerSupported || isChannelBarcodeScannerSupported
+    val barcodeScannerProvider =
+        if (isChannelBarcodeScannerSupported) channelBarcodeScannerProvider else generalBarcodeScannerProvider
+    val barcodeScanner = barcodeScannerProvider { contents ->
+        contents?.let { url ->
+            viewModel.requestChannelUrl(url) { snackbarManager.showSnackbar(invalidChannelMessage) }
+        }
+    }
 
     LaunchedEffect(channelOperationResult) {
         val result = channelOperationResult ?: return@LaunchedEffect
@@ -263,7 +287,16 @@ fun ChannelScreen(
                 showNodeChip = false,
                 canNavigateUp = true,
                 onNavigateUp = onNavigateUp,
-                actions = {},
+                actions = {
+                    if (isBarcodeScannerSupported) {
+                        IconButton(onClick = barcodeScanner::startScan, enabled = enabled) {
+                            Icon(
+                                imageVector = MeshtasticIcons.QrCodeScanner,
+                                contentDescription = stringResource(Res.string.scan_channels_qr),
+                            )
+                        }
+                    }
+                },
                 onClickChip = {},
             )
         },

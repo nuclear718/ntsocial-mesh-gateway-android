@@ -24,12 +24,15 @@
  */
 package com.ntsocial.meshlink.core.model.util
 
+import com.ntsocial.meshlink.core.common.util.CommonUri
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -64,5 +67,30 @@ class ChannelSetUrlTest {
         assertTrue(url.toString().length > 500)
         assertEquals(original.settings, parsed.settings)
         assertNull(parsed.lora_config)
+    }
+
+    @Test
+    fun malformedChannelUrlExceptionDoesNotExposeScannedContents() {
+        val secret = "otpauth-secret-value"
+
+        val exception =
+            assertFailsWith<MalformedMeshtasticUrlException> {
+                CommonUri.parse("https://example.invalid/e/#$secret").toChannelSet()
+            }
+
+        assertFalse(exception.message.orEmpty().contains(secret))
+        assertFalse(exception.message.orEmpty().contains("example.invalid"))
+    }
+
+    @Test
+    fun invalidChannelPayloadExceptionDoesNotExposeFragment() {
+        val secret = "private-channel-psk!"
+
+        val exception =
+            assertFailsWith<MalformedMeshtasticUrlException> {
+                CommonUri.parse("https://meshtastic.org/e/#$secret").toChannelSet()
+            }
+
+        assertFalse(exception.message.orEmpty().contains(secret))
     }
 }

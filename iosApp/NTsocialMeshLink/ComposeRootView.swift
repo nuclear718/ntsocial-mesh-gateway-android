@@ -11,12 +11,33 @@ import MeshLinkKit
 import SwiftUI
 import UIKit
 
+@MainActor
 struct ComposeRootView: UIViewControllerRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeUIViewController(context: Context) -> UIViewController {
-        MeshLinkRuntime.shared.makeRootViewController()
+        let scannerHost = BarcodeScannerHost()
+        context.coordinator.scannerHost = scannerHost
+        MeshLinkRuntime.shared.configureBarcodeScanner(host: scannerHost)
+        let controller = MeshLinkRuntime.shared.makeRootViewController()
+        scannerHost.presentingViewController = controller
+        return controller
     }
 
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
         // Compose owns the rendered state; SwiftUI owns only the host lifecycle.
+    }
+
+    static func dismantleUIViewController(_ uiViewController: UIViewController, coordinator: Coordinator) {
+        guard let scannerHost = coordinator.scannerHost else { return }
+        MeshLinkRuntime.shared.removeBarcodeScanner(host: scannerHost)
+        scannerHost.invalidate()
+        coordinator.scannerHost = nil
+    }
+
+    final class Coordinator {
+        var scannerHost: BarcodeScannerHost?
     }
 }

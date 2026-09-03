@@ -1,3 +1,12 @@
 /* NTsocial MeshLink original work and modifications. SPDX-License-Identifier: GPL-3.0-or-later */
 "CFBundleDisplayName" = "NTsocial MeshLink";
 "NSBluetoothAlwaysUsageDescription" = "NTsocial MeshLink 會使用藍牙連接您選擇的 Meshtastic 無線電，並提供 LoRa 通訊。";
+"NSCameraUsageDescription" = "NTsocial MeshLink 使用相機掃描 Meshtastic 頻道 QR Code；內容只在此裝置上處理。";
+"NTSocialScannerCancel" = "取消";
+"NTSocialScannerOkay" = "好";
+"NTSocialScannerOpenSettings" = "開啟設定";
+"NTSocialScannerPermissionMessage" = "請在「設定」中允許相機存取權，才能掃描 Meshtastic 頻道 QR Code；內容只在此裝置上處理。";
+"NTSocialScannerPermissionTitle" = "需要相機存取權";
+"NTSocialScannerTitle" = "掃描 QR Code";
+"NTSocialScannerUnavailableMessage" = "目前無法使用相機。請關閉其他使用相機的 App，然後再試一次。";
+"NTSocialScannerUnavailableTitle" = "無法使用掃描器";

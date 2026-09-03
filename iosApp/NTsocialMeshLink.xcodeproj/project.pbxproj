@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A40000000000000000000001 /* NTsocialMeshLinkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000001 /* NTsocialMeshLinkApp.swift */; };
 		A40000000000000000000002 /* ComposeRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000002 /* ComposeRootView.swift */; };
+		A40000000000000000000008 /* BarcodeScannerHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3000000000000000000000E /* BarcodeScannerHost.swift */; };
 		A40000000000000000000004 /* AppleGatewayBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000007 /* AppleGatewayBootstrap.swift */; };
 		A40000000000000000000005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000008 /* PrivacyInfo.xcprivacy */; };
 		A40000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000009 /* Assets.xcassets */; };
@@ -18,6 +19,7 @@
 /* Begin PBXFileReference section */
 		A30000000000000000000001 /* NTsocialMeshLinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NTsocialMeshLinkApp.swift; sourceTree = "<group>"; };
 		A30000000000000000000002 /* ComposeRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeRootView.swift; sourceTree = "<group>"; };
+		A3000000000000000000000E /* BarcodeScannerHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeScannerHost.swift; sourceTree = "<group>"; };
 		A30000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A30000000000000000000004 /* NTsocialMeshLink.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NTsocialMeshLink.entitlements; sourceTree = "<group>"; };
 		A30000000000000000000005 /* NTsocial MeshLink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "NTsocial MeshLink.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -63,6 +65,7 @@
 			children = (
 				A30000000000000000000001 /* NTsocialMeshLinkApp.swift */,
 				A30000000000000000000002 /* ComposeRootView.swift */,
+				A3000000000000000000000E /* BarcodeScannerHost.swift */,
 				A30000000000000000000007 /* AppleGatewayBootstrap.swift */,
 				A30000000000000000000003 /* Info.plist */,
 				A20000000000000000000005 /* InfoPlist.strings */,
@@ -201,6 +204,7 @@
 			files = (
 				A40000000000000000000001 /* NTsocialMeshLinkApp.swift in Sources */,
 				A40000000000000000000002 /* ComposeRootView.swift in Sources */,
+				A40000000000000000000008 /* BarcodeScannerHost.swift in Sources */,
 				A40000000000000000000004 /* AppleGatewayBootstrap.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -1969,3 +1969,18 @@
 - Evidence does not include RF/remote receipt, concurrent multi-radio iPhone operation, manual binding to an ordinary
   joined NTsocial channel, Release/TestFlight/App Store, or a post-fix Channels-screen visual run. Full report:
   `IOS_RESTORED_BLE_SESSION_RECOVERY_REMEDIATION_REPORT_2026-09-03.md`.
+
+## 2026-09-03 - iOS in-channel Meshtastic QR scanner
+- The endpoint-scoped Channels page now launches a QR-only VisionKit scanner with the same mask, square reticle,
+  corner dimensions, and close placement as Android. Results feed the selected endpoint's existing shared
+  Add/secondary-replace/full-replace dialog and exact-session channel apply path.
+- The iOS scanner capability is deliberately Channels-only. Nodes, Contacts, and Wi-Fi retain their prior unavailable
+  scanner state so a selected secondary radio cannot fall through a root/legacy-primary dialog. Native request tokens
+  reject duplicate/stale completions; camera teardown is synchronous and scanned content is not logged. Channel parse
+  errors are redacted.
+- Focused formatting, JVM tests, Simulator framework compilation, Xcode Debug, and the signed arm64 Debug host
+  build passed. The final Debug App was data-preserving installed on both connected iPhone 15 devices. On the phone
+  connected to a Meshtastic node, physical XCUITest opened the Channels scanner, verified its close control and visual
+  reticle, closed it, and returned to Channels; the exact final installed build passed in 18.332 seconds. Both Apps launched.
+- This evidence covers the physical scanner surface and navigation only. No optical QR decode, channel mutation or
+  readback, RF/remote receipt, Release/TestFlight/App Store, or pre-A12 iPad claim is made.
