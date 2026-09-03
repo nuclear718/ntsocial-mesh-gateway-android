@@ -1,6 +1,57 @@
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
 
+## 2026-09-03 - iOS expired Apple Gateway route automatic-recovery remediation
+- Corrected the connected-iPhone failure from the five-phone run in the separately authorized
+  `/Users/curry_tw/Documents/GitHub/NTsocial_release` parent worktree. A send bound by stable MeshLink source now
+  recognizes an expired 120-second route, uses a payload-free wake/deep link, waits boundedly for a coherent READY
+  replacement, rebuilds with the fresh slot/token/generation/capability, and then performs the unchanged strict
+  authenticated mailbox enqueue. Persisted automatic routes restart as historical-only and current projections are
+  invalidated at expiry; numeric-slot fallback was not added.
+- Moved both projection preflight and final synchronous provider/mailbox admission off MainActor, kept BLE admission
+  ahead of route renewal, fenced suspension points against panic/detach epochs, and single-flighted the complete
+  canonical-message BLE-plus-MeshLink operation before the first retry store read. Focused Apple Gateway tests pass
+  45/45 and the complete parent SwiftPM suite passes 794/794; the final signed Debug parent device build succeeds.
+- Data-preserving installed the final NTsocial parent plus MeshLink on the connected iPhone 15 (iOS 26.6.1). The final
+  XCUITest kept MeshLink backgrounded for 135 seconds, used exactly one Send tap, never test-launched/activated
+  MeshLink after expiry, and observed product-driven foreground recovery, READY state, canonical text, no
+  expired/rejected status, and acceptance of all four multipart commands. The MeshLink private ledger advanced
+  exactly 14 -> 18 and all four new rows were `ACCEPTED` (all 18 retained rows accepted). This proves automatic route
+  renewal and local Gateway/radio-queue admission, not RF airtime or remote receipt. Product MeshLink source was not
+  changed; only this memory and the ignored disposable XCUITest harness changed in the MeshLink worktree.
+
+
+## 2026-09-03 - Five-phone NTsocial/MeshLink physical channel-binding and message test
+- Exercised three Android 16 phones and two physical iPhone 15 devices with the user's explicit authorization to send
+  disposable text. At 11:17:10 CST all five NTsocial parent apps were launched concurrently; 32 seconds later every
+  parent and every installed MeshLink companion process was alive, all three Android parents were foreground, and the
+  Android log window plus the captured iOS MeshLink log contained no fatal/crash signal.
+- On the connected Android phone, the parent resolved two live Meshtastic endpoints with 13 total native channels. A
+  disposable private NTsocial channel was bound specifically to each endpoint's `NTsocial` secondary route; the UI
+  showed 2/2 selected and retained the same bindings after reopening. Sending
+  `TEST-MeshLink-Android-20260903-104644` produced canonical parent history/confirmation and 20 accepted Gateway
+  enqueue/dequeue/`to_radio` operations with 20 successful QueueStatus responses. Both independent BLE GATT clients
+  stayed open. The connected iPhone's MeshLink Room log then contained exactly 20 new PRIVATE_APP packets in the same
+  receive window, providing physical Android-to-iPhone Meshtastic RF receipt evidence. The two disposable NTsocial
+  logical channels were not shared membership, so this does not prove parent-to-parent canonical delivery.
+- On the connected iPhone, a disposable parent channel bound to the current `#NTsocial`, secondary slot 1, locked route
+  and the choice survived save/reopen. The first send exposed a real lifecycle defect: while MeshLink was backgrounded,
+  the still-visible route had expired and the command was rejected. Foregrounding MeshLink refreshed status to READY;
+  two subsequent authorized sends each reached 3/3 `ACCEPTED_LOCAL`, and the private durable ledger grew from zero to
+  six distinct ACCEPTED rows while contemporaneous CoreBluetooth writes were present. No corresponding new PRIVATE_APP
+  packet appeared in any of the three Android MeshLink databases, so iPhone-to-Android RF receipt remains unproven and
+  the iOS path is only a partial pass.
+- The two Android no-radio phones exposed zero native channels and no MeshLink radio-channel section, correctly failing
+  closed instead of fabricating bindable routes. The no-radio iPhone's app data likewise had no active channel set or
+  radio database, but its binding-UI test could not start because iOS timed out enabling automation mode on three
+  attempts; the test method never ran and no fixture/state was created, so this is an automation-environment limitation,
+  not evidence of an NTsocial product failure.
+- Cleanup is complete. The connected Android parent left the disposable channel and persisted
+  `lora_fleet_channel_bindings_v3` as `{"version":3,"bindings":[]}`; the connected iPhone has zero manual bindings and
+  no joined disposable channel. No product source was changed and no Gradle gate was needed; only an ignored disposable
+  `.agent_plans` XCUITest harness was extended for this physical test.
+
+
 ## 2026-08-31 - Android simultaneous multi-node BLE runtime remediation
 - On branch `multi_nodes_` from HEAD `98663d1e8e4c421b6d5dc7ce7d4be00eb1914a2a`, reproduced the user's S24 failure:
   the primary Meshtastic radio completed Stage 2 while the secondary endpoint stopped in Error and owned no MeshLink
