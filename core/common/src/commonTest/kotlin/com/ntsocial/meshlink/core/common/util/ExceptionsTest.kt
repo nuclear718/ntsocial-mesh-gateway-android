@@ -24,10 +24,12 @@
  */
 package com.ntsocial.meshlink.core.common.util
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -151,5 +153,21 @@ class ExceptionsTest {
         Exceptions.reporter = null
         // Should not crash
         exceptionReporter { throw RuntimeException("no reporter configured") }
+    }
+
+    // ---------- safeCatching ----------
+
+    @Test
+    fun `safeCatching returns ordinary failures`() {
+        val result = safeCatching<Unit> { throw IllegalStateException("expected") }
+
+        assertTrue(result.exceptionOrNull() is IllegalStateException)
+    }
+
+    @Test
+    fun `safeCatching rethrows coroutine cancellation`() {
+        assertFailsWith<CancellationException> {
+            safeCatching<Unit> { throw CancellationException("expected cancellation") }
+        }
     }
 }

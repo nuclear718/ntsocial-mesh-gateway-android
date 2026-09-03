@@ -40,6 +40,19 @@ interface BluetoothRepository {
     /** Returns true if the given address is bonded. */
     fun isBonded(address: String): Boolean
 
+    /**
+     * Resolves a previously known device without requiring a current advertisement.
+     *
+     * The default implementation uses the platform's bonded-device snapshot. Apple platforms override this because
+     * CoreBluetooth has no public bond list: the override reconstructs the saved identifier and completes protected
+     * GATT verification before returning, so the same prepared session can be handed to the transport without a scan.
+     */
+    suspend fun prepareKnownDevice(address: String): BleDevice? =
+        state.value.bondedDevices.firstOrNull { it.address.equals(address, ignoreCase = true) }
+
+    /** Releases a platform-prepared connection that was not claimed by a [BleConnection]. */
+    suspend fun discardPreparedDevice(device: BleDevice) = Unit
+
     /** Initiates bonding with the given device. */
     suspend fun bond(device: BleDevice)
 }

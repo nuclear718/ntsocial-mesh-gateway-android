@@ -33,6 +33,9 @@ import kotlin.uuid.Uuid
 /** Initializes platform BLE facilities before Kable creates its central manager or a peripheral. */
 internal expect fun initializePlatformBle()
 
+/** Whether Kable accepts an address predicate in a platform scanner. CoreBluetooth does not. */
+internal expect val platformSupportsBleScanAddressFilter: Boolean
+
 /** Platform-specific configuration for the Peripheral builder based on device type. */
 internal expect fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean)
 
@@ -42,11 +45,15 @@ internal expect fun platformProfileSetupTimeout(serviceUuid: Uuid, requested: Du
 /** Platform-specific instantiation of a Peripheral by address. */
 internal expect fun createPeripheral(address: String, builderAction: PeripheralBuilder.() -> Unit): Peripheral
 
-/** A connected Apple peripheral prepared by the native pairing flow and ready for transport ownership. */
-internal data class PlatformPreparedPeripheral(val peripheral: Peripheral, val connectionScope: CoroutineScope)
+/** A connected Apple peripheral prepared by the native pairing flow and ready for exact device-instance ownership. */
+internal data class PlatformPreparedPeripheral(
+    val owner: BleDevice,
+    val peripheral: Peripheral,
+    val connectionScope: CoroutineScope,
+)
 
 /** Takes a connected peripheral prepared by the platform pairing flow, or `null` when none is available. */
-internal expect fun takePlatformPreparedPeripheral(address: String): PlatformPreparedPeripheral?
+internal expect fun takePlatformPreparedPeripheral(device: BleDevice): PlatformPreparedPeripheral?
 
 /**
  * Returns the negotiated maximum write payload length in bytes (i.e. ATT MTU minus the 3-byte ATT header), or `null` if

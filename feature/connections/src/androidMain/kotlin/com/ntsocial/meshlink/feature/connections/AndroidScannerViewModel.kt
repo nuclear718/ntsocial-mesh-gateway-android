@@ -28,6 +28,7 @@ import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
 import com.ntsocial.meshlink.core.ble.BluetoothRepository
+import com.ntsocial.meshlink.core.common.util.safeCatching
 import com.ntsocial.meshlink.core.datastore.RecentAddressesDataSource
 import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.model.util.anonymize
@@ -78,7 +79,7 @@ class AndroidScannerViewModel(
     override fun connectSelected(entry: DeviceListEntry) {
         addRecentAddress(entry.fullAddress, entry.name)
         viewModelScope.launch {
-            runCatching {
+            safeCatching {
                 val profile =
                     radioFleetManager.register(
                         candidate = DiscoveredRadio(transportAddress = entry.fullAddress, displayName = entry.name),

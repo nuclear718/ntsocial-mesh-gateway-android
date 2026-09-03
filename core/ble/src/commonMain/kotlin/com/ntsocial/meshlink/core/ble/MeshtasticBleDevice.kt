@@ -40,11 +40,14 @@ import kotlinx.coroutines.flow.asStateFlow
  * @param address The device's MAC address (or platform identifier string).
  * @param name The device's display name, if known.
  * @param advertisement The Kable [Advertisement] from a live scan, or `null` for bonded-only devices.
+ * @param reconnectByIdentifier True when the platform should try its saved peripheral identifier before waiting for a
+ *   live advertisement. This is not bond proof; Apple still verifies the protected FROMNUM subscription.
  */
 class MeshtasticBleDevice(
     override val address: String,
     override val name: String? = null,
     val advertisement: Advertisement? = null,
+    val reconnectByIdentifier: Boolean = false,
 ) : BleDevice {
 
     private val _state = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected())

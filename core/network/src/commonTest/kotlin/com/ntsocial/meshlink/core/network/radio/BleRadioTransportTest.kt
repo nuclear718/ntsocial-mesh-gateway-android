@@ -39,6 +39,7 @@ import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.verify
 import dev.mokkery.verify.VerifyMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -201,6 +202,52 @@ class BleRadioTransportTest {
         assertNotNull(scanner.lastScanServiceUuid, "scan must include serviceUuid")
         assertEquals(SERVICE_UUID, scanner.lastScanServiceUuid)
         assertEquals(address, scanner.lastScanAddress)
+
+        bleTransport.close()
+    }
+
+    @Test
+    fun `known device reconnect bypasses scan even when it is not advertising`() = runTest {
+        val device = FakeBleDevice(address = address, name = "Saved iOS peripheral")
+        bluetoothRepository.addKnownDevice(device)
+
+        val bleTransport =
+            BleRadioTransport(
+                scope = this,
+                scanner = scanner,
+                bluetoothRepository = bluetoothRepository,
+                connectionFactory = connectionFactory,
+                callback = service,
+                address = address,
+            )
+        bleTransport.start()
+        advanceTimeBy(3_001)
+
+        assertEquals(null, scanner.lastScanServiceUuid, "known device must not wait for an advertisement")
+        assertEquals(device, connection.device)
+
+        bleTransport.close()
+    }
+
+    @Test
+    fun `cancelled known-device handoff discards an unclaimed prepared connection`() = runTest {
+        val device = FakeBleDevice(address = address, name = "Saved iOS peripheral")
+        bluetoothRepository.addKnownDevice(device)
+        connection.connectException = CancellationException("cancel before prepared peripheral claim")
+
+        val bleTransport =
+            BleRadioTransport(
+                scope = this,
+                scanner = scanner,
+                bluetoothRepository = bluetoothRepository,
+                connectionFactory = connectionFactory,
+                callback = service,
+                address = address,
+            )
+        bleTransport.start()
+        advanceTimeBy(3_001)
+
+        assertEquals(device, bluetoothRepository.lastDiscardedPreparedDevice)
 
         bleTransport.close()
     }

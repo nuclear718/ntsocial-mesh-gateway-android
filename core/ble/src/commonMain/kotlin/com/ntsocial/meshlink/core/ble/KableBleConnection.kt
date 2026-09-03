@@ -129,7 +129,7 @@ class KableBleConnection(private val scope: CoroutineScope, private val loggingC
     override suspend fun connect(device: BleDevice) {
         initializePlatformBle()
         val meshtasticDevice = device as? MeshtasticBleDevice ?: error("Unsupported BleDevice type: ${device::class}")
-        val prepared = takePlatformPreparedPeripheral(device.address)
+        val prepared = takePlatformPreparedPeripheral(device)
         var autoConnect = prepared == null && meshtasticDevice.advertisement == null
 
         /** Applies logging, observation exception handling, and platform config shared by both peripheral types. */

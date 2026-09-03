@@ -53,6 +53,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filterIsInstance
@@ -174,11 +176,10 @@ class BleRadioTransport(
 
     /** Robustly finds the device. First checks bonded devices, then performs a short scan if not found. */
     private suspend fun findDevice(): BleDevice {
-        bluetoothRepository.state.value.bondedDevices
-            .firstOrNull { it.address.equals(address, ignoreCase = true) }
-            ?.let {
-                return it
-            }
+        bluetoothRepository.prepareKnownDevice(address)?.let {
+            Logger.i { "[$address] Resolved known device without scanning" }
+            return it
+        }
 
         Logger.i { "[$address] Device not found in bonded list, scanning" }
 
@@ -186,10 +187,8 @@ class BleRadioTransport(
             try {
                 val d =
                     withTimeoutOrNull(SCAN_TIMEOUT) {
-                        // Pass both service UUID and address so the scanner can apply the most
-                        // efficient platform filter. Android uses address (OS-level HW filter),
-                        // while CoreBluetooth (macOS) needs the service UUID because it caches
-                        // peripheral identifiers and may not re-report by address alone.
+                        // Platforms that support native address filters use both values. Apple drops the unsupported
+                        // address predicate and the exact identifier check below remains authoritative.
                         scanner.scan(timeout = SCAN_TIMEOUT, serviceUuid = SERVICE_UUID, address = address).first {
                             it.address.equals(address, ignoreCase = true)
                         }
@@ -249,26 +248,33 @@ class BleRadioTransport(
 
         val device = findDevice()
 
-        // Bond before connecting: firmware may require an encrypted link,
-        // and without a bond Android fails with status 5 or 133.
-        // No-op on Desktop/JVM where the OS handles pairing automatically.
-        if (!bluetoothRepository.isBonded(address)) {
-            Logger.i { "[$address] Device not bonded, initiating bonding" }
-            @Suppress("TooGenericExceptionCaught")
+        val state =
             try {
-                bluetoothRepository.bond(device)
-                Logger.i { "[$address] Bonding successful" }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: BlePairingException) {
-                Logger.w(e) { "[$address] Explicit Bluetooth pairing did not complete" }
-                throw e
-            } catch (e: Exception) {
-                Logger.w(e) { "[$address] Bonding failed, attempting connection anyway" }
-            }
-        }
+                // Bond before connecting: firmware may require an encrypted link,
+                // and without a bond Android fails with status 5 or 133.
+                // No-op on Desktop/JVM where the OS handles pairing automatically.
+                if (!bluetoothRepository.isBonded(address)) {
+                    Logger.i { "[$address] Device not bonded, initiating bonding" }
+                    @Suppress("TooGenericExceptionCaught")
+                    try {
+                        bluetoothRepository.bond(device)
+                        Logger.i { "[$address] Bonding successful" }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: BlePairingException) {
+                        Logger.w(e) { "[$address] Explicit Bluetooth pairing did not complete" }
+                        throw e
+                    } catch (e: Exception) {
+                        Logger.w(e) { "[$address] Bonding failed, attempting connection anyway" }
+                    }
+                }
 
-        val state = bleConnection.connectAndAwait(device, CONNECTION_TIMEOUT)
+                bleConnection.connectAndAwait(device, CONNECTION_TIMEOUT)
+            } finally {
+                // Apple may have prepared an already-connected peripheral before this transport was cancelled.
+                // Exact device-instance ownership prevents a stale attempt from closing a newer replacement.
+                withContext(NonCancellable) { bluetoothRepository.discardPreparedDevice(device) }
+            }
 
         if (state !is BleConnectionState.Connected) {
             throw RadioNotConnectedException("Failed to connect to device at address $address")
@@ -456,22 +462,56 @@ class BleRadioTransport(
     /** Closes the connection to the device. */
     override suspend fun close() {
         Logger.i { "[$address] Disconnecting. ${formatSessionStats()}" }
+        val callerJob = currentCoroutineContext().job
+        val activeConnectionJob = connectionJob
+        val handoffJob = activeConnectionJob?.takeUnless { it === callerJob }
         connectionScope.cancel()
         // GATT cleanup must run under NonCancellable so a cancelled caller cannot skip it,
         // which would leak BluetoothGatt and trigger status 133 on the next reconnect.
         // Using withContext (not runBlocking) keeps the caller's thread free — this is
         // critical when close() is invoked from the main thread during process shutdown.
+        var connectionHandoffSettled = handoffJob == null
         withContext(NonCancellable) {
+            handoffJob?.let { job ->
+                connectionHandoffSettled =
+                    withTimeoutOrNull(GATT_CLEANUP_TIMEOUT) {
+                        job.cancelAndJoin()
+                        true
+                    } == true
+                if (!connectionHandoffSettled) {
+                    Logger.w {
+                        "[$address] Timed out waiting for the connection handoff to settle; " +
+                            "scheduling a second cleanup"
+                    }
+                }
+            }
             try {
                 withTimeoutOrNull(GATT_CLEANUP_TIMEOUT) { bleConnection.disconnect() }
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                 Logger.w(e) { "[$address] Failed to disconnect in close()" }
             }
         }
-        // Our own disconnect succeeded — the exception-handler safety net is no longer
-        // needed. Cancel the detached cleanup scope so it doesn't outlive us in tests
-        // or process lifetime.
-        cleanupScope.cancel()
+        if (!connectionHandoffSettled && handoffJob != null) {
+            // A Kable operation may temporarily outlive the bounded close window. Once it finishes, repeat teardown:
+            // the cancelled connect path can otherwise install a taken prepared peripheral after the first disconnect
+            // observed no owner, leaving CoreBluetooth connected and the Meshtastic node non-advertising.
+            cleanupScope.launch {
+                handoffJob.join()
+                try {
+                    bleConnection.disconnect()
+                } catch (e: Exception) {
+                    Logger.w(e) { "[$address] Deferred disconnect failed after connection handoff" }
+                } finally {
+                    if (connectionJob === handoffJob) connectionJob = null
+                    cleanupScope.cancel()
+                }
+            }
+        } else {
+            if (connectionJob === activeConnectionJob) connectionJob = null
+            // Our own disconnect succeeded — the exception-handler safety net is no longer needed. Cancel the detached
+            // cleanup scope so it doesn't outlive us in tests or process lifetime.
+            cleanupScope.cancel()
+        }
     }
 
     private fun dispatchPacket(packet: ByteArray) {

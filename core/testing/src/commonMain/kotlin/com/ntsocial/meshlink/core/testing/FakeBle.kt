@@ -243,12 +243,22 @@ class FakeBluetoothRepository :
     BluetoothRepository {
     private val _state = mutableStateFlow(BluetoothState(hasPermissions = true, enabled = true))
     override val state: StateFlow<BluetoothState> = _state.asStateFlow()
+    private val knownDevices = mutableMapOf<String, BleDevice>()
+    var lastDiscardedPreparedDevice: BleDevice? = null
+        private set
 
     override fun refreshState() {}
 
     override fun isValid(bleAddress: String): Boolean = bleAddress.isNotBlank()
 
     override fun isBonded(address: String): Boolean = _state.value.bondedDevices.any { it.address == address }
+
+    override suspend fun prepareKnownDevice(address: String): BleDevice? = super.prepareKnownDevice(address)
+        ?: knownDevices.entries.firstOrNull { it.key.equals(address, ignoreCase = true) }?.value
+
+    override suspend fun discardPreparedDevice(device: BleDevice) {
+        lastDiscardedPreparedDevice = device
+    }
 
     override suspend fun bond(device: BleDevice) {
         val currentState = _state.value
@@ -263,5 +273,9 @@ class FakeBluetoothRepository :
 
     fun setHasPermissions(hasPermissions: Boolean) {
         _state.value = _state.value.copy(hasPermissions = hasPermissions)
+    }
+
+    fun addKnownDevice(device: BleDevice) {
+        knownDevices[device.address] = device
     }
 }

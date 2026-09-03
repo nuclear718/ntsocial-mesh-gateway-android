@@ -44,13 +44,19 @@ import dev.mokkery.mock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 
@@ -114,6 +120,76 @@ class BleRadioTransportReconnectCrashTest {
         // disconnect() must be called: once by the connection loop teardown + once by close() itself.
         // We only assert it was called at least once — the exact count depends on timing.
         assertTrue(connection.disconnectCalls >= 1, "Expected disconnect() to be called at least once")
+    }
+
+    @Test
+    fun `close waits for a cancelled prepared handoff before disconnecting`() = runTest {
+        val handoffConnection = InstallingOnCancellationBleConnection()
+        val handoffFactory =
+            object : BleConnectionFactory {
+                override fun create(scope: CoroutineScope, tag: String): BleConnection = handoffConnection
+            }
+        val device = FakeBleDevice(address = address, name = "Saved iOS peripheral")
+        bluetoothRepository.addKnownDevice(device)
+
+        val bleTransport =
+            BleRadioTransport(
+                scope = this,
+                scanner = scanner,
+                bluetoothRepository = bluetoothRepository,
+                connectionFactory = handoffFactory,
+                callback = service,
+                address = address,
+            )
+        bleTransport.start()
+        advanceTimeBy(3_001L)
+        runCurrent()
+        assertTrue(handoffConnection.connectStarted, "connection handoff must be in flight")
+
+        bleTransport.close()
+
+        assertTrue(handoffConnection.connectFinalized, "close must join cancellation-time handoff finalization")
+        assertFalse(
+            handoffConnection.disconnectBeforeFinalization,
+            "disconnect must not run before a taken prepared peripheral can finish installing",
+        )
+    }
+
+    @Test
+    fun `repeated close preserves cleanup after a prepared handoff exceeds the bounded wait`() = runTest {
+        val handoffConnection = InstallingOnCancellationBleConnection(finalizationDelayMillis = 6_000L)
+        val handoffFactory =
+            object : BleConnectionFactory {
+                override fun create(scope: CoroutineScope, tag: String): BleConnection = handoffConnection
+            }
+        val device = FakeBleDevice(address = address, name = "Slow saved iOS peripheral")
+        bluetoothRepository.addKnownDevice(device)
+
+        val bleTransport =
+            BleRadioTransport(
+                scope = this,
+                scanner = scanner,
+                bluetoothRepository = bluetoothRepository,
+                connectionFactory = handoffFactory,
+                callback = service,
+                address = address,
+            )
+        bleTransport.start()
+        advanceTimeBy(3_001L)
+        runCurrent()
+
+        bleTransport.close()
+        assertTrue(handoffConnection.disconnectBeforeFinalization, "bounded close must still attempt immediate cleanup")
+
+        // A second lifecycle close must neither forget the still-running handoff nor cancel its deferred cleanup.
+        bleTransport.close()
+        advanceTimeBy(1_001L)
+        runCurrent()
+        assertTrue(handoffConnection.connectFinalized, "cancelled handoff must eventually finish")
+        assertTrue(
+            handoffConnection.disconnectAfterFinalization,
+            "deferred cleanup must disconnect a peripheral installed after the bounded close window",
+        )
     }
 
     // ─── disconnect called on connection failure ──────────────────────────────────────────────────
@@ -335,6 +411,59 @@ private class CancellingProfileBleConnection : BleConnection {
         timeout: Duration,
         setup: suspend CoroutineScope.(BleService) -> T,
     ): T = throw CancellationException("Simulated scope cancellation during service discovery")
+
+    override fun maximumWriteValueLength(writeType: BleWriteType): Int? = null
+}
+
+/** Models Kable's non-cancellable field installation after a prepared peripheral has been taken from the registry. */
+private class InstallingOnCancellationBleConnection(private val finalizationDelayMillis: Long = 0L) : BleConnection {
+
+    private val _deviceFlow = MutableStateFlow<BleDevice?>(null)
+    override val deviceFlow: StateFlow<BleDevice?> = _deviceFlow.asStateFlow()
+
+    private val _connectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected())
+    override val connectionState: StateFlow<BleConnectionState> = _connectionState.asStateFlow()
+
+    override val device: BleDevice?
+        get() = _deviceFlow.value
+
+    var connectStarted = false
+    var connectFinalized = false
+    var disconnectBeforeFinalization = false
+    var disconnectAfterFinalization = false
+
+    override suspend fun connect(device: BleDevice) {
+        connectAndAwait(device, Duration.INFINITE)
+    }
+
+    override suspend fun connectAndAwait(device: BleDevice, timeout: Duration): BleConnectionState {
+        connectStarted = true
+        try {
+            awaitCancellation()
+        } finally {
+            withContext(NonCancellable) {
+                delay(finalizationDelayMillis)
+                _deviceFlow.value = device
+                connectFinalized = true
+            }
+        }
+    }
+
+    override suspend fun disconnect() {
+        if (connectFinalized) {
+            disconnectAfterFinalization = true
+        } else {
+            disconnectBeforeFinalization = true
+        }
+        _connectionState.value = BleConnectionState.Disconnected()
+        _deviceFlow.value = null
+    }
+
+    override suspend fun <T> profile(
+        serviceUuid: kotlin.uuid.Uuid,
+        timeout: Duration,
+        setup: suspend CoroutineScope.(BleService) -> T,
+    ): T = error("profile must not be reached")
 
     override fun maximumWriteValueLength(writeType: BleWriteType): Int? = null
 }

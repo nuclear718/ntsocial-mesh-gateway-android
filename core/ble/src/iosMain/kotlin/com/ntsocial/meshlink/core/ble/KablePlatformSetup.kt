@@ -51,6 +51,10 @@ internal actual fun initializePlatformBle() {
     AppleKableCentralManagerConfiguration.ensureInitialized()
 }
 
+// Kable's CoreBluetooth scanner rejects Filter.Address. The caller still performs the exact identifier comparison
+// after CoreBluetooth's native service filter emits an advertisement.
+internal actual val platformSupportsBleScanAddressFilter: Boolean = false
+
 internal actual fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean) {
     // CoreBluetooth owns reconnect scheduling; Kable has no Apple auto-connect builder option.
     // Authentication failures from the encrypted FROMNUM subscription are connection failures, not optional
@@ -86,14 +90,21 @@ internal fun replacePlatformPreparedPeripheral(
     }
 }
 
-internal actual fun takePlatformPreparedPeripheral(address: String): PlatformPreparedPeripheral? {
-    val key = address.lowercase()
+private fun removeOwnedPlatformPreparedPeripheral(device: BleDevice): PlatformPreparedPeripheral? {
+    val key = device.address.lowercase()
     while (true) {
         val current = preparedPeripherals.value
         val prepared = current[key] ?: return null
+        if (prepared.owner !== device) return null
         if (preparedPeripherals.compareAndSet(current, current - key)) return prepared
     }
 }
+
+internal actual fun takePlatformPreparedPeripheral(device: BleDevice): PlatformPreparedPeripheral? =
+    removeOwnedPlatformPreparedPeripheral(device)
+
+internal fun discardPlatformPreparedPeripheral(device: BleDevice): PlatformPreparedPeripheral? =
+    removeOwnedPlatformPreparedPeripheral(device)
 
 internal actual suspend fun Peripheral.negotiatedMaxWriteLength(writeType: BleWriteType): Int? =
     maximumWriteValueLengthForType(

@@ -1887,3 +1887,34 @@
 - Run `python3 scripts/sort-strings.py` after adding strings to keep the index organized.
 - Always check `gh run list` before pushing.
 - Pre-commit hook `scripts/ai-guardrail.sh` protects against binary leaks (see script for install).
+
+## 2026-09-03 - iOS restored BLE session recovery and physical Apple Gateway READY
+- The user's reconnect regression was reproduced on the previously connected iPhone: CoreBluetooth retained the old
+  MeshLink GATT link and the Meshtastic PhoneAPI stopped advertising, while Kable 0.42 rebuilt its wrapper as logically
+  disconnected. The fallback scan was independently broken on Apple because it supplied unsupported `Filter.Address`.
+- Saved CoreBluetooth identifiers now use direct peripheral reconstruction, protected FROMNUM verification, and exact
+  handoff of the prepared peripheral/scope. A five-second restored-session probe releases/closes the stale wrapper,
+  waits one second, and retries with a fresh wrapper when iOS does not replay `didConnect`. Apple service-only fallback
+  scanning retains exact identifier comparison; Android/Desktop behavior is unchanged. Scanner connection handlers use
+  `safeCatching` so coroutine cancellation does not surface as `Job was cancelled`.
+- A final ownership review found and closed the handoff-cancellation gap: prepared sessions now carry exact device-object
+  ownership, take/discard use identity-checked CAS, transport and pairing UI always discard unclaimed ownership under
+  cancellation, and a 30-second lease releases any abandoned entry. A stale attempt cannot remove a newer owner.
+  Saved-device recovery also re-reads the exact repository device after `bond`, preventing a concurrent same-address
+  pairing winner from being shadowed by a second wrapper during transport handoff.
+- Transport close now boundedly joins the active connection job before disconnect so a taken prepared peripheral cannot
+  install after teardown. If the handoff exceeds five seconds, detached cleanup waits for completion and disconnects
+  again; the pending job remains identity-owned so repeated close cannot cancel the fallback. Normal and six-second
+  timeout/repeated-close regressions pass on JVM and Android host, and iOS arm64/Simulator compilation passes.
+- The signed App-Group/Keychain-entitled Debug build was data-preserving installed on both iPhone 15 devices. The
+  affected phone reconnected to its exact saved node, sustained reads/writes, recovered after a cold process restart,
+  and later handled indications while suspended without crash/fatal. The parent stored two current same-generation
+  READY projections (`MediumFast` primary, `NTsocial` secondary), both send-capable. The other phone correctly retained
+  its no-radio state and settings.
+- BLE JVM passed 47/47, Android BLE host passed 40/40, core-network known-device/cancelled-handoff regressions and iOS Simulator/arm64
+  compilation passed, and the physical signed Xcode Debug build passed strict verification. The full one-worker gate
+  completed 1,946 tasks; all formatting/build/test/KMP/lint work passed and only the six known pre-existing Detekt
+  findings remained. An initial Compose dialog test-host flake passed 49/49 in isolation and under both en-US/zh-TW.
+- Evidence does not include RF/remote receipt, concurrent multi-radio iPhone operation, manual binding to an ordinary
+  joined NTsocial channel, Release/TestFlight/App Store, or a post-fix Channels-screen visual run. Full report:
+  `IOS_RESTORED_BLE_SESSION_RECOVERY_REMEDIATION_REPORT_2026-09-03.md`.

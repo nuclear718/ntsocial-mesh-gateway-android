@@ -36,20 +36,22 @@ import kotlin.uuid.Uuid
 class KableBleScanner(private val loggingConfig: BleLoggingConfig) : BleScanner {
     override fun scan(timeout: Duration, serviceUuid: Uuid?, address: String?): Flow<BleDevice> {
         initializePlatformBle()
+        val filterPlan = kableScanFilterPlan(serviceUuid, address, platformSupportsBleScanAddressFilter)
         val scanner = Scanner {
             logging { applyConfig(loggingConfig) }
             // When both address and serviceUuid are provided, use OR-semantics so the device
-            // is found even if one filter is ineffective on the current platform (e.g.
-            // CoreBluetooth may not re-report a cached identifier via the address filter).
-            if (address != null && serviceUuid != null) {
+            // is found even if one filter is ineffective on a platform that supports both.
+            // CoreBluetooth rejects Filter.Address entirely, so Apple keeps only the native
+            // service filter; BleRadioTransport retains the exact identifier comparison.
+            if (filterPlan.includeAddress && filterPlan.includeService) {
                 filters {
-                    match { this.address = address }
-                    match { services = listOf(serviceUuid) }
+                    match { this.address = requireNotNull(address) }
+                    match { services = listOf(requireNotNull(serviceUuid)) }
                 }
-            } else if (address != null) {
-                filters { match { this.address = address } }
-            } else if (serviceUuid != null) {
-                filters { match { services = listOf(serviceUuid) } }
+            } else if (filterPlan.includeAddress) {
+                filters { match { this.address = requireNotNull(address) } }
+            } else if (filterPlan.includeService) {
+                filters { match { services = listOf(requireNotNull(serviceUuid)) } }
             }
         }
 
@@ -70,3 +72,12 @@ class KableBleScanner(private val loggingConfig: BleLoggingConfig) : BleScanner 
         }
     }
 }
+
+internal data class KableScanFilterPlan(val includeService: Boolean, val includeAddress: Boolean)
+
+internal fun kableScanFilterPlan(
+    serviceUuid: Uuid?,
+    address: String?,
+    supportsAddressFilter: Boolean,
+): KableScanFilterPlan =
+    KableScanFilterPlan(includeService = serviceUuid != null, includeAddress = address != null && supportsAddressFilter)

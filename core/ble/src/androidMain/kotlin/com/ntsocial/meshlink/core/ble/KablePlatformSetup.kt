@@ -46,6 +46,8 @@ private val sharedThreadingStrategy = PooledThreadingStrategy()
 
 internal actual fun initializePlatformBle() = Unit
 
+internal actual val platformSupportsBleScanAddressFilter: Boolean = true
+
 internal actual fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean) {
     // Bonded devices without a fresh advertisement must use autoConnect = true. Otherwise,
     // Android's direct connect algorithm often fails with GATT 133 or times out, especially
@@ -79,7 +81,7 @@ internal actual fun platformProfileSetupTimeout(serviceUuid: Uuid, requested: Du
 internal actual fun createPeripheral(address: String, builderAction: PeripheralBuilder.() -> Unit): Peripheral =
     com.juul.kable.Peripheral(address.toIdentifier(), builderAction)
 
-internal actual fun takePlatformPreparedPeripheral(address: String): PlatformPreparedPeripheral? = null
+internal actual fun takePlatformPreparedPeripheral(device: BleDevice): PlatformPreparedPeripheral? = null
 
 /** ATT protocol header size (opcode + handle) subtracted from MTU to get the usable payload. */
 private const val ATT_HEADER_SIZE = 3

@@ -32,6 +32,8 @@ import kotlin.uuid.Uuid
 
 internal actual fun initializePlatformBle() = Unit
 
+internal actual val platformSupportsBleScanAddressFilter: Boolean = true
+
 internal actual fun PeripheralBuilder.platformConfig(device: BleDevice, autoConnect: () -> Boolean) {
     // Desktop Kable uses direct connections without needing autoConnect.
 }
@@ -41,7 +43,7 @@ internal actual fun platformProfileSetupTimeout(serviceUuid: Uuid, requested: Du
 internal actual fun createPeripheral(address: String, builderAction: PeripheralBuilder.() -> Unit): Peripheral =
     com.juul.kable.Peripheral(address.toIdentifier(), builderAction)
 
-internal actual fun takePlatformPreparedPeripheral(address: String): PlatformPreparedPeripheral? = null
+internal actual fun takePlatformPreparedPeripheral(device: BleDevice): PlatformPreparedPeripheral? = null
 
 // JVM/desktop Kable does not expose an MTU StateFlow; return a reasonable default (512)
 // so callers can size their writes without falling back to an overly conservative minimum.

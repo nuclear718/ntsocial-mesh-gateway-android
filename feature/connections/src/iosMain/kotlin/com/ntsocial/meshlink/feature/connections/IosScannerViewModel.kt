@@ -32,6 +32,7 @@ import com.ntsocial.meshlink.core.ble.BlePairingException
 import com.ntsocial.meshlink.core.ble.BleScanner
 import com.ntsocial.meshlink.core.ble.BluetoothRepository
 import com.ntsocial.meshlink.core.ble.MeshtasticBleDevice
+import com.ntsocial.meshlink.core.common.util.safeCatching
 import com.ntsocial.meshlink.core.datastore.RecentAddressesDataSource
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.model.RadioController
@@ -78,7 +79,7 @@ class IosScannerViewModel(
 ) {
     override fun requestBonding(entry: DeviceListEntry.Ble) {
         requestBluetoothPairingGuidance(deviceName = entry.name) {
-            viewModelScope.launch { pairAndConnect(device = entry.device) { connectSelected(entry) } }
+            viewModelScope.launch { pairAndConnect(device = entry.device) { connectSelectedNow(entry) } }
         }
     }
 
@@ -89,9 +90,8 @@ class IosScannerViewModel(
                 val profile = radioFleetManager.snapshots.value[endpointId]?.profile ?: return@launch
                 radioFleetManager.disconnect(endpointId)
                 val address = profile.transportAddress.removePrefix("x").removePrefix("!")
-                pairAndConnect(device = MeshtasticBleDevice(address = address, name = deviceName)) {
-                    radioFleetManager.connect(endpointId)
-                }
+                val device = MeshtasticBleDevice(address = address, name = deviceName, reconnectByIdentifier = true)
+                pairAndConnect(device = device) { radioFleetManager.connect(endpointId) }
             }
         }
     }
@@ -103,36 +103,39 @@ class IosScannerViewModel(
         } catch (pairing: BlePairingException) {
             Logger.w(pairing) { "iOS native Bluetooth pairing did not complete" }
             serviceRepository.setErrorMessage(pairing.message.orEmpty(), Severity.Warn)
+        } finally {
+            bluetoothRepository.discardPreparedDevice(device)
         }
     }
 
     override fun connectSelected(entry: DeviceListEntry) {
+        viewModelScope.launch { connectSelectedNow(entry) }
+    }
+
+    private suspend fun connectSelectedNow(entry: DeviceListEntry) {
         addRecentAddress(entry.fullAddress, entry.name)
-        viewModelScope.launch {
-            runCatching {
-                val profile =
-                    radioFleetManager.register(
-                        candidate = DiscoveredRadio(transportAddress = entry.fullAddress, displayName = entry.name),
-                        connect = false,
-                    )
-                // A prior failed first-pairing attempt can leave the primary transport in Connecting. Stop it
-                // before
-                // handing the already-connected pairing peripheral to the authoritative endpoint session.
-                radioFleetManager.disconnect(profile.id)
-                if (profile.legacyPrimary) {
-                    radioPrefs.setDevName(entry.name)
-                    changeDeviceAddress(entry.fullAddress)
-                }
-                radioFleetManager.connect(profile.id)
+        safeCatching {
+            val profile =
+                radioFleetManager.register(
+                    candidate = DiscoveredRadio(transportAddress = entry.fullAddress, displayName = entry.name),
+                    connect = false,
+                )
+            // A prior failed first-pairing attempt can leave the primary transport in Connecting. Stop it before
+            // handing the already-connected pairing peripheral to the authoritative endpoint session.
+            radioFleetManager.disconnect(profile.id)
+            if (profile.legacyPrimary) {
+                radioPrefs.setDevName(entry.name)
+                changeDeviceAddress(entry.fullAddress)
             }
-                .onFailure { error ->
-                    Logger.w(error) { "Unable to add iOS Meshtastic endpoint" }
-                    serviceRepository.setErrorMessage(
-                        text = error.message ?: "Unable to add Meshtastic endpoint",
-                        severity = Severity.Warn,
-                    )
-                }
+            radioFleetManager.connect(profile.id)
         }
+            .onFailure { error ->
+                Logger.w(error) { "Unable to add iOS Meshtastic endpoint" }
+                serviceRepository.setErrorMessage(
+                    text = error.message ?: "Unable to add Meshtastic endpoint",
+                    severity = Severity.Warn,
+                )
+            }
     }
 
     override fun disconnect() {
