@@ -2005,3 +2005,23 @@
   focused regression, signed build/install, durable-state check, and real-device exchange; no root-wide matrix, soak,
   range, Release/TestFlight, or store test was run. Full report:
   `IOS_OUTBOUND_NATIVE_MESSAGE_QUEUE_REMEDIATION_REPORT_2026-09-03.md`.
+
+## 2026-09-03 - Android message composer IME inset remediation
+- Affected the Android message UX; the one-line `Modifier.imePadding()` correction is in the shared
+  `MessageScreen` bottom bar, so both channel conversations and private-message conversations use the same fix.
+  Desktop has no software-keyboard inset in the tested JVM path, and the focused iOS Simulator compilation passed.
+- The focused JDK-21/en-US gate passed: messaging Spotless/Detekt, all 25 messaging JVM tests, messaging iOS
+  Simulator compilation, and Google Debug assembly. Per the user's explicit request not to over-test this small UX
+  correction, no root-wide gate, lint matrix, soak, RF, or delivery test was run.
+- Built Google arm64 Debug `com.ntsocial.meshlink.google.debug` `1.0.8 (9)`. The 55,509,844-byte APK has SHA-256
+  `8C2F0715F634255EE250D89B8657B6E84C5FF1AFC8777FC823C71E0C1CEA27EF` and a valid Android Debug v2 signature.
+- Clean-uninstalled the old exact package and installed that same APK on USB OPPO CPH2695
+  (`TWBYJJRWSGHIGU55`) and Wi-Fi ADB Samsung SM-S9280 (`192.168.1.105:38235`) plus SM-S9080
+  (`192.168.1.108:36581`). All three installed base-APK hashes match the local artifact, completed the Traditional
+  Chinese first-launch flow, launched successfully, and retained live App processes. No upstream Meshtastic or
+  NTsocial parent package was removed.
+- Re-selected `Meshtastic_5d6e` on the SM-S9280 and reached Connected. With the Samsung IME visible, both a primary
+  channel conversation and a private-message conversation kept the focused input at `[23,859][1057,1096]` while
+  the IME started at y=1332; entered test text and the send icon were fully visible. Hiding the keyboard returned the
+  input to `[23,1732][1057,1969]` without retained empty space. Neither test message was sent. The other two phones
+  had no radio session, so their evidence is clean install/onboarding/startup only; no RF or remote receipt is claimed.
