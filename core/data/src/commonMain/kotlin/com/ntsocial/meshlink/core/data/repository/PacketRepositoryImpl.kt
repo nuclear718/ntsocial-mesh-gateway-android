@@ -43,6 +43,7 @@ import com.ntsocial.meshlink.core.model.Reaction
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import com.ntsocial.meshlink.core.model.util.getShortDateTime
 import com.ntsocial.meshlink.core.repository.DurableQueuedPacket
 import kotlinx.coroutines.flow.Flow
@@ -140,7 +141,12 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
             .asSequence()
             .filter { row -> row.data.status == MessageStatus.QUEUED }
             .map { row ->
-                DurableQueuedPacket(packet = row.data, expectedSourceChannelId = row.gatewaySourceChannelId)
+                DurableQueuedPacket(
+                    packet = row.data,
+                    expectedSourceChannelId = row.gatewaySourceChannelId,
+                    requiresGatewaySession =
+                    NtsocialTransport.isOutboundPort(row.data.dataType) || row.originClientMessageId != null,
+                )
             }
             .toList()
     }
@@ -150,7 +156,14 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
             .packetDao()
             .findPacketsWithId(packetId)
             .firstOrNull { row -> row.data.id == packetId }
-            ?.let { row -> DurableQueuedPacket(row.data, row.gatewaySourceChannelId) }
+            ?.let { row ->
+                DurableQueuedPacket(
+                    packet = row.data,
+                    expectedSourceChannelId = row.gatewaySourceChannelId,
+                    requiresGatewaySession =
+                    NtsocialTransport.isOutboundPort(row.data.dataType) || row.originClientMessageId != null,
+                )
+            }
     }
 
     override fun getGatewayMessageChangeSeq(legacyBroadcastContactKeys: List<String>): Flow<Long> =

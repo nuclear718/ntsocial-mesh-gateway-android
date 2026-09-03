@@ -106,18 +106,28 @@ internal class IosDurableMessageQueue(
     @Suppress("TooGenericExceptionCaught")
     internal suspend fun drain() = drainMutex.withLock {
         if (radioController.connectionState.value != ConnectionState.Connected) return@withLock
-        for (queued in packetRepository.getDurableQueuedPackets().sortedBy { it.packet.time }) {
+        val queuedPackets = packetRepository.getDurableQueuedPackets().sortedBy { it.packet.time }
+        // Gateway work may remain pending behind extra gates, so it cannot own the head of the native message lane.
+        val dispatchOrder =
+            queuedPackets.filterNot { it.requiresGatewaySession } +
+                queuedPackets.filter { it.requiresGatewaySession }
+        for (queued in dispatchOrder) {
             val packet = queued.packet
             if (radioController.connectionState.value != ConnectionState.Connected) break
             try {
-                val expectedSource = queued.expectedSourceChannelId
-                if (expectedSource == null) {
+                if (!queued.requiresGatewaySession) {
                     // Non-Gateway outbox rows retain the existing iOS replay behavior.
                     radioController.sendMessage(packet)
                     packetRepository.updateMessageStatus(packet, MessageStatus.ENROUTE)
                     continue
                 }
 
+                val expectedSource = queued.expectedSourceChannelId
+                if (expectedSource == null) {
+                    Logger.w { "iOS Gateway packet ${packet.id} has no durable channel identity" }
+                    packetRepository.updateMessageStatus(packet, MessageStatus.ERROR)
+                    continue
+                }
                 val session = radioInterfaceService.radioSessionState.value
                 if (!session.isConfiguredReady || !gatewayIngressSessionGate.isActive(session.epoch)) {
                     // Configuration or selection is transiently unavailable. Keep the durable row queued.

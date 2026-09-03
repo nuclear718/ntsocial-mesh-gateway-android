@@ -36,6 +36,7 @@ import com.ntsocial.meshlink.core.model.Reaction
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayHistoryState
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageChange
 import com.ntsocial.meshlink.core.model.ntsocial.NtsocialGatewayMessageIdentity
+import com.ntsocial.meshlink.core.model.ntsocial.NtsocialTransport
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import org.meshtastic.proto.ChannelSettings
@@ -294,4 +295,8 @@ interface PacketRepository {
     ): Flow<List<Message>>
 }
 
-data class DurableQueuedPacket(val packet: DataPacket, val expectedSourceChannelId: String?)
+data class DurableQueuedPacket(
+    val packet: DataPacket,
+    val expectedSourceChannelId: String?,
+    val requiresGatewaySession: Boolean = NtsocialTransport.isOutboundPort(packet.dataType),
+)

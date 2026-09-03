@@ -55,6 +55,7 @@ import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
+import org.meshtastic.proto.PortNum
 import kotlin.test.Test
 
 class IosDurableMessageQueueTest {
@@ -74,6 +75,29 @@ class IosDurableMessageQueueTest {
         fixture.queue.drain()
 
         verifySuspend { packetRepository.updateMessageStatus(fixture.packet, MessageStatus.ERROR) }
+        verifySuspend(mode = VerifyMode.not) { commandSender.sendDataAwaitForGatewaySession(any(), any(), any()) }
+        fixture.queue.close()
+    }
+
+    @Test
+    fun `pending Gateway row does not block a later native message`() = runTest {
+        val fixture = fixture(activeInitially = false)
+        val nativePacket =
+            DataPacket(
+                bytes = null,
+                dataType = PortNum.TEXT_MESSAGE_APP.value,
+                id = 502,
+                status = MessageStatus.QUEUED,
+                channel = 0,
+                time = 2,
+            )
+        everySuspend { packetRepository.getDurableQueuedPackets() } returns
+            listOf(fixture.queued, DurableQueuedPacket(nativePacket, fixture.sourceChannelId))
+
+        fixture.queue.drain()
+
+        verifySuspend { radioController.sendMessage(nativePacket) }
+        verifySuspend { packetRepository.updateMessageStatus(nativePacket, MessageStatus.ENROUTE) }
         verifySuspend(mode = VerifyMode.not) { commandSender.sendDataAwaitForGatewaySession(any(), any(), any()) }
         fixture.queue.close()
     }

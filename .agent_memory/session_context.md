@@ -1984,3 +1984,24 @@
   reticle, closed it, and returned to Channels; the exact final installed build passed in 18.332 seconds. Both Apps launched.
 - This evidence covers the physical scanner surface and navigation only. No optical QR decode, channel mutation or
   readback, RF/remote receipt, Release/TestFlight/App Store, or pre-A12 iPad claim is made.
+
+## 2026-09-03 - iOS native outbound queue and two-way RF remediation
+- Reproduced the user's one-way `1407` Android-to-`0809` iOS symptom from the active iPhone Room store without reading
+  message bodies or PSKs. Android-origin text was present as `RECEIVED`, while all 15 locally composed native primary
+  and direct-message rows remained `QUEUED`; 18 older Apple Gateway private-app rows were also pending.
+- Root cause was iOS queue ownership inference: a non-null stable source identity was treated as proof that the row was
+  Apple Gateway-owned even though normal primary-channel text also stores that identity. The first Gateway row waiting
+  for its session gate stopped the entire time-ordered drain, so later native direct messages were head-of-line blocked.
+- Added explicit durable Gateway provenance. Only the outbound private-app port or an Apple Gateway origin client ID
+  requires the Gateway session; normal native text drains independently. Native work is ordered ahead of gated Gateway
+  work, while all exact Gateway session/source validation remains intact and malformed Gateway rows fail closed.
+- The focused iOS durable-queue suite passed 3/3, changed-scope formatting/Detekt passed, and the final signed arm64 Debug Xcode
+  build succeeded. The exact build was installed data-preservingly on the iPhone connected to the `0809` radio.
+- After launch, the former native backlog reached the radio: one primary row became `DELIVERED` and the burst remainder
+  returned Meshtastic error 38 (`RATE_LIMIT_EXCEEDED`) instead of remaining App-side queued. Fresh rows then recorded
+  three iOS primary broadcasts as `DELIVERED` and a fresh Android `!835d30ae` primary broadcast as `RECEIVED` on iOS.
+  The user manually confirmed the requested two-way physical-phone message flow passed.
+- Android code and radio/channel configuration were not changed. At the user's request, validation stopped after the
+  focused regression, signed build/install, durable-state check, and real-device exchange; no root-wide matrix, soak,
+  range, Release/TestFlight, or store test was run. Full report:
+  `IOS_OUTBOUND_NATIVE_MESSAGE_QUEUE_REMEDIATION_REPORT_2026-09-03.md`.
