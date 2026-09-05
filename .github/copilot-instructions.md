@@ -1,362 +1,150 @@
-# NTsocial MeshLink Android & Windows - Copilot Instructions
+# NTsocial MeshLink Android, Windows & iOS - Copilot Instructions
 
-NTsocial MeshLink is led and maintained by **LiberaNt LLC and the NTsocial team** as two first-class
-open-source radio companions: Android `NTsocial MeshLink` in `app/`, and Microsoft Windows
-`NTsocial MeshLink` in `desktop/`, intended to serve the separate `NTsocial_Windows` product. It is a
-GPL-3.0-or-later fork of Meshtastic Android. Both products display `NTsocial MeshLink`; Android uses
-application ID `com.ntsocial.meshlink`, Desktop uses `com.ntsocial.meshlink.desktop`, and
-project-owned packages use `com.ntsocial.meshlink.*`. Governance does not erase upstream or
-contributor rights; follow `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and
-`docs/copyright-and-attribution.md`.
+> Reviewed 2026-09-05 at source `99bc567d9`. [AGENTS.md](../AGENTS.md) is authoritative for
+> project rules and current status; [the audit](../docs/development-status-audit-2026-09-05.md)
+> contains evidence and gate results. This file is the operational subset, not a second historical log.
 
-Android Gateway v1 remains immutable and concrete. Additive Gateway v2 status/catalog/native-history
-changes, wakeup events, caller-bound route tokens, route-aware raw NTsocial overlay sending, and
-durably admitted broadcast native Meshtastic text sending are also implemented.
-Windows branding, installer identity, theme, and cold-start splash are concrete code, but
-`NTsocial_Windows` IPC, Windows Service, Authenticator, code signing, and parent-App interoperability
-are not implemented. Routed v2 commands now have local Room + WorkManager durable admission; RF scheduler expansion, node policy, MeshCore
-transport, and remote RF verification remain roadmap work.
+## Scope and identity
 
-## Build, Test & Lint
+LiberaNt LLC and the NTsocial team maintain three GPL-3.0-or-later radio companions on the shared
+Meshtastic/KMP foundation: Android in `app/`, Windows in `desktop/`, and iOS in `ios/runtime` +
+`iosApp/`. Name the affected tracks in plans, validation and release claims; shared changes must
+preserve all three. Parent NTsocial products remain separate and own canonical social history.
 
-**Requires:** JDK 21, `ANDROID_HOME` set, proto submodule initialized. Use
-`JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"` for local validation when tests assert
-English resources.
+All three products display `NTsocial MeshLink`. Base Android ID is `com.ntsocial.meshlink`
+(flavor/build suffixes apply), Desktop ID is `com.ntsocial.meshlink.desktop`, iOS ID is
+`com.ntsocial.meshlink.ios`, and framework ID is `com.ntsocial.meshlink.ios.framework`.
+macOS/Linux Desktop identity remains unchanged. Project-owned code uses `com.ntsocial.meshlink.*`;
+keep generated upstream protos in `org.meshtastic.proto`.
 
-Root `gradle.properties` intentionally uses G1GC because the configured Android Studio JBR 21 does
-not support `UseZGC`/`ZGenerational`. Do not restore those flags without verifying the exact JVM.
+Android/Desktop normal version configuration is `config.properties` (`1.0.8`, Android code `9`).
+iOS has independent Xcode version `1.0.0 (1)`. Read configuration files before changing versions.
+Preserve `NOTICE.md`, `THIRD_PARTY_NOTICES.md`, and `docs/copyright-and-attribution.md`.
+Use synchronized copyright templates; do not import proprietary parent code, secrets or EULA text.
+
+## Current capability and blockers
+
+- Android and iOS support up to four isolated Meshtastic BLE endpoints in source, with independent
+  radio databases/DataStores/Koin/packet ownership and endpoint-scoped UI. App preferences remain
+  shared. Switching endpoints returns the current feature to its root.
+- Android Gateway v1/v2 remain legacy-primary contracts. v3 fleet status, catalogs/history,
+  route tokens, endpoint ledger keys and dispatch plumbing exist, but READY secondary sources
+  advertise sends while resolving `SecondaryGatewayRepository`, whose durable sends throw.
+  Do not claim production secondary Gateway sending works; preserve primary isolation when fixing it.
+- iOS uses the shared Compose shell and a primary-only Apple Gateway, with App Group SQLite,
+  shared-Keychain HMAC, exact session/readback gating and durable outbox. Secondary Apple Gateway
+  exposure remains intentionally unavailable. Native rows drain independently of gated Gateway rows.
+- iOS Channels scanning uses VisionKit and shared endpoint confirmation; Android uses CameraX/ZXing.
+  Other iOS scanner surfaces and Desktop scanning remain unavailable. The Swift recognition callback
+  has an untested scanner-instance ownership gap; Kotlin token checks alone do not establish complete
+  stale-native-callback protection.
+- Windows has branding/theme/splash/installer source and shared radio/features, but remains single-radio.
+  Fleet, host MQTT/location and scanner capabilities are no-op/unavailable. Windows parent IPC,
+  Windows Service and Authenticator integration are not implemented; first-pair/PIN device recovery
+  is still unproven by the retained Windows diagnosis.
+- Connections is Bluetooth-only on all three UI tracks; preserve backend TCP/USB/Serial capability.
+  MeshCore has protocol/UI foundations, with production radio transport still pending.
+- Root Detekt currently has **8** findings: BLE 3, domain 1, model 1, network 1, core UI 2.
+  `PacketRepositoryImpl` also retains the known live history-clear/epoch publication defect.
+- Retained Android two-radio BLE, iOS signed Debug BLE/READY, and native two-way message runs cover
+  their dated scenarios only. Do not turn local acceptance into RF or parent canonical delivery,
+  or a Debug/device build into store readiness. See the audit for precise evidence boundaries.
+
+## Build and verification
+
+Read `.skills/project-overview/SKILL.md` and bootstrap before Gradle: JDK 21, valid `ANDROID_HOME`,
+`git submodule update --init`. Every Gradle invocation must inherit `ANDROID_HOME`; set
+`JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"` for English-resource tests.
+Root Gradle uses G1GC; do not restore unsupported ZGC options without checking the exact JVM.
 
 ```bash
-# Bootstrap (run once per fresh clone)
-git submodule update --init
-
-# Full local verification (formatting -> lint -> compile -> tests)
+# Implementation baseline (format before checking)
 ./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile \
   :app:lintFdroidDebug :app:lintGoogleDebug --continue --no-configuration-cache
 
-# Single module tests (KMP module)
+# Focused KMP tests / Android host tests / Desktop tests
 ./gradlew :core:data:allTests
-
-# Single module tests (Android-only module like :app)
 ./gradlew :app:testFdroidDebugUnitTest
-
-# Cross-platform compilation check (no tests)
-./gradlew kmpSmokeCompile
-
-# Flavor-specific lint
-./gradlew lintFdroidDebug lintGoogleDebug
-
-# Play publication candidate (still verify signing and Play-installed artifact separately)
-./gradlew :app:verifyGoogleReleaseNoCloudRuntimeDependencies :app:bundleGoogleRelease
-
-# Windows/Desktop tests
 ./gradlew :desktop:test
 
-# Windows release packaging (requires a complete JDK 21 containing jpackage.exe)
+# Modules omitted from the current CI test-shard inventory
+./gradlew :core:gateway:allTests :core:meshcore:allTests :core:radio-fleet:allTests \
+  :feature:meshcore:allTests :ios:runtime:jvmTest
+
+# Apple runtime source and framework checks (on an appropriate Apple host)
+./gradlew :ios:runtime:jvmTest :ios:runtime:compileKotlinIosArm64 \
+  :ios:runtime:compileKotlinIosSimulatorArm64 :ios:runtime:compileTestKotlinIosSimulatorArm64 \
+  :ios:runtime:linkDebugFrameworkIosSimulatorArm64
+
+# Play candidate: also verify exact signing, bundletool, native alignment and installed artifact
+./gradlew :app:verifyGoogleReleaseNoCloudRuntimeDependencies :app:bundleGoogleRelease
+
+# Windows packaging: run on Windows with full JDK 21 including jpackage.exe
 ./gradlew :desktop:packageReleaseDistributionForCurrentOS
 ```
 
-> Both `test` and `allTests` are needed. `allTests` covers KMP modules; `test` covers pure-Android modules.
+`test` and `allTests` cover different module kinds; retain both in the root baseline. Native iOS
+**test executable link and run** are disabled by convention; test-source compilation and application
+framework linkage do not mean native tests ran. Host-wiring changes also need signing-disabled Xcode
+Simulator build/launch and the applicable arm64 framework/host checks in AGENTS.md.
 
-### Current Build and Release Status
+`kmpSmokeCompile` uses a handwritten module inventory that omits `core:radio-fleet` directly, though
+it may compile transitively. Current CI test/Kover shards omit five modules listed above and provide
+no explicit Xcode host gate. Update settings, root inventory and CI shards together when adding modules.
+`DESKTOP_ONLY=true` / `-Pdesktop.only=true` excludes Android/iOS and is not a three-platform gate.
 
-- On 2026-07-31, the Android scanner was corrected for dense official Meshtastic channel QR codes:
-  it requests 1280-by-960 4:3 analysis, uses QR-only ZXing hints, delivers one result, and cleans up
-  only its own CameraX use cases. Shared ADD-mode import now respects the radio's real channel
-  capacity, omits semantic duplicates/placeholders, and leaves overflow visible but unchecked.
-  Dense-QR tests pass in both Android flavors; eight-channel URL and capacity tests pass in KMP.
-  Root formatting, Debug assembly, `test allTests`, KMP smoke compilation, and both Debug lints
-  pass. Changed-module Detekt passes; current root Detekt has seven pre-existing findings in
-  unmodified BLE, model, network, and data sources. The 51,948,716-byte Google arm64 Debug APK
-  (`versionCode=2`, `versionName=1.0.1`, SHA-256
-  `76B8F876CC4C2327B3C3E2274C0ECC09D06EA217C9154F204D385BA9D35368E6`) was installed in place on
-  SM-S9080, two SM-S9280 phones, and OPPO CPH2695; all four retained their first-install timestamps
-  and read back the same installed hash. Physical camera-to-screen scanning and connected-radio
-  application still require device evidence.
-- On 2026-07-29, the Gateway v2 native-text/Room-43 source passed 361 focused
-  model/data/database/service tests. Root `test allTests` then passed with the required en-US JVM
-  locale; `spotlessApply spotlessCheck`, `assembleDebug`, `kmpSmokeCompile`, and both Debug flavor
-  lint tasks also passed. The Google arm64 Debug APK is 50,783,283 bytes with SHA-256
-  `94F4477B3D3BB0AD63B0EF229FA78549885363DBC69FE315D67C4677BAD5857B`. At that snapshot, root
-  `detekt` was blocked only by three pre-existing findings in the unmodified desktop BLE pairing
-  service; use the newer status above for the current gate.
-  `assembleRelease` is independently blocked by the unmodified Widget module's missing
-  `colorControlNormal` and `widget_local_stats_preview` release resources; do not apply that
-  release-only failure to the green Debug artifact.
-- The exact current MeshLink and NTsocial parent Debug APKs were installed in place on four Android
-  16 arm64 phones. Matching installed hashes, preserved first-install timestamps/data, successful
-  activity starts, live processes, zero matching recent FATAL/ANR entries, and active Room
-  42-to-43 migrations were verified. Two dormant databases for previously selected radios remain at
-  schema 42 and will migrate when opened. Meshtastic connection/RF testing was explicitly skipped
-  because the environment has no Meshtastic node; this is not radio-delivery evidence.
-- On 2026-07-23, the cloud-free, Bluetooth-only Connections UI baseline passed: the
-  formatting/static/build/test command completed in 21m9s (1,589 actionable tasks), and KMP smoke
-  compilation plus both flavor lint tasks completed in 2m32s (920 actionable tasks).
-- The prior F-Droid arm64 debug APK passed `zipalign -c -P 16` and was clean-installed with the
-  NTsocial parent on three Android 16 phones. Parent Provider status/launch, primary screens,
-  lifecycle switching, English-keyboard text entry, cross-phone parent sync, and relevant crash/ANR
-  logs passed in the no-radio test scope. After removing the map/native dependency path, both current
-  arm64 debug APKs pass 16 KB zip alignment and the Google APK's packaged ELF load segments pass the
-  0x4000 alignment audit; repeat this on the final signed delivery artifact.
-- This confirms compilation, lint/static checks, tests, and debug packaging only. It is not proof of
-  Google Play release readiness or remote RF delivery.
-- On 2026-07-23, the branded Windows host passed `:desktop:test`, the full cross-platform baseline,
-  KMP smoke compilation and Android lint, plus `:desktop:packageReleaseDistributionForCurrentOS`.
-  Packaging produced unsigned `NTsocial MeshLink-1.0.0.exe` and `.msi` artifacts with vendor
-  `LiberaNt LLC`, menu group `NTsocial`, and upgrade UUID
-  `6784A2DD-CE59-518B-AA15-C26302D6FA85`. Coexistence/upgrade was checked from metadata only; actual
-  install/upgrade, light theme, 100/150/200% scaling, and tray replay behavior still require manual QA.
-- `:app:bundleGoogleRelease` passes R8, Lint Vital, cloud-runtime guards, and AAB packaging. The local
-  artifact is unsigned and therefore not Play-uploadable; the release workflow still requires an
-  authorized upload keystore and Play Console setup. Neither flavor should require or package Google
-  Cloud, Maps, Play services, Firebase, Crashlytics, Datadog, or ML Kit runtime/configuration.
-- The current cloud-free artifact is not Production-submission-ready. Remaining gates include the
-  location-FGS/API-37 policy fix or feature removal, first-send terms plus in-app UGC report/block,
-  stale `analytics_notice` cleanup, final public policy URLs/in-app link, upload signing and Play
-  signer pairing, current store assets/Console declarations, and Internal-track device testing.
-  Account-specific closed-testing/Production-access requirements also remain external gates.
-  Use `docs/google-play/README.md` and `docs/google-play/06-first-play-launch-plan-zh-TW.md` as the
-  submission source of truth.
+Documentation-only work normally needs link/path, consistency and `git diff --check` validation.
+Use a wider read-only gate when auditing status; do not run `spotlessApply` just to inspect source.
+Record every failure and skipped task; changed-module Spotless/Detekt must pass without suppressions.
 
-### Gradle Task Naming
-
-| Intent | KMP modules (`core:*`, `feature:*`) | Android-only (`app`, `core:api`, `core:barcode`) |
-|--------|--------------------------------------|--------------------------------------------------|
-| Run tests | `:module:allTests` | `:module:testFdroidDebugUnitTest` |
+| Intent | KMP module | Android-only flavored module |
+| --- | --- | --- |
+| Tests | `:module:allTests` or `:module:jvmTest` | `:module:testFdroidDebugUnitTest` |
 | Detekt | `:module:detekt` | `:module:detekt` |
-| Compile check | `:module:compileKotlinJvm` | `:module:compileFdroidDebugKotlin` |
+| Compile | `:module:compileKotlinJvm` | `:module:compileFdroidDebugKotlin` |
 
-Common mistakes:
-- `:core:network:detektMain` does not exist in KMP; use `:core:network:detekt`.
-- `:feature:connections:testDebugUnitTest` is ambiguous in KMP modules; use `:feature:connections:allTests`.
-- `:feature:connections:compileFdroidDebugKotlin` is wrong for KMP; use `:feature:connections:compileKotlinJvm` or `kmpSmokeCompile`.
+`core:api` and `feature:widget` are unflavored Android modules; use their actual Debug task names.
+Do not invent `detektMain` or flavor-specific tasks for KMP modules.
 
-## Architecture
+## Implementation contracts
 
-Kotlin Multiplatform project targeting Android, Desktop (JVM), and iOS. Business logic lives in
-`commonMain`; platform shells (`app/`, `desktop/`) wire DI and host UI. Preserve the upstream
-Meshtastic radio/service/database/settings foundation while adding NTsocial-specific gateway
-behavior in scoped modules.
+- `commonMain` holds shared logic, ViewModels and Compose UI; no `java.*` or `android.*` imports.
+  Use Okio, coroutines and existing platform interfaces. Host lifecycle/permissions/entitlements stay
+  in their platform source sets. Koin endpoint factories must preserve qualifiers and `Lazy<T>`.
+- Use existing `MeshtasticAppShell`, `MeshtasticNavDisplay`, `NavigationBackHandler`, Navigation 3
+  entry scopes and adaptive layout. Test entry-provider registration directly without Activity/Compose
+  setup. Do not reintroduce animated navigation glows that continuously render under radio activity.
+- Shared strings use Compose resources. Consult `.skills/compose-ui/strings-index.txt` first and run
+  `python3 scripts/sort-strings.py` after changes. CMP supports `%N$s`/`%N$d`; pre-format floats with
+  `NumberFormatter`. Preserve English, Traditional Chinese and Japanese launch/settings flows.
+- Use `safeCatching` in suspend work so cancellation propagates. Preserve exact session/generation,
+  database, route, packet and channel ownership through asynchronous work and teardown.
+- Android v1 columns/paths/commands remain immutable. New parent integration uses protected Gateway
+  Provider/capability/explicit commands, not deprecated AIDL. Outbound NTsocial envelopes use port 256;
+  legacy 497 is receive-only. Tokens and private payloads never enter events or logs.
+- Stable source identity is opaque and PSK-derived for encrypted channels; numeric slot is only a
+  locator. Keep insertion-captured identity, per-database history epochs and endpoint-scoped cursors.
+  Preserve idempotency and native-history exclusion rules in AGENTS.md.
+- QR/manual changes preserve exact-session readback and neutral `VERIFICATION_PENDING` semantics.
+  Built-in channel registration may run automatically within its documented slot/LoRa limits.
+  Broader node policy changes need the existing user consent/verification path.
+- Both Android flavors stay cloud-runtime-free and map-free. `google` is the Play publication label,
+  not permission for Google/Firebase/ML Kit/analytics dependencies. It uses the Meshtastic device API;
+  F-Droid falls back to bundled JSON. `PlatformAnalytics` remains a no-op compatibility seam.
+- Preserve Android/iOS green butterfly and Windows blue branding, Windows upgrade UUID, three-second
+  process-cold-start splash, and existing macOS/Linux identity. Windows installer/device claims require
+  Windows QA; shared JVM tests on macOS do not supply it.
+- Protect GPL provenance, privacy and secrets. Do not modify the proto submodule without explicit scope.
+  Device uninstall loses data; verify exact package and follow user authorization. Prefer preserving
+  existing app data and sessions. Never infer authorization to send messages from a read-only audit.
 
-Treat Android and Microsoft Windows as separate product tracks on the shared KMP foundation.
-Plans, status, validation, and release claims must identify the affected track. Changes to shared
-resources, UI, navigation, service/database contracts, or features must preserve both hosts.
+## Handover and release discipline
 
-### Module Layers
+Update `.agent_memory/session_context.md` at the end of the task. Search by date/topic because its
+sections are not globally chronological. AGENTS.md is current rules/status; dated reports and archived
+paragraphs retain historical evidence. `.skills/` supplies scoped playbooks, not a replacement snapshot.
 
-| Layer | Modules | Role |
-|-------|---------|------|
-| Host | `app`, `desktop` | Platform shell, Koin root, theme |
-| Feature | `feature/*` | Self-contained screens, mostly KMP, using `com.ntsocial.meshlink.kmp.feature` |
-| Core | `core/*` | Shared logic, data, networking, UI components |
-
-### Key Technologies
-
-- UI: Compose Multiplatform + Material 3 Adaptive/Expressive
-- Navigation: JetBrains Navigation 3 with `@Serializable` route keys in `core:navigation`
-- DI: Koin 4.2+ with K2 compiler plugin
-- Networking: Ktor
-- BLE: Kable via `core:ble`
-- Database: Room KMP
-- I/O: Okio
-- Build: Gradle Kotlin DSL with convention plugins in `build-logic/`
-- Flavors: `fdroid` and `google` are both OSS/cloud-runtime-free. `google` is the Play publication
-  path and uses the non-Google Meshtastic project API for device/firmware information; `fdroid`
-  intentionally uses bundled JSON fallback. QR/barcode decoding is local ZXing in both flavors.
-- `PlatformAnalytics` is an upstream-compatibility seam only. Every Android flavor binds it to
-  `NoopPlatformAnalytics`; never add an event-recording or network-backed implementation.
-
-### Source-Set Boundaries
-
-- `commonMain`: business logic, ViewModels, shared UI. No `java.*` or `android.*` imports.
-- `androidMain`: Android framework integration only. No business logic.
-- `jvmMain` / `jvmAndroidMain`: shared JVM code for Android + Desktop.
-- Platform capabilities: prefer interface + DI over `expect`/`actual`.
-
-### Namespacing Boundaries
-
-- New project-owned code uses `com.ntsocial.meshlink.*`.
-- Android host identity is `com.ntsocial.meshlink`; Desktop host identity is
-  `com.ntsocial.meshlink.desktop`.
-- Keep generated upstream Meshtastic protobufs under `org.meshtastic.proto`.
-- Do not create new `org.meshtastic.*` or `com.geeksville.mesh` project packages.
-- Existing semantic names such as `MeshtasticNavDisplay`, `MeshtasticBleConstants`, and
-  `MeshtasticDatabase` may remain when they describe upstream protocol/device/shell behavior.
-
-### Navigation Pattern
-
-Feature navigation graphs are extension functions on `EntryProviderScope<NavKey>` in `commonMain`.
-The host shell renders via `MeshtasticNavDisplay`. Use `NavigationBackHandler`, not Android's
-`BackHandler`.
-
-Entry-provider assembly tests should directly construct their `NavBackStack` and providers. Do not
-launch Robolectric Activity/Compose infrastructure for registration-only assertions; that setup caused
-a coroutine-cleanup timeout flake under the full parallel baseline.
-
-## Key Conventions
-
-### Copyright & Attribution
-
-- Use the synchronized `config/spotless/copyright.*` and Detekt templates; LiberaNt's NTsocial
-  original work/modifications appear first, while the Meshtastic LLC line is conditional on derived
-  portions and the header records the 2026 modification date.
-- Never remove applicable upstream GPL, copyright, warranty, MIT, or third-party notices.
-- Do not copy the adjacent parent App's proprietary `All Rights Reserved`/EULA text, private
-  business logic, assets, credentials, or secrets into this GPL repository.
-- Preserve Gradle wrapper, `core/proto`, generated, and third-party file headers instead of forcing
-  the project template onto them.
-
-### Strings & Formatting
-
-- All shared strings live in `core/resources/src/commonMain/composeResources/values/strings.xml`.
-- Use `stringResource(Res.string.key)`; avoid hardcoded UI strings.
-- CMP only supports `%N$s` and `%N$d`; pre-format floats with `NumberFormatter.format()`.
-- Run `python3 scripts/sort-strings.py` after adding strings.
-
-### Error Handling
-
-- Use `safeCatching {}` from `core:common` instead of `runCatching {}` in suspend/coroutine code.
-  `runCatching` swallows `CancellationException`.
-
-### Dispatchers
-
-- Use `com.ntsocial.meshlink.core.common.util.ioDispatcher`; never use `Dispatchers.IO` directly.
-- Inject `CoroutineDispatchers` from `core:di`.
-
-### Build Logic
-
-- Convention plugins include `com.ntsocial.meshlink.kmp.feature`,
-  `com.ntsocial.meshlink.kmp.library`, `com.ntsocial.meshlink.kmp.jvm.android`, and
-  `com.ntsocial.meshlink.koin`.
-- Use `libs.library("alias-name")` string-based lookups, not type-safe accessors, in convention plugins.
-- Prefer lazy Gradle configuration with `configureEach`, `withPlugin`, and provider APIs.
-
-### Icons
-
-- Use `MeshtasticIcons` from `core/ui/icon/` instead of `material.icons.Icons`.
-
-### Protos
-
-- `core/proto/` is a read-only git submodule from `meshtastic/protobufs`. Never modify proto files
-  unless explicitly assigned upstream protocol/submodule work.
-
-### Design Standards
-
-- Current NTsocial skinning is token-based: non-Dynamic themes use NTsocial indigo, emerald, amber,
-  gray surfaces, and mixed monospace typography for compact metadata.
-- Preserve `AppTheme`, Dynamic Color behavior, Material 3 Expressive, and the existing adaptive
-  Navigation 3 shell unless a UI redesign is explicitly requested. Optional shared theme,
-  typography, or brand-painter overrides must preserve the existing no-override behavior.
-- Keep the shared first-release Connections UI Bluetooth-only: retain the connection-status card,
-  BLE scan/device list, region warning, and disconnect/navigation behavior, but do not restore
-  transport filter chips, USB/TCP sections, manual TCP controls, or screen-driven network scanning.
-  Preserve USB/TCP discovery, models, transports, handlers, preferences, and tests as backend code.
-- Use the established NTsocial butterfly for primary branding. Android launcher, store, splash, and
-  in-app variants use Meshtastic green `#67EA94` on black. Windows uses the authorized blue
-  butterfly and fiber background documented in `desktop/BRANDING_ASSETS.md`; never swap one
-  platform's approved colorway into the other.
-- Windows dark mode uses `#5B63EB`, `#3730A3`, `#10B981`, `#F59E0B`, and
-  `#0E1420`/`#161E2C`/`#212B3B`, with translucent surfaces and Segoe UI/Cascadia Mono fallbacks.
-  Preserve the three-second process-cold-start splash and do not replay it after tray re-show.
-- Use upstream Meshtastic design patterns when preserving existing Meshtastic screens, but do not
-  treat the upstream mountain logo or palette as primary NTsocial branding.
-- Known branding debt: `feature/widget/src/main/res/drawable/widget_app_icon.xml` still uses the upstream mountain and
-  is rendered by `LocalStatsWidget`; replace it before claiming the current asset set is complete.
-
-### Gateway Roadmap Boundaries
-
-- The implemented ContentProvider/capability/broadcast Gateway is Android-only. It is not the
-  Windows IPC contract.
-- Windows is currently an independent Meshtastic desktop client. Before connecting it to
-  `NTsocial_Windows`, define an explicit IPC/protocol, authentication, lifecycle, versioning, and
-  threat model. Do not import proprietary parent-App code or expose internal database/service
-  objects.
-- Windows packaging identity is `NTsocial MeshLink`, vendor `LiberaNt LLC`, menu group `NTsocial`,
-  application ID `com.ntsocial.meshlink.desktop`, and upgrade UUID
-  `6784A2DD-CE59-518B-AA15-C26302D6FA85`. Keep macOS/Linux branding unchanged unless explicitly in
-  scope.
-- Treat `C:\Users\cth\Documents\GitHub\NTsocial_Windows` as read-only. Copy only explicitly
-  authorized brand assets, record provenance and SHA-256 in `desktop/BRANDING_ASSETS.md`, and never
-  import secrets, credentials, unrelated data, or proprietary business logic.
-- Planned NTsocial overlay transport is `PRIVATE_APP / port 256`; legacy `497` is receive-only.
-- NTsocial `channelId` is the logical route; Meshtastic `channelIndex` is the RF lane.
-- NTsocial MeshLink must bundle and automatically register the canonical public NTsocial Meshtastic
-  channel after node DB readiness. Add only into a free slot; if every slot is occupied, fail closed
-  with `NO_SPACE` and preserve every primary/secondary. Apply QR LoRa/RF config only when the radio is
-  unconfigured or `region == UNSET`.
-- Preserve Gateway v1 exactly. Gateway v2 may expose sanitized status/catalog/bounded native text
-  history, route-aware port-256 overlay sends, and route-aware broadcast native text sends; it must
-  not expose PSKs/configuration, mutate via the Provider, or make MeshLink the canonical history
-  owner for NTsocial-native encrypted channels.
-- Gateway v2 `history_epoch` is stored per active Room history domain and rotates on whole-history
-  reset/database switch. `radio_generation` is opaque random runtime state, never a ChannelSet/PSK
-  digest. Provider history and its status high-water are stable-identity-only; nullable legacy rows
-  remain local and are never recomputed from the current slot.
-- A routed command is accepted only after its packet is in Room, WorkManager admission completes,
-  and the durable idempotency ledger commits. `SEND_CHANNEL_TEXT` accepts only nonblank broadcast
-  text up to 180 UTF-8 bytes; its repository owner serializes route revalidation, row insertion, and
-  queue admission so concurrent retries cannot create duplicate chat rows. It exports nullable
-  `origin_client_message_id` as local own-echo
-  metadata. SharedPreferences failures roll memory back and must never publish accepted. Acceptance
-  is not RF or remote-delivery proof.
-- Every encrypted channel identity is derived from a domain-separated digest of its resolved PSK
-  only; shorthand and full well-known keys converge. CLEAR fixed-ID and resolved-name compatibility
-  rules remain unchanged. Never export raw PSKs or `!local` as an external author.
-- `rebroadcast_mode = ALL` must be applied with user consent and verification.
-- Do not send image, voice, or PTT media bytes over LoRa.
-- Do not describe planned gateway behavior as shipped until implemented.
-
-### Branching
-
-- For Codex agent work, use the `codex/` branch prefix by default unless the user or task requires otherwise.
-- Confirm remotes before assuming `origin` points to upstream Meshtastic.
-- Do not silently rebase, reset, or discard user work.
-
-### Push Workflow
-
-Before push:
-
-```bash
-./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests
-```
-
-After push:
-
-```bash
-gh pr checks <PR_NUMBER>
-# or
-gh run list --branch <branch> --limit 3
-```
-
-Report CI status only after fetching actual results.
-
-### Multi-Flavor Device Installs
-
-Release variants use the configured base application ID `com.ntsocial.meshlink`; debug variants use
-`com.ntsocial.meshlink.fdroid.debug` and `com.ntsocial.meshlink.google.debug`. When switching
-installed variants on a device:
-- Check the exact installed package before uninstalling.
-- Be aware that uninstalling loses onboarding state, permissions, and bonded-device data. Ask before
-  uninstalling if the user has an active session.
-- After changing native dependencies, verify the target APK with `zipalign -c -P 16` and audit all
-  packaged arm64 ELF `PT_LOAD` alignments.
-
-Both MeshLink build types may interoperate with the exact NTsocial debug and release packages. The
-release package uses its approved production signer; the debug package may use the stable team-debug
-or retained development-debug signer. A debuggable MeshLink host may also accept only the exact debug
-parent when their nonempty complete current-signer sets match; release hosts never enable that
-unpinned exception. Empty identities, unknown signers, partial multi-signer matches, and arbitrary
-package names fail closed. Keep private keys outside the repository and preserve Provider capability
-plus sender verification.
-
-## Deeper Guidance
-
-Consult `.skills/` for detailed playbooks:
-- `.skills/project-overview/` - Full codebase map and bootstrap
-- `.skills/kmp-architecture/` - Source-set rules, expect/actual
-- `.skills/compose-ui/` - Adaptive UI, string resources
-- `.skills/navigation-and-di/` - Nav 3 & Koin patterns
-- `.skills/testing-ci/` - CI architecture, verification matrix
-- `.skills/implement-feature/` - Feature development workflow
-- `.skills/code-review/` - PR hygiene checklist
-- `.skills/speckit/` - Spec Kit SDD workflow, slash commands, constitution
+Verify before push, and inspect GitHub Actions when pushing is in scope. Do not claim signed release,
+Production acceptance, permanent background execution, RF or canonical parent delivery without exact
+artifact/device/store evidence. Keep `docs/google-play/` policy drafts and release checklist aligned
+with the final app behavior; earlier unsigned artifacts do not establish current live store state.

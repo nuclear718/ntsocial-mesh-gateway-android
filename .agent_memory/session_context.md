@@ -2025,3 +2025,35 @@
   the IME started at y=1332; entered test text and the send icon were fully visible. Hiding the keyboard returned the
   input to `[23,1732][1057,1969]` without retained empty space. Neither test message was sent. The other two phones
   had no radio session, so their evidence is clean install/onboarding/startup only; no RF or remote receipt is claimed.
+
+
+## 2026-09-05 - Three-track development-state audit and agent guide reconciliation
+- Audited source HEAD `99bc567d9777adb15e17133403afda630bcaaa56` (latest product change `6db8c6a8d`)
+  against Android/iOS/Desktop production wiring, recent commits, dated reports, build conventions and CI.
+  Initial worktree was clean. This task changes documentation/agent guidance only, with no product/CI fixes,
+  parent-worktree edits, device installation, or message sending.
+- Rebuilt AGENTS.md around current capability, open blockers and bounded evidence; preserved 35 old status
+  paragraphs in `docs/archive/agent-status-history-through-2026-09-04.md`. Full Traditional Chinese report:
+  `docs/development-status-audit-2026-09-05.md`. Updated Copilot/Claude/Gemini pointers, project-overview and
+  testing-ci skills, and supersession notices on README/KMP status/roadmap.
+- Source-confirmed Android v3 mismatch: READY secondary gateway sources advertise sends but receive scoped
+  `SecondaryGatewayRepository`, whose durable native/overlay methods throw; receiver returns QUEUE_FAILED.
+  v3 surface/token/endpoint ledger source exists, but production secondary sending cannot be claimed complete.
+  Keep legacy-primary v1/v2 isolation in any future correction. Existing fake/source tests do not exercise
+  successful production secondary dispatch; aggregate Sept3 device counts do not resolve this contradiction.
+- Reconfirmed live history-clear epoch publication defect. Recorded Swift QR didAdd scanner-instance ownership
+  as an un-reproduced review candidate, not an observed wrong-channel apply. Kept Windows first-pair/PIN limitation.
+- CI test/Kover inventory omits core gateway/meshcore/radio-fleet, feature meshcore and iOS runtime; root smoke
+  inventory is handwritten and misses radio-fleet directly (it still compiles transitively in the local gate).
+  Native iOS test executable link and run remain disabled; app/test-source compilation is not native execution.
+- Fresh macOS arm64/Homebrew OpenJDK 21.0.11/en-US full audit gate:
+  `spotlessCheck detekt assembleDebug test allTests kmpSmokeCompile :app:lintFdroidDebug :app:lintGoogleDebug
+  --continue --max-workers=1 --no-configuration-cache` completed in 4m19s, 1,946 actionable tasks:
+  374 executed, 3 from cache, 1,569 up-to-date. Formatting, both Android Debug builds/lints, tests,
+  Desktop/JVM and KMP/iOS Simulator source compilation passed. Exit 1 is five Detekt tasks / EIGHT findings:
+  BLE 3, domain 1, model 1, network 1, plus core UI LocalBarcodeScannerProvider lines 44/55
+  CompositionLocalAllowlist. The formerly repeated six-finding snapshot is superseded for this HEAD.
+- No new Release/AAB, Xcode/arm64 framework, signed device, RF, Windows-device or store verification was run.
+  Historical Sept3 signed iOS BLE/READY and user-confirmed native two-way messaging remain bounded evidence;
+  iOS Room observed iOS-origin DELIVERED and Android-origin RECEIVED, not independently captured Android receipt.
+  Search memory by date/topic: older entries were both prepended and appended, not globally sorted.

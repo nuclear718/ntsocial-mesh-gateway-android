@@ -1,7 +1,9 @@
 # Skill: Project Overview & Codebase Map
 
 ## Description
-Module directory, namespacing conventions, environment setup, and troubleshooting for NTsocial MeshLink Android.
+Module directory, namespacing conventions, environment setup, and troubleshooting for NTsocial MeshLink Android,
+Windows, and iOS. Current capability, blockers, and evidence are in `AGENTS.md` and
+`docs/development-status-audit-2026-09-05.md`; older migration/roadmap pages are historical snapshots.
 
 - **Build System:** Gradle (Kotlin DSL). JDK 21 REQUIRED. Target SDK: API 37. Min SDK: API 26.
 - **Flavors:** `fdroid` and `google` are both OSS and cloud-runtime-free. The `google` name remains only for existing Google Play publication compatibility.
@@ -14,7 +16,7 @@ Module directory, namespacing conventions, environment setup, and troubleshootin
 | `app/` | Main application module. Contains `MainActivity`, Koin DI modules, and app-level logic. Uses package `com.ntsocial.meshlink.app`. |
 | `build-logic/` | Convention plugins for shared build configuration (e.g., `com.ntsocial.meshlink.kmp.feature`, `com.ntsocial.meshlink.kmp.library`, `com.ntsocial.meshlink.kmp.jvm.android`, `com.ntsocial.meshlink.koin`). |
 | `config/` | Detekt static analysis rules (`config/detekt/detekt.yml`) and Spotless formatting config (`config/spotless/.editorconfig`). |
-| `docs/` | Architecture docs and agent playbooks. See `docs/kmp-status.md` and `docs/roadmap.md` for current status. |
+| `docs/` | Architecture docs and audit reports. Use `AGENTS.md` and the dated development audit for current status; migration/roadmap pages retain older context. |
 | `core/model` | Domain models and common data structures. |
 | `core:proto` | Protobuf definitions (Git submodule). |
 | `core:common` | Low-level utilities, I/O abstractions (Okio), and common types. |
@@ -22,6 +24,9 @@ Module directory, namespacing conventions, environment setup, and troubleshootin
 | `core:datastore` | Multiplatform DataStore for preferences. |
 | `core:repository` | High-level domain interfaces (e.g., `NodeRepository`, `LocationRepository`). |
 | `core:domain` | Pure KMP business logic and UseCases. |
+| `core:gateway` | Shared Apple Gateway mailbox, HMAC, route, ledger and projection contracts. Android Provider/broadcast implementation remains in `core:service/androidMain`. |
+| `core:radio-fleet` | Shared maximum-four endpoint catalog/session contracts and bounded conversation projections. Android/iOS own real endpoint hosts; Desktop uses a no-op fleet projection. |
+| `core:meshcore` | MeshCore protocol/model/repository foundation; production transport remains pending. |
 | `core:data` | Core manager implementations and data orchestration. |
 | `core:network` | KMP networking layer using Ktor, MQTT abstractions, and shared transport (`StreamFrameCodec`, `TcpTransport`, `SerialTransport`, `BleRadioInterface`). |
 | `core:di` | Common DI qualifiers and dispatchers. |
@@ -39,6 +44,12 @@ Module directory, namespacing conventions, environment setup, and troubleshootin
 | `feature/wifi-provision` | KMP WiFi provisioning via BLE (Nymea protocol). Uses `core:ble` Kable abstractions. |
 | `feature/firmware` | Fully KMP firmware update system: Unified OTA (BLE + WiFi), native Nordic Secure DFU protocol (pure KMP), USB/UF2 updates, and `FirmwareRetriever` with manifest-based resolution. Desktop is a first-class target. |
 | `desktop/` | Compose Desktop application. Thin host shell relying on feature modules for shared UI. Full Koin DI graph, TCP, Serial/USB, and BLE transports. Versioning via `config.properties` + `GitVersionValueSource`. |
+| `ios/runtime` | KMP `MeshLinkKit` runtime, shared Compose shell, isolated endpoint hosts, primary-only Apple Gateway, native outbox, language/scanner bridges and platform adapters. |
+| `iosApp/` | SwiftUI/Xcode host, lifecycle, App Group/Keychain bootstrap, entitlements, app assets and Channels-only VisionKit camera scanner. |
+
+Connections UI is Bluetooth-only on all three tracks; backend transport availability does not imply a visible UI.
+Shared `test`/`allTests` and `kmpSmokeCompile` are not proof that native iOS test executables ran: their link/run
+tasks are disabled. Root/CI module inventories are handwritten and currently incomplete; see `testing-ci`.
 
 ## Namespacing
 - **Standard:** Use the `com.ntsocial.meshlink.*` namespace for project-owned code.

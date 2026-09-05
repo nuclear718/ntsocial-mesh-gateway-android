@@ -1,8 +1,12 @@
 # Roadmap
 
+> **2026-09-05 status notice:** This is a historical roadmap. Completed iOS work, Bluetooth-only UI and host no-op capabilities must be checked against current source before planning.
+> See [AGENTS.md](../AGENTS.md) and the [current development audit](development-status-audit-2026-09-05.md) for source-backed capability, blockers and validation.
+
 > Last updated: 2026-07-18
 
-Forward-looking priorities for the Meshtastic KMP multi-target effort. For current state, see [`kmp-status.md`](./kmp-status.md).
+Historical priorities for the Meshtastic KMP multi-target effort. For current state and open findings,
+see [`AGENTS.md`](../AGENTS.md) and the [September 5 audit](development-status-audit-2026-09-05.md).
 
 ## Architecture Health (Immediate)
 

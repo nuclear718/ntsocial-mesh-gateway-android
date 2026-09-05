@@ -8,7 +8,7 @@ Guidelines and commands for verifying code changes locally and understanding the
 Run in a single invocation for routine changes to ensure code formatting, analysis, and basic compilation:
 
 ```bash
-./gradlew spotlessCheck spotlessApply detekt assembleDebug test allTests
+./gradlew spotlessApply spotlessCheck detekt assembleDebug test allTests
 ```
 
 > **Why no `clean`?** Incremental builds are safe and significantly faster. Only use `clean` when debugging stale cache issues.
@@ -33,11 +33,11 @@ Run in a single invocation for routine changes to ensure code formatting, analys
 
 ## 3) Flavor checks
 
-Run these when relevant to map, provider, or flavor-specific behavior:
+Run these when relevant to Provider, resources, or flavor-specific behavior (rendered maps are removed):
 
 ```bash
-./gradlew lintFdroidDebug lintGoogleDebug
-./gradlew testFdroidDebug testGoogleDebug
+./gradlew :app:lintFdroidDebug :app:lintGoogleDebug
+./gradlew :app:testFdroidDebugUnitTest :app:testGoogleDebugUnitTest
 ```
 
 ## 4) CI Pipeline Architecture
@@ -69,7 +69,9 @@ CI is defined in `.github/workflows/reusable-check.yml` and structured as four p
 - Disables unused Android build features (`resvalues`, `shaders`)
 
 ### CI Conventions
-- **KMP Smoke Compile:** `./gradlew kmpSmokeCompile` is a lifecycle task (registered in `RootConventionPlugin`) that auto-discovers all KMP modules and depends on their `compileKotlinJvm` + `compileKotlinIosSimulatorArm64` tasks.
+- **KMP Smoke Compile:** `./gradlew kmpSmokeCompile` is registered in `RootConventionPlugin` from a handwritten module list and depends on listed modules' `compileKotlinJvm` + `compileKotlinIosSimulatorArm64` tasks. Keep that list synchronized with `settings.gradle.kts`. As of 2026-09-05 it omits `core:radio-fleet` directly, although dependency compilation may cover it indirectly.
+- **Current CI Inventory Gap:** The test/Kover shards omit `core:gateway`, `core:meshcore`, `core:radio-fleet`, `feature:meshcore`, and `ios:runtime`. Explicitly run affected module tests until the inventories are corrected. Current workflows do not provide an explicit Xcode host gate; requested native compilation on a non-Apple runner is not Apple host validation.
+- **Native iOS Evidence:** Convention code disables native test executable link and run tasks. `compileTestKotlinIosSimulatorArm64` checks test source; framework linkage checks the application framework. Neither executes native tests. iOS changes need the focused runtime and Apple-host checks in `AGENTS.md`; `DESKTOP_ONLY` excludes Android/iOS entirely.
 - **`maxParallelForks` CI logic:** `ProjectExtensions.kt` checks `project.findProperty("ci") == "true"` and uses full available processors in CI (4 forks on std runners) vs. half locally. All CI invocations pass `-Pci=true`.
 - **Detekt report formats:** Detekt.kt checks `project.findProperty("ci") == "true"` and disables html, txt, md reports in CI; only xml + sarif are retained for GitHub annotations.
 - **Robolectric SDK caching:** The `gradle-setup` composite action caches `~/.m2/repository/org/robolectric` to prevent flaky `SocketException` on SDK downloads. Cache key is `robolectric-{version}-sdk{level}` — update when bumping version or SDK level.
@@ -82,4 +84,3 @@ CI is defined in `.github/workflows/reusable-check.yml` and structured as four p
 - **Cache writes:** Trusted on `main` and merge queue runs; other refs use read-only cache.
 - **Path filtering:** `check-changes` in `pull-request.yml` must include module dirs plus build/workflow entrypoints (`build-logic/**`, `gradle/**`, `.github/workflows/**`, `gradlew`, `settings.gradle.kts`, etc.).
 - **AboutLibraries:** Runs in `offlineMode` by default (no GitHub/SPDX API calls). Release builds pass `-PaboutLibraries.release=true` via Fastlane/Gradle CLI to enable remote license fetching. Do NOT re-gate on `CI` or `GITHUB_TOKEN` alone.
-

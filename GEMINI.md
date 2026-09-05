@@ -1,4 +1,4 @@
-# Meshtastic Android - Google Gemini Guide
+# NTsocial MeshLink Android, Windows & iOS - Google Gemini Guide
 
 > **Note:** The canonical instructions for all AI Agents have been deduplicated. 
 

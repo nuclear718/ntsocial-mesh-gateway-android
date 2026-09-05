@@ -1,5 +1,8 @@
 # NTsocial MeshLink
 
+> **2026-09-05 現況更新：**本 README 主要保留早期 Android Gateway 的範圍說明，後續工作清單不代表目前三平台的實作狀態。
+> 請以 [AGENTS.md](AGENTS.md) 與[開發現況審查](docs/development-status-audit-2026-09-05.md)查閱有原始碼依據的能力、阻塞與驗證結果。
+
 > [!IMPORTANT]
 > **NTsocial MeshLink 目前由 LiberaNt LLC 與 NTsocial 團隊主導開發、整合與維護**，是
 > Android [NTsocial App](https://github.com/nuclear718/NTsocial_release) 的核心

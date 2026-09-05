@@ -1,8 +1,12 @@
 # KMP Migration Status
 
+> **2026-09-05 status notice:** This is a historical July migration snapshot. Its module counts, UI descriptions, iOS TODOs and completion scores are superseded.
+> See [AGENTS.md](../AGENTS.md) and the [current development audit](development-status-audit-2026-09-05.md) for source-backed capability, blockers and validation.
+
 > Last updated: 2026-07-18
 
-Single source of truth for Kotlin Multiplatform migration progress. For the forward-looking roadmap, see [`roadmap.md`](./roadmap.md). For completed decision records, see [`decisions/`](./decisions/).
+Historical record of Kotlin Multiplatform migration progress at the date above. For current state use
+[`AGENTS.md`](../AGENTS.md); for completed decision records see [`decisions/`](./decisions/).
 
 ## Summary
 
