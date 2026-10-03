@@ -1,0 +1,19 @@
+/* Copyright (c) 2026 LiberaNt LLC. SPDX-License-Identifier: GPL-3.0-or-later */
+"language" = "協議語言";
+"language_name" = "繁體中文";
+"title" = "使用者條款協議 / EULA";
+"version" = "協議版本：";
+"intro" = "使用 NTsocial MeshLink 前，請閱讀下方連結的完整使用條款與社群規範。即使無須註冊或登入，也必須明確同意。";
+"zero_tolerance" = "對令人反感的內容或濫用行為的使用者採取零容忍政策（no tolerance）。禁止傳送性剝削、威脅、騷擾、仇恨、詐騙或違法內容。";
+"response" = "LiberaNt LLC 承諾在收到檢舉後 24 小時內採取管理措施：移除違規內容，並將違規使用者從所營運的服務踢除或停權。";
+"license" = "本行為條款補充 Apple 標準 EULA，並保留適用開源授權的權利，包括 GPL-3.0-or-later。";
+"full_terms" = "閱讀完整使用條款";
+"community" = "社群規範";
+"privacy" = "隱私權政策";
+"apple_eula" = "Apple 標準 EULA";
+"contact" = "開發者與安全聯絡窗口：LiberaNt LLC";
+"acknowledgement" = "我已閱讀並同意使用條款、社群規範及適用的 EULA。";
+"accept" = "同意並繼續";
+"decline" = "我不同意";
+"declined" = "必須同意才能繼續。您可以關閉 App。";
+"save_failed" = "無法儲存您的同意紀錄，請重試。";

@@ -11,6 +11,37 @@ Native/Android/Windows 完整 gate 已通過：2,025 tasks，103 executed、1,92
 
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+## 2026-10-02 - iOS first-launch Terms/EULA consent gate
+- User requested iOS MeshLink show and require multilingual EULA/Terms immediately on first launch,
+  using the official LiberaNt policy and the Apple UGC review message. Worktree base: `b0e3a9fe94`.
+- Added native SwiftUI `TermsConsentView` and Foundation `TermsConsentStore` in `iosApp`, with en,
+  zh-Hant and ja `Terms.strings` wired into Xcode. Verified live official website version `2026-10-02`
+  and matching terms/community/privacy anchors via HTTPS. Screen includes zero tolerance, 24-hour
+  report-response commitment, official policies, Apple Standard EULA and developer contact.
+- Unchecked acknowledgement plus explicit Agree is required; decline remains at the gate, language
+  changes clear the checkbox, and deep links are deferred. Removed pre-consent App.init Gateway
+  bootstrap. Compose/KMP/BLE/Gateway creation and host lifecycle callbacks begin only after consent.
+  Version/language/date are App-private UserDefaults; missing/invalid/different-version records ask
+  again. Existing Compose language onboarding remains after consent; no parent or shared product
+  source changed. Android/Windows behavior and primary-only Apple Gateway ownership remain intact.
+- Added standalone Foundation regression tests plus macOS runner and device recording checklist:
+  `docs/ios-terms-consent-2026-10-02.md`. Native tests are NOT executed here: Windows has no Swift
+  compiler, xcrun or xcodebuild. Swift syntax parser, three-language key parity (18 each), Xcode
+  object/source/resource reference checks, Bash syntax and diff checks passed.
+- Root baseline passed: 1,703 tasks (452 executed, 9 from cache, 1,242 up-to-date). Initial Android
+  secondary endpoint test failures were SQLite error 14 with long Robolectric temp paths; rerunning
+  with JDK 21, valid ANDROID_HOME and JAVA_TOOL_OPTIONS including `-Djava.io.tmpdir=C:/mlt` passed
+  both flavors and the full baseline without changing Android product/test source. Max workers: 4.
+- KMP/lint plus runtime JVM tests and iosArm64/iosSimulatorArm64/test source compilation passed:
+  1,122 tasks (296 executed, 1 from cache, 825 up-to-date). Simulator framework link was SKIPPED on
+  Windows; native test link/run remain disabled. Actual SwiftUI/Xcode, simulator/device launch,
+  BLE/Gateway regression and physical recording remain to be completed on Apple equipment.
+- This implements the requested consent gate, not all UGC safeguards. Dedicated filtering and
+  in-app content/user reporting were not found in the inspected feature paths. Existing Ignore
+  does not establish immediate history removal or developer notification. Actual report delivery,
+  24-hour moderation/removal/suspension operations and physical report/block demonstrations remain
+  release gates. No Apple reply, App Store Connect edit/upload, commit or push was performed.
+
 ## 2026-09-10 - Company App Group migrated; goal expanded to two App Store submissions
 - User explicitly abandoned the original App Group, rejected the interim Team-ID-suffixed name, and retired
   all old personal signing configuration. Final product App Group is `group.com.ntsocial.gateway` for both

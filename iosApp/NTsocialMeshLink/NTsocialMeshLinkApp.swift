@@ -12,10 +12,6 @@ import SwiftUI
 
 @main
 struct NTsocialMeshLinkApp: App {
-    init() {
-        AppleGatewayBootstrap.configureRuntime()
-    }
-
     var body: some Scene {
         WindowGroup {
             MeshLinkHostView()
@@ -24,13 +20,43 @@ struct NTsocialMeshLinkApp: App {
 }
 
 private struct MeshLinkHostView: View {
+    private let consentStore = TermsConsentStore()
+    @State private var hasAcceptedTerms = TermsConsentStore().hasAcceptedCurrentTerms
+    @State private var pendingURL: URL?
+
+    var body: some View {
+        Group {
+            if hasAcceptedTerms {
+                AcceptedMeshLinkHostView(pendingURL: $pendingURL)
+            } else {
+                TermsConsentView(store: consentStore) {
+                    hasAcceptedTerms = consentStore.hasAcceptedCurrentTerms
+                }
+            }
+        }
+        .onOpenURL { url in
+            if hasAcceptedTerms {
+                MeshLinkRuntime.shared.handleOpenUrl(url: url.absoluteString)
+            } else {
+                // Retain the handoff, but do not create the runtime or process commands before consent.
+                pendingURL = url
+            }
+        }
+    }
+}
+
+private struct AcceptedMeshLinkHostView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Binding var pendingURL: URL?
 
     var body: some View {
         ComposeRootView()
             .ignoresSafeArea()
-            .onOpenURL { url in
-                MeshLinkRuntime.shared.handleOpenUrl(url: url.absoluteString)
+            .onAppear {
+                if let url = pendingURL {
+                    pendingURL = nil
+                    MeshLinkRuntime.shared.handleOpenUrl(url: url.absoluteString)
+                }
             }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active {

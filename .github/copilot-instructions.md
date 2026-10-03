@@ -34,6 +34,10 @@ Use synchronized copyright templates; do not import proprietary parent code, sec
 - iOS uses the shared Compose shell and a primary-only Apple Gateway, with App Group SQLite,
   shared-Keychain HMAC, exact session/readback gating and durable outbox. Secondary Apple Gateway
   exposure remains intentionally unavailable. Native rows drain independently of gated Gateway rows.
+- The iOS host now gates runtime startup on explicit, initially unchecked Terms/EULA consent in
+  English, Traditional Chinese or Japanese, stored privately with version/language/time. October 2
+  source still needs Xcode/device validation; it does not complete UGC reporting, content filtering,
+  blocking/developer notification or moderation operations. See `docs/ios-terms-consent-2026-10-02.md`.
 - iOS Channels scanning uses VisionKit and shared endpoint confirmation; Android uses CameraX/ZXing.
   Other iOS scanner surfaces and Desktop scanning remain unavailable. The Swift recognition callback
   has an untested scanner-instance ownership gap; Kotlin token checks alone do not establish complete

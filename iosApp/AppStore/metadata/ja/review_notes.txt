@@ -1,6 +1,6 @@
 No account or sign-in is required. This app controls separately obtained compatible Meshtastic Bluetooth radios. It does not simulate radio delivery without hardware.
 
-1. Launch the app, choose a language, and allow Bluetooth.
+1. 初回起動では、言語の初期設定、Bluetooth、無線、Gateway の開始前に利用規約／EULA を表示します。日本語・英語・繁体字中国語を切り替え、公式サイトの対応言語の全文を開けます。不適切な内容や悪質な利用者を一切容認しない方針と、通報受領後24時間以内の管理措置を明記しています。同意欄は未選択です。選択して「同意して続ける」を押すと進めます。同意しない場合は先へ進めません。その後、アプリの言語を選び、Bluetooth を許可してください。
 2. Power on a compatible Meshtastic radio and use Connections to scan, select, and pair it. Complete any hardware PIN prompt.
 3. Once configuration is loaded, inspect Messages, Nodes, Channels, and supported settings. A second compatible radio on matching channel/region settings is needed to verify over-the-air text exchange.
 4. In Channels, open the QR scanner to test camera permission and scan a Meshtastic channel QR code. Review the proposed change before applying it.

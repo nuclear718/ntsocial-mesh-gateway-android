@@ -1,6 +1,6 @@
 No account or sign-in is required. This app controls separately obtained compatible Meshtastic Bluetooth radios. It does not simulate radio delivery without hardware.
 
-1. Launch the app, choose a language, and allow Bluetooth.
+1. On first launch, the Terms of Use / EULA screen appears before language onboarding, Bluetooth, radio or Gateway startup. The agreement is available in English, Traditional Chinese and Japanese, with matching official website links. It states zero tolerance for objectionable content and abusive users, and moderation action within 24 hours of report receipt. The acknowledgement starts unchecked; select it and tap Agree and Continue. Declining prevents entry. After agreement, choose the app language and allow Bluetooth.
 2. Power on a compatible Meshtastic radio and use Connections to scan, select, and pair it. Complete any hardware PIN prompt.
 3. Once configuration is loaded, inspect Messages, Nodes, Channels, and supported settings. A second compatible radio on matching channel/region settings is needed to verify over-the-air text exchange.
 4. In Channels, open the QR scanner to test camera permission and scan a Meshtastic channel QR code. Review the proposed change before applying it.

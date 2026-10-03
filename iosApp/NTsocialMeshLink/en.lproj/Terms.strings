@@ -1,0 +1,19 @@
+/* Copyright (c) 2026 LiberaNt LLC. SPDX-License-Identifier: GPL-3.0-or-later */
+"language" = "Agreement language";
+"language_name" = "English";
+"title" = "Terms of Use / EULA";
+"version" = "Agreement version:";
+"intro" = "Before using NTsocial MeshLink, read the full Terms and Community Standards linked below. Explicit agreement is required even without registration or login.";
+"zero_tolerance" = "Zero tolerance (no tolerance) for objectionable content or abusive users. Do not send sexual exploitation, threats, harassment, hate, scams, or unlawful content.";
+"response" = "LiberaNt LLC commits to moderation action within 24 hours after receiving a report: removing violations and ejecting or suspending offenders from services it operates.";
+"license" = "These conduct terms supplement Apple's Standard EULA and preserve applicable open-source license rights, including GPL-3.0-or-later.";
+"full_terms" = "Read the full Terms of Use";
+"community" = "Community Standards";
+"privacy" = "Privacy Policy";
+"apple_eula" = "Apple Standard EULA";
+"contact" = "Developer and safety contact: LiberaNt LLC";
+"acknowledgement" = "I have read and agree to the Terms, Community Standards and applicable EULA.";
+"accept" = "Agree and Continue";
+"decline" = "I Do Not Agree";
+"declined" = "Agreement is required to continue. You may close the app.";
+"save_failed" = "Your agreement could not be saved. Please try again.";

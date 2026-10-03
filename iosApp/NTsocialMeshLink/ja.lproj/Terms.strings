@@ -1,0 +1,19 @@
+/* Copyright (c) 2026 LiberaNt LLC. SPDX-License-Identifier: GPL-3.0-or-later */
+"language" = "規約の言語";
+"language_name" = "日本語";
+"title" = "利用規約 / EULA";
+"version" = "規約バージョン：";
+"intro" = "NTsocial MeshLink の利用前に、以下のリンクから利用規約全文とコミュニティ規範をお読みください。登録やログインが不要でも、明示的な同意が必要です。";
+"zero_tolerance" = "不適切なコンテンツや悪質な利用者を一切容認しません（no tolerance）。性的搾取、脅迫、嫌がらせ、ヘイト、詐欺、違法な内容の送信を禁止します。";
+"response" = "LiberaNt LLC は通報受領後24時間以内に管理措置を取ります。違反内容を削除し、運営するサービスから違反者を排除または利用停止にします。";
+"license" = "本行動規約は Apple 標準 EULA を補足し、GPL-3.0-or-later を含む適用オープンソースライセンスの権利を維持します。";
+"full_terms" = "利用規約全文を読む";
+"community" = "コミュニティ規範";
+"privacy" = "プライバシーポリシー";
+"apple_eula" = "Apple 標準 EULA";
+"contact" = "開発者・安全窓口：LiberaNt LLC";
+"acknowledgement" = "利用規約、コミュニティ規範、適用される EULA を読み、同意します。";
+"accept" = "同意して続ける";
+"decline" = "同意しない";
+"declined" = "続けるには同意が必要です。アプリを閉じることができます。";
+"save_failed" = "同意を保存できませんでした。もう一度お試しください。";

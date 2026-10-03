@@ -47,7 +47,7 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
 | --- | --- | --- |
 | Android | Shared shell, three-language first launch, per-endpoint UI and independent sessions for up to four BLE radios, Channel Hub, protected Gateway v1/v2 and additive v3 fleet surface | Secondary v3 native and overlay dispatch now use an isolated production repository and durable queue. September 16 device evidence covers secondary-to-iPhone RF and parent import. Four-radio source capacity is not four-radio hardware proof. |
 | Windows | Branded Compose Desktop host, blue butterfly/theme/splash, native packaging metadata, shared messaging/nodes/settings, BLE/TCP/Serial transport backends | Single-radio UI/runtime; fleet and MQTT bindings are no-op. Connections exposes Bluetooth only. No Windows parent IPC/service/authenticator integration. Discovery has historical hardware evidence; successful first-pair/PIN recovery is not established. |
-| iOS | Shared Compose shell/settings, three-language first launch, up-to-four isolated BLE endpoint runtime/UI, primary-only Apple Gateway, durable native outbox, Channels-only VisionKit scanner | September 16 signed Debug evidence covers both directions of native and overlay RF plus parent history, after fixing the duplicated ingress gate. Concurrent multi-radio iPhone operation and arbitrary background lifetime remain unproven. |
+| iOS | Three-language host Terms/EULA consent before runtime startup, shared Compose shell/settings and language onboarding, up-to-four isolated BLE endpoint runtime/UI, primary-only Apple Gateway, durable native outbox, Channels-only VisionKit scanner | October 2 consent source awaits Xcode/device validation; other UGC moderation requirements remain open. September 16 signed Debug evidence covers both directions of native and overlay RF plus parent history, after fixing the duplicated ingress gate. Concurrent multi-radio iPhone operation and arbitrary background lifetime remain unproven. |
 
 - **Android fleet:** Every secondary endpoint owns an independent Room database, radio/config DataStores,
   Koin scope, transport/packet graph, generation, and message drain. App preferences remain shared.
@@ -88,6 +88,14 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
   provenance and drain ahead of gated Gateway work; a stable source identity alone never makes a native
   row Gateway-owned. Kotlin scanner request tokens reject mismatched IDs, but the Swift recognition
   callback still needs the ownership review listed below.
+- **iOS Terms/EULA gate (2026-10-02 source):** The SwiftUI host requires an initially unchecked
+  acknowledgement plus explicit agreement before creating Compose, radio or Apple Gateway owners.
+  App-private consent records capture the official `2026-10-02` version, language and timestamp;
+  absent/invalid/different-version records require agreement again. English, Traditional Chinese and
+  Japanese link to their corresponding official policy anchors. Android/Desktop and the existing
+  post-consent Compose language flow are unchanged. This is not proof of complete UGC filtering,
+  in-app reporting, effective history removal on block, developer notification, 24-hour operations
+  or device recording. See [consent implementation and remaining gates](docs/ios-terms-consent-2026-10-02.md).
 - **MeshCore:** Protocol/model/repository and UI foundations exist; production radio transport remains
   pending. Do not claim MeshCore connection, RF delivery, or multi-node operation from these screens/tests.
 

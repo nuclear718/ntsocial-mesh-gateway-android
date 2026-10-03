@@ -1,5 +1,10 @@
 # NTsocial MeshLink iOS host
 
+首次啟動會先顯示繁體中文／英文／日文使用條款與 EULA；明確同意前不啟動 Compose、BLE 或 Gateway。
+同意紀錄以 App 私有版本、語言與時間保存。行為、驗證、實機錄影及其他尚待完成的 UGC 項目見
+[2026-10-02 條款實作紀錄](../docs/ios-terms-consent-2026-10-02.md)。macOS 可執行
+`bash iosApp/Tools/run_terms_consent_tests.sh` 驗證 Foundation 同意紀錄邏輯。
+
 The app's Debug and Release configurations preserve bundle ID `com.ntsocial.meshlink.ios`
 and use automatic signing. `Config/Signing.xcconfig` optionally includes the Git-ignored
 `Config/Signing.local.xcconfig`; set `NTSOCIAL_DEVELOPMENT_TEAM = D524H699HW` there for
