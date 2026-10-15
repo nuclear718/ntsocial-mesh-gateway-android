@@ -162,6 +162,12 @@ interface ChannelReliabilityManager {
     suspend fun applyAndVerify(channelSet: ChannelSet): ChannelReliabilityResult
 
     /**
+     * Preview admission must keep the captured transport and readback owner, including while waiting for a mutation.
+     */
+    suspend fun applyPreviewAndVerify(channelSet: ChannelSet, expected: ChannelEditContext): ChannelReliabilityResult =
+        ChannelReliabilityResult.SESSION_UNAVAILABLE
+
+    /**
      * Builds and applies a channel-only mutation from the latest snapshot while holding the shared mutation lock.
      *
      * Use this for policy changes that must not overwrite a QR or Channels edit which completed while the caller was
@@ -197,3 +203,6 @@ interface ChannelReliabilityManager {
         mutationLease: ChannelMutationLock.Lease,
     ): ChannelReliabilityResult = reconcileProtectedChannelSetForSession(expectedRadioSessionEpoch)
 }
+
+/** A preview is valid only for the session and complete configuration read when it was opened. */
+data class ChannelEditContext(val radioSessionEpoch: Long, val readbackGeneration: Long)

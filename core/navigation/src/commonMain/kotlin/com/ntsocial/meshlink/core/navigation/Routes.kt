@@ -25,6 +25,7 @@
 package com.ntsocial.meshlink.core.navigation
 
 import androidx.navigation3.runtime.NavKey
+import kotlinx.serialization.Polymorphic
 import kotlinx.serialization.Serializable
 
 const val DEEP_LINK_BASE_URI = "meshtastic://meshtastic"
@@ -221,3 +222,14 @@ sealed interface WifiProvisionRoute : Route {
 
     @Serializable data class WifiProvision(val address: String? = null) : WifiProvisionRoute
 }
+
+/** The runtime ID is an ownership fence, never an authorization token restored after process death. */
+@Serializable data class EndpointTarget(val endpointId: String, val runtimeId: String)
+
+@Serializable
+sealed interface EndpointRoute : Route {
+    @Serializable
+    data class Destination(val target: EndpointTarget, val destination: @Polymorphic NavKey) : EndpointRoute
+}
+
+fun NavKey.withoutEndpoint(): NavKey = (this as? EndpointRoute.Destination)?.destination ?: this

@@ -227,6 +227,7 @@ internal class MeshtasticEndpointGatewaySource(
         EndpointSessionState.Connecting -> "CONNECTING"
         EndpointSessionState.Synchronizing -> "SYNCHRONIZING"
         EndpointSessionState.WaitingResource -> "WAITING_RESOURCE"
+        EndpointSessionState.Releasing -> "REGISTERED"
         EndpointSessionState.Registered -> "REGISTERED"
         is EndpointSessionState.Degraded -> "DEGRADED"
         is EndpointSessionState.Failed -> "FAILED"

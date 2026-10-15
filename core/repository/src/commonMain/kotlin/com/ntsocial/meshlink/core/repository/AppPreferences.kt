@@ -235,6 +235,11 @@ interface RadioPrefs {
 
     fun setDevAddr(address: String?)
 
+    /** Commits selection before a runtime hydrates its transport and database identity. */
+    suspend fun setDevAddrAndAwait(address: String?) {
+        setDevAddr(address)
+    }
+
     fun setDevName(name: String?)
 }
 

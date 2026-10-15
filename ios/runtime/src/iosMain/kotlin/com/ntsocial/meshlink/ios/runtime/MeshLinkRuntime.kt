@@ -124,7 +124,8 @@ object MeshLinkRuntime {
                     get() = barcodeScannerCoordinator.isSupported
 
                 override fun startChannelScan() {
-                    barcodeScannerCoordinator.startScan { contents -> currentOnResult.value(contents) }
+                    val capturedCallback = currentOnResult.value
+                    barcodeScannerCoordinator.startScan(capturedCallback)
                 }
             }
         }

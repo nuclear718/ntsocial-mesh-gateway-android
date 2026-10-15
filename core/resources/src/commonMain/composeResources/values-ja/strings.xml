@@ -777,4 +777,10 @@
     <!-- WIND -->
     <string name="wind">風力</string>
     <string name="you">あなた</string>
+    <string name="radio_remembered_devices">保存済みの端末（接続枠を使用しません）</string>
+    <string name="channel_hub_manage_channels">チャンネル管理／QR スキャン</string>
+    <string name="channel_hub_node_settings">無線機の設定</string>
+    <string name="radio_import_target">インポート先の無線機を選択</string>
+    <string name="radio_apply_target">適用先：%1$s</string>
+    <string name="radio_endpoint_edits_reset">ノードを切り替え、未保存の設定を破棄しました。このノードの設定を確認してから保存してください。</string>
 </resources>

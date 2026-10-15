@@ -30,6 +30,7 @@ import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.DataPacket
 import com.ntsocial.meshlink.core.model.Position
 import com.ntsocial.meshlink.core.model.PreciseLocationChannelSetPlanner
+import com.ntsocial.meshlink.core.repository.ChannelEditContext
 import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelProtectionSnapshot
@@ -81,6 +82,30 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ChannelReliabilityManagerImplTest {
+    @Test
+    fun `QR preview from a retired transport cannot admit a write on the replacement session`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val preview = ChannelEditContext(fixture.radioSessionState.value.epoch, fixture.readbackGeneration.value)
+        fixture.radioSessionState.value = fixture.radioSessionState.value.copy(epoch = preview.radioSessionEpoch + 1)
+        assertEquals(
+            ChannelReliabilityResult.SESSION_UNAVAILABLE,
+            fixture.manager.applyPreviewAndVerify(fixture.protectedSet, preview),
+        )
+        assertTrue(fixture.commandSender.events().isEmpty())
+    }
+
+    @Test
+    fun `QR preview must be reopened after the channel readback changes`() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val preview = ChannelEditContext(fixture.radioSessionState.value.epoch, fixture.readbackGeneration.value)
+        fixture.readbackGeneration.value++
+        assertEquals(
+            ChannelReliabilityResult.SESSION_UNAVAILABLE,
+            fixture.manager.applyPreviewAndVerify(fixture.protectedSet, preview),
+        )
+        assertTrue(fixture.commandSender.events().isEmpty())
+    }
+
     @Test
     fun `queue failure after begin attempts cleanup commit and never verifies`() = runTest {
         val fixture = Fixture(backgroundScope)

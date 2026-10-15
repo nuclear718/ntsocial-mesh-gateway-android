@@ -33,9 +33,7 @@ import com.ntsocial.meshlink.core.common.util.normalizeAddress
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.radiofleet.DEFAULT_RADIO_PRIORITY
 import com.ntsocial.meshlink.core.radiofleet.DiscoveredRadio
-import com.ntsocial.meshlink.core.radiofleet.MAX_RADIO_ENDPOINTS
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
-import com.ntsocial.meshlink.core.radiofleet.RadioEndpointLimitExceededException
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointProfile
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointStore
 import com.ntsocial.meshlink.core.radiofleet.RadioProtocol
@@ -64,13 +62,13 @@ class DataStoreRadioEndpointStore(
 
     override val profiles: StateFlow<List<RadioEndpointProfile>> =
         dataStore.data
-            .map { preferences -> normalizeProfiles(decodeProfiles(preferences[KEY_ENDPOINT_PROFILES])) }
+            .map { preferences -> normalizeProfiles(readProfiles(preferences)) }
             .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     override val selectedEndpointId: StateFlow<RadioEndpointId?> =
         dataStore.data
             .map { preferences ->
-                val currentProfiles = normalizeProfiles(decodeProfiles(preferences[KEY_ENDPOINT_PROFILES]))
+                val currentProfiles = normalizeProfiles(readProfiles(preferences))
                 resolveSelectedEndpoint(preferences[KEY_SELECTED_ENDPOINT], currentProfiles)
             }
             .stateIn(scope, SharingStarted.Eagerly, null)
@@ -79,7 +77,7 @@ class DataStoreRadioEndpointStore(
         mutationMutex.withLock {
             var migrated: RadioEndpointProfile? = null
             dataStore.edit { preferences ->
-                val current = normalizeProfiles(decodeProfiles(preferences[KEY_ENDPOINT_PROFILES]))
+                val current = normalizeProfiles(readProfiles(preferences))
                 val migrationVersion = preferences[KEY_MIGRATION_VERSION] ?: 0
                 if (migrationVersion >= ENDPOINT_MIGRATION_VERSION) {
                     migrated = current.firstOrNull { it.legacyPrimary }
@@ -96,6 +94,8 @@ class DataStoreRadioEndpointStore(
                                 transportAddress = validLegacyAddress,
                                 displayName = name.orEmpty().ifBlank { validLegacyAddress },
                                 legacyPrimary = true,
+                                enabled = false,
+                                autoConnect = false,
                             ),
                         )
                     } else {
@@ -113,7 +113,7 @@ class DataStoreRadioEndpointStore(
         require(isUsableAddress(candidate.transportAddress)) { "Radio address is not selectable" }
         var result: RadioEndpointProfile? = null
         dataStore.edit { preferences ->
-            val current = normalizeProfiles(decodeProfiles(preferences[KEY_ENDPOINT_PROFILES]))
+            val current = normalizeProfiles(readProfiles(preferences))
             val normalizedCandidate = normalizeAddress(candidate.transportAddress)
             val existing =
                 current.firstOrNull {
@@ -125,12 +125,10 @@ class DataStoreRadioEndpointStore(
                         existing.copy(
                             transportAddress = candidate.transportAddress,
                             displayName = candidate.displayName.ifBlank { existing.displayName },
-                            enabled = true,
                         )
                     result = refreshed
                     current.map { if (it.id == existing.id) refreshed else it }
                 } else {
-                    if (current.size >= MAX_RADIO_ENDPOINTS) throw RadioEndpointLimitExceededException()
                     val created =
                         RadioEndpointProfile(
                             id = RadioEndpointId(Uuid.random().toString()),
@@ -138,40 +136,44 @@ class DataStoreRadioEndpointStore(
                             transportAddress = candidate.transportAddress,
                             displayName = candidate.displayName.ifBlank { candidate.transportAddress },
                             legacyPrimary = current.isEmpty(),
+                            enabled = false,
+                            autoConnect = false,
                         )
                     result = created
                     current + created
                 }
             writeProfiles(preferences, updated, result.id.value)
         }
-        checkNotNull(result)
+        checkNotNull(result).also { expected -> profiles.first { values -> values.contains(expected) } }
     }
 
     override suspend fun update(profile: RadioEndpointProfile) {
         mutationMutex.withLock {
             dataStore.edit { preferences ->
-                val current = normalizeProfiles(decodeProfiles(preferences[KEY_ENDPOINT_PROFILES]))
+                val current = normalizeProfiles(readProfiles(preferences))
                 require(current.any { it.id == profile.id }) { "Unknown endpoint ${profile.id}" }
                 val updated = current.map { if (it.id == profile.id) profile else it }
                 writeProfiles(preferences, updated, preferences[KEY_SELECTED_ENDPOINT])
             }
+            profiles.first { values -> values.contains(profile) }
         }
     }
 
     override suspend fun select(endpointId: RadioEndpointId) {
         mutationMutex.withLock {
             dataStore.edit { preferences ->
-                val current = normalizeProfiles(decodeProfiles(preferences[KEY_ENDPOINT_PROFILES]))
-                require(current.any { it.id == endpointId }) { "Unknown endpoint $endpointId" }
+                val current = normalizeProfiles(readProfiles(preferences))
+                require(current.any { it.id == endpointId && it.enabled }) { "Endpoint has no active connection lease" }
                 preferences[KEY_SELECTED_ENDPOINT] = endpointId.value
             }
+            selectedEndpointId.first { it == endpointId }
         }
     }
 
     override suspend fun setLegacyPrimary(endpointId: RadioEndpointId) {
         mutationMutex.withLock {
             dataStore.edit { preferences ->
-                val current = normalizeProfiles(decodeProfiles(preferences[KEY_ENDPOINT_PROFILES]))
+                val current = normalizeProfiles(readProfiles(preferences))
                 require(current.any { it.id == endpointId }) { "Unknown endpoint $endpointId" }
                 val updated = current.map { it.copy(legacyPrimary = it.id == endpointId) }
                 writeProfiles(preferences, updated, preferences[KEY_SELECTED_ENDPOINT])
@@ -182,13 +184,11 @@ class DataStoreRadioEndpointStore(
     override suspend fun remove(endpointId: RadioEndpointId) {
         mutationMutex.withLock {
             dataStore.edit { preferences ->
-                val current = normalizeProfiles(decodeProfiles(preferences[KEY_ENDPOINT_PROFILES]))
-                val removed = current.firstOrNull { it.id == endpointId } ?: return@edit
-                var updated = current.filterNot { it.id == endpointId }
-                if (removed.legacyPrimary && updated.isNotEmpty()) {
-                    val replacement = updated.maxBy { it.priority }
-                    updated = updated.map { it.copy(legacyPrimary = it.id == replacement.id) }
+                val current = normalizeProfiles(readProfiles(preferences))
+                require(current.none { it.id == endpointId && it.legacyPrimary }) {
+                    "Disconnect the compatibility endpoint to release its connection; its binding is retained"
                 }
+                val updated = current.filterNot { it.id == endpointId }
                 writeProfiles(preferences, updated, preferences[KEY_SELECTED_ENDPOINT])
             }
         }
@@ -210,31 +210,37 @@ class DataStoreRadioEndpointStore(
     }
 
     private companion object {
-        const val ENDPOINT_MIGRATION_VERSION = 1
+        const val ENDPOINT_MIGRATION_VERSION = 2
         const val FIELD_SEPARATOR = "|"
         const val RECORD_SEPARATOR = "\n"
 
-        val KEY_ENDPOINT_PROFILES = stringPreferencesKey("radio_endpoint_profiles_v1")
+        val KEY_ENDPOINT_PROFILES = stringPreferencesKey("radio_endpoint_catalog_v2")
+        val KEY_LEGACY_PROFILES = stringPreferencesKey("radio_endpoint_profiles_v1")
         val KEY_SELECTED_ENDPOINT = stringPreferencesKey("radio_selected_endpoint_v1")
         val KEY_MIGRATION_VERSION = intPreferencesKey("radio_endpoint_migration_version")
 
         fun isUsableAddress(address: String): Boolean = normalizeAddress(address) != "DEFAULT"
 
         fun resolveSelectedEndpoint(selectedId: String?, profiles: List<RadioEndpointProfile>): RadioEndpointId? =
-            profiles.firstOrNull { it.id.value == selectedId }?.id
-                ?: profiles.firstOrNull { it.legacyPrimary }?.id
-                ?: profiles.firstOrNull()?.id
+            profiles.firstOrNull { it.enabled && it.id.value == selectedId }?.id
+                ?: profiles.firstOrNull { it.enabled && it.legacyPrimary }?.id
+                ?: profiles.firstOrNull { it.enabled }?.id
 
         fun normalizeProfiles(input: List<RadioEndpointProfile>): List<RadioEndpointProfile> {
             val unique =
-                input
-                    .filter { isUsableAddress(it.transportAddress) }
-                    .distinctBy { it.protocol to it.normalizedAddress }
-                    .take(MAX_RADIO_ENDPOINTS)
+                input.filter { isUsableAddress(it.transportAddress) }.distinctBy { it.protocol to it.normalizedAddress }
             if (unique.isEmpty()) return emptyList()
-            val primaryId = unique.firstOrNull { it.legacyPrimary }?.id ?: unique.first().id
+            val primaryId = unique.firstOrNull { it.legacyPrimary }?.id
             return unique.map { it.copy(legacyPrimary = it.id == primaryId) }
         }
+
+        // Preserve the v1 snapshot for downgrade diagnostics. Historical autoConnect did not record manual release.
+        // Upgraded devices are remembered until the user explicitly reconnects them.
+        fun readProfiles(preferences: Preferences): List<RadioEndpointProfile> =
+            preferences[KEY_ENDPOINT_PROFILES]?.let(::decodeProfiles)
+                ?: decodeProfiles(preferences[KEY_LEGACY_PROFILES]).map {
+                    it.copy(enabled = false, autoConnect = false)
+                }
 
         fun encodeProfiles(profiles: List<RadioEndpointProfile>): String =
             profiles.joinToString(RECORD_SEPARATOR) { profile ->

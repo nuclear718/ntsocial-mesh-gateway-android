@@ -27,18 +27,26 @@ package com.ntsocial.meshlink.feature.messaging.navigation
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
+import com.ntsocial.meshlink.core.navigation.ChannelsRoute
 import com.ntsocial.meshlink.core.navigation.ContactsRoute
+import com.ntsocial.meshlink.core.navigation.EndpointRoute
+import com.ntsocial.meshlink.core.navigation.EndpointTarget
+import com.ntsocial.meshlink.core.navigation.MultiBackstack
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
-import com.ntsocial.meshlink.core.navigation.replaceLast
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
+import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.radiofleet.conversation.FleetChannelGroup
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
+import com.ntsocial.meshlink.core.ui.navigation.rememberEndpointNavigator
+import com.ntsocial.meshlink.core.ui.util.rememberUiAction
 import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.messaging.QuickChatScreen
 import com.ntsocial.meshlink.feature.messaging.QuickChatViewModel
@@ -49,6 +57,7 @@ import com.ntsocial.meshlink.feature.messaging.ui.contact.ContactsViewModel
 import com.ntsocial.meshlink.feature.messaging.ui.sharing.ShareScreen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import org.koin.compose.currentKoinScope
 import org.koin.compose.viewmodel.koinViewModel
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
@@ -99,22 +108,24 @@ fun EntryProviderScope<NavKey>.contactsGraph(
     }
 
     entry<ContactsRoute.Share>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
+        val replaceDestination = rememberEndpointNavigator(backStack, replace = true)
         val message = args.message
         val viewModel = scopedViewModel<ContactsViewModel>()
         ShareScreen(
             viewModel = viewModel,
-            onConfirm = { contactKey -> backStack.replaceLast(ContactsRoute.Messages(contactKey, message)) },
+            onConfirm = { contactKey -> replaceDestination(ContactsRoute.Messages(contactKey, message)) },
             onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
         )
     }
 
     entry<ContactsRoute.FleetShare>(metadata = { ListDetailSceneStrategy.extraPane() }) { args ->
+        val replaceDestination = rememberEndpointNavigator(backStack, replace = true)
         endpointContent(args.endpointId, args.expectedGeneration) {
             val viewModel = scopedViewModel<ContactsViewModel>()
             ShareScreen(
                 viewModel = viewModel,
                 onConfirm = { contactKey ->
-                    backStack.replaceLast(
+                    replaceDestination(
                         ContactsRoute.FleetMessages(
                             endpointId = args.endpointId,
                             contactKey = contactKey,
@@ -157,8 +168,8 @@ fun ContactsEntryContent(
         backStack = backStack,
         contactsViewModel = contactsViewModel,
         scrollToTopEvents = scrollToTopEvents,
-        sharedContactRequested = sharedContactRequested,
-        requestChannelSet = requestChannelSet,
+        sharedContactRequested = sharedContactRequested.takeIf { currentKoinScope().isRoot },
+        requestChannelSet = requestChannelSet.takeIf { currentKoinScope().isRoot },
         onHandleDeepLink = uiViewModel::handleDeepLink,
         onClearSharedContactRequested = uiViewModel::clearSharedContactRequested,
         onClearRequestChannelUrl = uiViewModel::clearRequestChannelUrl,
@@ -168,15 +179,45 @@ fun ContactsEntryContent(
 }
 
 @Composable
-fun FleetChannelsEntryContent(backStack: NavBackStack<NavKey>) {
+fun FleetChannelsEntry(multiBackstack: MultiBackstack, fleetManager: RadioFleetManager) {
+    val selected by fleetManager.selectedEndpointId.collectAsStateWithLifecycle()
+    val uiAction = rememberUiAction()
+    FleetChannelsEntryContent(
+        selectedEndpointId = selected,
+        onSelectEndpoint = { endpointId -> uiAction { fleetManager.select(endpointId) } },
+        onOpenEndpoint = { group, destination ->
+            uiAction {
+                val snapshot = fleetManager.snapshots.value[group.profile.id]
+                if (snapshot != null && snapshot.profile.enabled && snapshot.generation == group.generation) {
+                    val target = EndpointTarget(group.profile.id.value, snapshot.runtimeId)
+                    fleetManager.select(group.profile.id)
+                    multiBackstack.bindEndpoint(target)
+                    multiBackstack.activeBackStack.add(EndpointRoute.Destination(target, destination))
+                }
+            }
+        },
+    )
+}
+
+@Composable
+fun FleetChannelsEntryContent(
+    selectedEndpointId: RadioEndpointId?,
+    onSelectEndpoint: (RadioEndpointId) -> Unit,
+    onOpenEndpoint: (FleetChannelGroup, NavKey) -> Unit,
+) {
     val viewModel = koinViewModel<FleetChannelsViewModel>()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(selectedEndpointId) { viewModel.followEndpoint(selectedEndpointId) }
     FleetChannelsScreen(
         state = state,
         onSelectAll = viewModel::showAll,
-        onSelectEndpoint = viewModel::showEndpoint,
+        onSelectEndpoint = { endpointId ->
+            onSelectEndpoint(endpointId)
+            viewModel.showEndpoint(endpointId)
+        },
         onOpenChannel = { group, channel ->
-            backStack.add(
+            onOpenEndpoint(
+                group,
                 ContactsRoute.FleetMessages(
                     endpointId = group.profile.id.value,
                     contactKey = channel.localContactKey,
@@ -185,13 +226,16 @@ fun FleetChannelsEntryContent(backStack: NavBackStack<NavKey>) {
             )
         },
         onOpenConversations = { group: FleetChannelGroup ->
-            backStack.add(
+            onOpenEndpoint(
+                group,
                 ContactsRoute.EndpointContacts(
                     endpointId = group.profile.id.value,
                     expectedGeneration = group.generation,
                 ),
             )
         },
+        onManageChannels = { group -> onOpenEndpoint(group, ChannelsRoute.ChannelsGraph) },
+        onOpenSettings = { group -> onOpenEndpoint(group, SettingsRoute.Settings()) },
         onUpdateAppearance = viewModel::updateAppearance,
     )
 }
@@ -204,6 +248,7 @@ private fun MessageEntryContent(
     endpointId: String? = null,
     expectedGeneration: Long = 0L,
 ) {
+    val navigate = rememberEndpointNavigator(backStack)
     val viewModelKey = listOfNotNull("messages", endpointId, contactKey).joinToString("-")
     val messageViewModel: com.ntsocial.meshlink.feature.messaging.MessageViewModel = scopedViewModel(key = viewModelKey)
     messageViewModel.setContactKey(contactKey)
@@ -212,14 +257,14 @@ private fun MessageEntryContent(
         contactKey = contactKey,
         message = message,
         viewModel = messageViewModel,
-        navigateToNodeDetails = { id -> backStack.add(NodesRoute.NodeDetail(id)) },
+        navigateToNodeDetails = { id -> navigate(NodesRoute.NodeDetail(id)) },
         navigateToQuickChatOptions =
         dropUnlessResumed {
-            backStack.add(
+            navigate(
                 endpointId?.let { ContactsRoute.FleetQuickChat(it, expectedGeneration) } ?: ContactsRoute.QuickChat,
             )
         },
-        navigateToFilterSettings = dropUnlessResumed { backStack.add(SettingsRoute.FilterSettings) },
+        navigateToFilterSettings = dropUnlessResumed { navigate(SettingsRoute.FilterSettings) },
         onNavigateBack = dropUnlessResumed { backStack.removeLastOrNull() },
     )
 }

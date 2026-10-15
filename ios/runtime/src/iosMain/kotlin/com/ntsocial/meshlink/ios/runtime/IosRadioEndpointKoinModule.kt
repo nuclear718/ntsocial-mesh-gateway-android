@@ -138,18 +138,26 @@ import com.ntsocial.meshlink.core.repository.usecase.SendMessageUseCaseImpl
 import com.ntsocial.meshlink.core.service.DirectRadioControllerImpl
 import com.ntsocial.meshlink.core.service.ServiceRepositoryImpl
 import com.ntsocial.meshlink.core.service.SharedRadioInterfaceService
+import com.ntsocial.meshlink.core.ui.viewmodel.EndpointViewModelFactory
+import com.ntsocial.meshlink.core.ui.viewmodel.registerCoreEndpointViewModels
+import com.ntsocial.meshlink.feature.messaging.di.registerMessagingEndpointViewModels
 import com.ntsocial.meshlink.feature.node.detail.CommonNodeRequestActions
 import com.ntsocial.meshlink.feature.node.detail.NodeManagementActions
 import com.ntsocial.meshlink.feature.node.detail.NodeRequestActions
+import com.ntsocial.meshlink.feature.node.di.registerNodeEndpointViewModels
 import com.ntsocial.meshlink.feature.node.domain.usecase.CommonGetNodeDetailsUseCase
 import com.ntsocial.meshlink.feature.node.domain.usecase.GetFilteredNodesUseCase
 import com.ntsocial.meshlink.feature.node.domain.usecase.GetNodeDetailsUseCase
+import com.ntsocial.meshlink.feature.settings.di.registerSettingsEndpointViewModels
 import kotlinx.coroutines.CoroutineScope
 import org.koin.core.module.dsl.scopedOf
 import org.koin.core.qualifier.named
+import org.koin.dsl.ScopeDSL
 import org.koin.dsl.bind
 import org.koin.dsl.binds
 import org.koin.dsl.module
+
+internal val compatibilityEndpointUiQualifier = named("CompatibilityEndpointUi")
 
 internal val iosRadioEndpointScopeQualifier = named("IosMeshtasticEndpoint")
 
@@ -157,7 +165,9 @@ internal val iosRadioEndpointScopeQualifier = named("IosMeshtasticEndpoint")
  * Radio-owned definitions are repeated once per secondary endpoint; app-global services continue to resolve at root.
  */
 internal val iosRadioEndpointKoinModule = module {
+    scope(compatibilityEndpointUiQualifier) { endpointFeatureFactories() }
     scope(iosRadioEndpointScopeQualifier) {
+        endpointFeatureFactories()
         scoped<EndpointDatabaseHandle> { get<IosRadioEndpointScopeContext>().database }
         scoped<DatabaseProvider> { get<IosRadioEndpointScopeContext>().database }
         scoped<DatabaseManager> { get<IosRadioEndpointScopeContext>().database }
@@ -517,5 +527,16 @@ internal val iosRadioEndpointKoinModule = module {
         scopedOf(::CommonNodeRequestActions).bind<NodeRequestActions>()
         scopedOf(::GetFilteredNodesUseCase)
         scopedOf(::CommonGetNodeDetailsUseCase).bind<GetNodeDetailsUseCase>()
+    }
+}
+
+private fun ScopeDSL.endpointFeatureFactories() {
+    scoped {
+        EndpointViewModelFactory(this).apply {
+            registerCoreEndpointViewModels()
+            registerSettingsEndpointViewModels()
+            registerMessagingEndpointViewModels()
+            registerNodeEndpointViewModels()
+        }
     }
 }

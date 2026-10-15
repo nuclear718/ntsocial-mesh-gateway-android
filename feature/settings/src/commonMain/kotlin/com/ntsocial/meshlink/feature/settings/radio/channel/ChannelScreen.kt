@@ -51,6 +51,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -73,6 +74,7 @@ import com.ntsocial.meshlink.core.model.ConnectionState
 import com.ntsocial.meshlink.core.model.util.getChannelUrl
 import com.ntsocial.meshlink.core.navigation.Route
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityResult
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.add
 import com.ntsocial.meshlink.core.resources.apply
@@ -115,6 +117,7 @@ import com.ntsocial.meshlink.core.ui.util.LocalBarcodeScannerSupported
 import com.ntsocial.meshlink.core.ui.util.SnackbarManager
 import com.ntsocial.meshlink.core.ui.util.rememberQrCodePainter
 import com.ntsocial.meshlink.core.ui.util.rememberShowToastResource
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.settings.channel.ChannelViewModel
 import com.ntsocial.meshlink.feature.settings.navigation.ConfigRoute
 import com.ntsocial.meshlink.feature.settings.navigation.getNavRouteFrom
@@ -122,7 +125,6 @@ import com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel
 import com.ntsocial.meshlink.feature.settings.radio.component.PacketResponseStateDialog
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import org.koin.compose.viewmodel.koinViewModel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
@@ -137,8 +139,8 @@ fun ChannelScreen(
     onNavigate: (Route) -> Unit,
     onNavigateUp: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: ChannelViewModel = koinViewModel(),
-    radioConfigViewModel: RadioConfigViewModel = koinViewModel(),
+    viewModel: ChannelViewModel = scopedViewModel(),
+    radioConfigViewModel: RadioConfigViewModel = scopedViewModel(),
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -198,11 +200,21 @@ fun ChannelScreen(
     val showToast = rememberShowToastResource()
     val snackbarManager = koinInject<SnackbarManager>()
     val invalidChannelMessage = stringResource(Res.string.channel_invalid)
+    val scannerRadio = koinInject<RadioInterfaceService>()
+    val scannerAlive = remember(viewModel) { mutableStateOf(true) }
+    var scanEpoch by remember(viewModel) { mutableStateOf<Long?>(null) }
+    DisposableEffect(viewModel) { onDispose { scannerAlive.value = false } }
     val barcodeScanner =
         LocalBarcodeScannerProvider.current { contents ->
-            contents?.let { url ->
-                viewModel.requestChannelUrl(url) { snackbarManager.showSnackbar(invalidChannelMessage) }
-            }
+            contents
+                ?.takeIf {
+                    scannerAlive.value &&
+                        scanEpoch == scannerRadio.radioSessionState.value.epoch &&
+                        scannerRadio.radioSessionState.value.isConfiguredReady
+                }
+                ?.let { url ->
+                    viewModel.requestChannelUrl(url) { snackbarManager.showSnackbar(invalidChannelMessage) }
+                }
         }
 
     val channelsOnlyScanner = barcodeScanner as? ChannelsOnlyBarcodeScanner
@@ -287,6 +299,7 @@ fun ChannelScreen(
                     if (isBarcodeScannerSupported) {
                         IconButton(
                             onClick = {
+                                scanEpoch = scannerRadio.radioSessionState.value.epoch
                                 if (channelsOnlyScanner != null) {
                                     channelsOnlyScanner.startChannelScan()
                                 } else {

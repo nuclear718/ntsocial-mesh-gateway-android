@@ -154,6 +154,7 @@ class DefaultFleetChannelsRepositoryTest {
     }
 
     private class FakeFleetManager(profiles: List<RadioEndpointProfile>) : RadioFleetManager {
+        override val rememberedProfiles = MutableStateFlow(profiles)
         override val snapshots: StateFlow<Map<RadioEndpointId, RadioEndpointSnapshot>> =
             MutableStateFlow(
                 profiles.associate { profile ->
@@ -178,9 +179,14 @@ class DefaultFleetChannelsRepositoryTest {
             selectedEndpointId.value = endpointId
         }
 
-        override suspend fun connect(endpointId: RadioEndpointId) = Unit
+        override suspend fun connect(
+            endpointId: RadioEndpointId,
+            preparation: com.ntsocial.meshlink.core.radiofleet.RadioConnectionPreparation?,
+        ) = Unit
 
         override suspend fun disconnect(endpointId: RadioEndpointId) = Unit
+
+        override suspend fun disconnectAndRelease(endpointId: RadioEndpointId) = Unit
 
         override suspend fun setLegacyPrimary(endpointId: RadioEndpointId) = Unit
 

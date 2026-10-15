@@ -130,6 +130,7 @@ final class BarcodeScannerHost: NSObject, IosBarcodeScannerHost, DataScannerView
         didAdd addedItems: [RecognizedItem],
         allItems: [RecognizedItem]
     ) {
+        guard activeScanner === dataScanner else { return }
         guard let payload = addedItems.compactMap(Self.barcodePayload).first else { return }
         finishScanning(with: payload)
     }

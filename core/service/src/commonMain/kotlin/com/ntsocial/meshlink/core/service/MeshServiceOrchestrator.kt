@@ -86,7 +86,7 @@ class MeshServiceOrchestrator(
      * This is the KMP equivalent of `MeshService.onCreate()`. It connects to the radio and wires incoming radio data to
      * the message processor and service actions to the router's action handler.
      */
-    fun start() {
+    fun start(connectRadio: Boolean = true) {
         if (isRunning) {
             Logger.d { "start() called while already running, ignoring" }
             return
@@ -117,18 +117,20 @@ class MeshServiceOrchestrator(
             }
             .launchIn(newScope)
 
-        newScope.handledLaunch {
-            // Ensure the per-device database is active before the radio connects.
-            // On Android this is handled by MeshUtilApplication.init(); on Desktop (and any
-            // future KMP host) the orchestrator is the first entry point, so it must initialize
-            // the database here. Without this, DatabaseManager._currentDb stays null and all
-            // Room writes via withDb() are silently dropped — causing ourNodeInfo to remain null
-            // after the handshake completes.
-            val selectedAddress = radioInterfaceService.awaitHydratedDeviceAddress()
-            databaseManager.switchActiveDatabase(selectedAddress)
-            nodeManager.loadCachedNodeDBAndAwait()
-            Logger.i { "Per-device database and node cache initialized, connecting radio" }
-            radioInterfaceService.connect()
+        if (connectRadio) {
+            newScope.handledLaunch {
+                // Ensure the per-device database is active before the radio connects.
+                // On Android this is handled by MeshUtilApplication.init(); on Desktop (and any
+                // future KMP host) the orchestrator is the first entry point, so it must initialize
+                // the database here. Without this, DatabaseManager._currentDb stays null and all
+                // Room writes via withDb() are silently dropped — causing ourNodeInfo to remain null
+                // after the handshake completes.
+                val selectedAddress = radioInterfaceService.awaitHydratedDeviceAddress()
+                databaseManager.switchActiveDatabase(selectedAddress)
+                nodeManager.loadCachedNodeDBAndAwait()
+                Logger.i { "Per-device database and node cache initialized, connecting radio" }
+                radioInterfaceService.connect()
+            }
         }
 
         radioInterfaceService.receivedData

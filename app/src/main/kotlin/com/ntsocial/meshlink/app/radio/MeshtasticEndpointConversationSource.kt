@@ -57,6 +57,9 @@ internal class MeshtasticEndpointConversationSource(
         radioConfigRepository.channelSetFlow
             .map { channelSet -> ChannelCatalog(channelSet, nowMillis) }
             .flatMapLatest { catalog -> catalog.observeSnapshot(packetRepository) }
+            .combine(packetRepository.getUnreadCountTotal()) { snapshot, total ->
+                snapshot.copy(totalUnreadCount = total.coerceAtLeast(0))
+            }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),

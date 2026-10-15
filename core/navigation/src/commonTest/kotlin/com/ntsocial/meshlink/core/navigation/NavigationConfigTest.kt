@@ -45,6 +45,9 @@ class NavigationConfigTest {
      */
     private val allRouteInstances: List<NavKey> =
         listOf(
+            // An entry must retain both its runtime owner and its polymorphic destination after restoration.
+            EndpointRoute.Destination(EndpointTarget("B", "runtime-B"), SettingsRoute.LoRa),
+            EndpointRoute.Destination(EndpointTarget("A", "runtime-A"), ContactsRoute.Messages("same-slot")),
             // ChannelsRoute
             ChannelsRoute.ChannelsGraph,
             ChannelsRoute.Channels,
@@ -158,6 +161,7 @@ class NavigationConfigTest {
             allRouteInstances
                 .map { route ->
                     when (route) {
+                        is EndpointRoute -> "EndpointRoute"
                         is ChannelsRoute -> "ChannelsRoute"
                         is ConnectionsRoute -> "ConnectionsRoute"
                         is ContactsRoute -> "ContactsRoute"
@@ -174,6 +178,7 @@ class NavigationConfigTest {
 
         val expectedInterfaces =
             setOf(
+                "EndpointRoute",
                 "ChannelsRoute",
                 "ConnectionsRoute",
                 "ContactsRoute",

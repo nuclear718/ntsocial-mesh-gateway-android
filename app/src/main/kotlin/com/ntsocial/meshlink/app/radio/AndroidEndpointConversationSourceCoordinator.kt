@@ -91,7 +91,8 @@ class AndroidEndpointConversationSourceCoordinator(
     private fun reconcileSources(
         inputs: Pair<Map<RadioEndpointId, RadioEndpointSnapshot>, Map<RadioEndpointId, Scope>>,
     ) {
-        val (snapshots, scopes) = inputs
+        val (allSnapshots, scopes) = inputs
+        val snapshots = allSnapshots.filterValues { it.profile.enabled }
         val expectedIds = snapshots.keys
         (managedSources.keys - expectedIds).forEach(::removeSource)
 
@@ -100,13 +101,22 @@ class AndroidEndpointConversationSourceCoordinator(
             val endpointScope = scopes[endpointId]
             val runtimeToken =
                 if (snapshot.profile.legacyPrimary) {
-                    "root:${endpointId.value}"
+                    "root:${snapshot.runtimeId}"
                 } else {
                     endpointScope?.id ?: return@forEach
                 }
             if (managedSources[endpointId]?.runtimeToken == runtimeToken) return@forEach
 
-            val sourceScope = CoroutineScope(SupervisorJob() + sourceDispatcher)
+            val parentJob =
+                if (snapshot.profile.legacyPrimary) {
+                    null
+                } else {
+                    endpointScope
+                        ?.get<CoroutineScope>(org.koin.core.qualifier.named("ServiceScope"))
+                        ?.coroutineContext
+                        ?.get(Job)
+                }
+            val sourceScope = CoroutineScope(SupervisorJob(parentJob) + sourceDispatcher)
             try {
                 val source = createConversationSource(snapshot, endpointScope, sourceScope)
                 val gatewaySource = createGatewaySource(snapshot, endpointScope, sourceScope)

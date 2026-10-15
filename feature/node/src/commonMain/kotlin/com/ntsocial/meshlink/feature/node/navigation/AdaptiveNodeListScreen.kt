@@ -30,6 +30,7 @@ import androidx.navigation3.runtime.NavKey
 import com.ntsocial.meshlink.core.navigation.ChannelsRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
+import com.ntsocial.meshlink.core.ui.navigation.rememberEndpointNavigator
 import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.node.list.NodeListScreen
 import com.ntsocial.meshlink.feature.node.list.NodeListViewModel
@@ -42,12 +43,13 @@ fun AdaptiveNodeListScreen(
     onHandleDeepLink: (com.ntsocial.meshlink.core.common.util.CommonUri, onInvalid: () -> Unit) -> Unit = { _, _ -> },
     onNavigateToConnections: () -> Unit = {},
 ) {
+    val navigate = rememberEndpointNavigator(backStack)
     val nodeListViewModel: NodeListViewModel = scopedViewModel()
 
     NodeListScreen(
         viewModel = nodeListViewModel,
-        navigateToNodeDetails = { nodeId -> backStack.add(NodesRoute.NodeDetail(nodeId)) },
-        onNavigateToChannels = { backStack.add(ChannelsRoute.ChannelsGraph) },
+        navigateToNodeDetails = { nodeId -> navigate(NodesRoute.NodeDetail(nodeId)) },
+        onNavigateToChannels = { navigate(ChannelsRoute.ChannelsGraph) },
         scrollToTopEvents = scrollToTopEvents,
         activeNodeId = null,
         onHandleDeepLink = onHandleDeepLink,

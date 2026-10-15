@@ -36,6 +36,8 @@ import androidx.navigation3.runtime.NavKey
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.Route
 import com.ntsocial.meshlink.core.navigation.SettingsRoute
+import com.ntsocial.meshlink.core.navigation.withoutEndpoint
+import com.ntsocial.meshlink.core.ui.navigation.rememberEndpointNavigator
 import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.settings.AboutScreen
 import com.ntsocial.meshlink.feature.settings.AdministrationScreen
@@ -84,52 +86,64 @@ fun getRadioConfigViewModel(backStack: NavBackStack<NavKey>): RadioConfigViewMod
     val viewModel = scopedViewModel<RadioConfigViewModel>()
     val destNum =
         remember(backStack.toList()) {
-            backStack.lastOrNull { it is SettingsRoute.Settings }?.let { (it as SettingsRoute.Settings).destNum }
+            backStack
+                .map { it.withoutEndpoint() }
+                .lastOrNull { it is SettingsRoute.Settings }
+                ?.let { (it as SettingsRoute.Settings).destNum }
                 ?: backStack
+                    .map { it.withoutEndpoint() }
                     .lastOrNull { it is SettingsRoute.SettingsGraph }
                     ?.let { (it as SettingsRoute.SettingsGraph).destNum }
         }
-    LaunchedEffect(destNum) { viewModel.initDestNum(destNum) }
+    LaunchedEffect(viewModel, destNum) { viewModel.initDestNum(destNum) }
     return viewModel
 }
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 fun EntryProviderScope<NavKey>.settingsGraph(backStack: NavBackStack<NavKey>) {
     entry<SettingsRoute.SettingsGraph> {
+        val navigate = rememberEndpointNavigator(backStack)
+
         SettingsMainScreen(
             settingsViewModel = scopedViewModel(),
             radioConfigViewModel = getRadioConfigViewModel(backStack),
-            onClickNodeChip = { backStack.add(NodesRoute.NodeDetail(it)) },
-            onNavigate = { backStack.add(it) },
+            onClickNodeChip = { navigate(NodesRoute.NodeDetail(it)) },
+            onNavigate = { navigate(it) },
         )
     }
 
     entry<SettingsRoute.Settings> {
+        val navigate = rememberEndpointNavigator(backStack)
+
         SettingsMainScreen(
             settingsViewModel = scopedViewModel(),
             radioConfigViewModel = getRadioConfigViewModel(backStack),
-            onClickNodeChip = { backStack.add(NodesRoute.NodeDetail(it)) },
-            onNavigate = { backStack.add(it) },
+            onClickNodeChip = { navigate(NodesRoute.NodeDetail(it)) },
+            onNavigate = { navigate(it) },
             onBack = dropUnlessResumed { backStack.removeLastOrNull() },
         )
     }
 
     entry<SettingsRoute.DeviceConfiguration> {
+        val navigate = rememberEndpointNavigator(backStack)
+
         DeviceConfigurationScreen(
             viewModel = getRadioConfigViewModel(backStack),
             onBack = dropUnlessResumed { backStack.removeLastOrNull() },
-            onNavigate = { route -> backStack.add(route) },
+            onNavigate = { route -> navigate(route) },
         )
     }
 
     entry<SettingsRoute.ModuleConfiguration> {
+        val navigate = rememberEndpointNavigator(backStack)
+
         val settingsViewModel: SettingsViewModel = scopedViewModel()
         val excludedModulesUnlocked by settingsViewModel.excludedModulesUnlocked.collectAsStateWithLifecycle()
         ModuleConfigurationScreen(
             viewModel = getRadioConfigViewModel(backStack),
             excludedModulesUnlocked = excludedModulesUnlocked,
             onBack = dropUnlessResumed { backStack.removeLastOrNull() },
-            onNavigate = { route -> backStack.add(route) },
+            onNavigate = { route -> navigate(route) },
         )
     }
 

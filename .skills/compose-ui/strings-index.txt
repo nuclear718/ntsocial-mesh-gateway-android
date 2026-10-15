@@ -134,8 +134,10 @@ channel_hub_channels_empty
 channel_hub_edit_appearance
 channel_hub_endpoint_unavailable
 channel_hub_loading
+channel_hub_manage_channels
 channel_hub_no_radios
 channel_hub_no_radios_hint
+channel_hub_node_settings
 channel_hub_open_conversations
 channel_hub_primary
 channel_hub_purpose
@@ -1018,11 +1020,15 @@ quick_chat_new
 quick_chat_show
 radiation
 ### RADIO ###
+radio_apply_target
 radio_configuration
+radio_endpoint_edits_reset
 radio_endpoint_switching
 radio_fleet_capacity
 radio_fleet_title
+radio_import_target
 radio_legacy_primary
+radio_remembered_devices
 rainfall_1h
 rainfall_24h
 range_test

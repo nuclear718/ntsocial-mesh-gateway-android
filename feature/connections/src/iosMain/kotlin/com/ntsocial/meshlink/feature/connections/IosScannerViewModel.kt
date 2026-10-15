@@ -38,6 +38,7 @@ import com.ntsocial.meshlink.core.di.CoroutineDispatchers
 import com.ntsocial.meshlink.core.model.RadioController
 import com.ntsocial.meshlink.core.network.repository.NetworkRepository
 import com.ntsocial.meshlink.core.radiofleet.DiscoveredRadio
+import com.ntsocial.meshlink.core.radiofleet.RadioConnectionPreparation
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
 import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
@@ -79,7 +80,7 @@ class IosScannerViewModel(
 ) {
     override fun requestBonding(entry: DeviceListEntry.Ble) {
         requestBluetoothPairingGuidance(deviceName = entry.name) {
-            viewModelScope.launch { pairAndConnect(device = entry.device) { connectSelectedNow(entry) } }
+            viewModelScope.launch { connectSelectedNow(entry, entry.device) }
         }
     }
 
@@ -87,24 +88,15 @@ class IosScannerViewModel(
     fun requestFleetConnection(endpointId: RadioEndpointId, deviceName: String) {
         requestBluetoothPairingGuidance(deviceName = deviceName) {
             viewModelScope.launch {
-                val profile = radioFleetManager.snapshots.value[endpointId]?.profile ?: return@launch
-                radioFleetManager.disconnect(endpointId)
+                val profile =
+                    radioFleetManager.rememberedProfiles.value.firstOrNull { it.id == endpointId } ?: return@launch
                 val address = profile.transportAddress.removePrefix("x").removePrefix("!")
                 val device = MeshtasticBleDevice(address = address, name = deviceName, reconnectByIdentifier = true)
-                pairAndConnect(device = device) { radioFleetManager.connect(endpointId) }
+                connectPrepared(
+                    DiscoveredRadio(transportAddress = profile.transportAddress, displayName = deviceName),
+                    device,
+                )
             }
-        }
-    }
-
-    private suspend fun pairAndConnect(device: BleDevice, onPaired: suspend () -> Unit) {
-        try {
-            bluetoothRepository.bond(device)
-            onPaired()
-        } catch (pairing: BlePairingException) {
-            Logger.w(pairing) { "iOS native Bluetooth pairing did not complete" }
-            serviceRepository.setErrorMessage(pairing.message.orEmpty(), Severity.Warn)
-        } finally {
-            bluetoothRepository.discardPreparedDevice(device)
         }
     }
 
@@ -112,38 +104,44 @@ class IosScannerViewModel(
         viewModelScope.launch { connectSelectedNow(entry) }
     }
 
-    private suspend fun connectSelectedNow(entry: DeviceListEntry) {
+    private suspend fun connectSelectedNow(entry: DeviceListEntry, device: BleDevice? = null) {
         addRecentAddress(entry.fullAddress, entry.name)
+        connectPrepared(DiscoveredRadio(transportAddress = entry.fullAddress, displayName = entry.name), device)
+    }
+
+    private suspend fun connectPrepared(candidate: DiscoveredRadio, device: BleDevice?) {
         safeCatching {
-            val profile =
-                radioFleetManager.register(
-                    candidate = DiscoveredRadio(transportAddress = entry.fullAddress, displayName = entry.name),
-                    connect = false,
-                )
-            // A prior failed first-pairing attempt can leave the primary transport in Connecting. Stop it before
-            // handing the already-connected pairing peripheral to the authoritative endpoint session.
-            radioFleetManager.disconnect(profile.id)
-            if (profile.legacyPrimary) {
-                radioPrefs.setDevName(entry.name)
-                changeDeviceAddress(entry.fullAddress)
-            }
-            radioFleetManager.connect(profile.id)
+            // Admission precedes native pairing: a prepared peripheral consumes the same four-radio quota.
+            val profile = radioFleetManager.register(candidate, connect = false)
+            val runtime = checkNotNull(radioFleetManager.snapshots.value[profile.id]).runtimeId
+            val preparation = device?.let { pairingPreparation(it, runtime) }
+            radioFleetManager.connect(profile.id, preparation)
         }
             .onFailure { error ->
                 Logger.w(error) { "Unable to add iOS Meshtastic endpoint" }
-                serviceRepository.setErrorMessage(
-                    text = error.message ?: "Unable to add Meshtastic endpoint",
-                    severity = Severity.Warn,
-                )
+                serviceRepository.setErrorMessage(error.message.orEmpty(), Severity.Warn)
             }
     }
 
-    override fun disconnect() {
-        val primary = radioFleetManager.snapshots.value.values.firstOrNull { it.profile.legacyPrimary }
-        if (primary == null) {
-            super.disconnect()
-        } else {
-            viewModelScope.launch { radioFleetManager.disconnect(primary.profile.id) }
+    private fun pairingPreparation(device: BleDevice, runtime: String) = object : RadioConnectionPreparation {
+        override val runtimeId = runtime
+
+        override suspend fun prepare() {
+            try {
+                bluetoothRepository.bond(device)
+            } catch (pairing: BlePairingException) {
+                serviceRepository.setErrorMessage(pairing.message.orEmpty(), Severity.Warn)
+                throw pairing
+            }
         }
+
+        override suspend fun close() {
+            bluetoothRepository.discardPreparedDevice(device)
+        }
+    }
+
+    override fun disconnect() {
+        val endpointId = radioFleetManager.selectedEndpointId.value ?: return
+        viewModelScope.launch { radioFleetManager.disconnectAndRelease(endpointId) }
     }
 }

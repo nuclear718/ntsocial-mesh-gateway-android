@@ -63,6 +63,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ntsocial.meshlink.core.model.Channel
 import com.ntsocial.meshlink.core.model.normalizeReliableChannelSettings
 import com.ntsocial.meshlink.core.repository.CHANNEL_APPLY_RESTART_SECONDS
+import com.ntsocial.meshlink.core.repository.ChannelEditContext
+import com.ntsocial.meshlink.core.repository.RadioConfigRepository
+import com.ntsocial.meshlink.core.repository.RadioInterfaceService
+import com.ntsocial.meshlink.core.repository.RadioPrefs
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.accept
 import com.ntsocial.meshlink.core.resources.add
@@ -70,6 +74,7 @@ import com.ntsocial.meshlink.core.resources.add_channels_description
 import com.ntsocial.meshlink.core.resources.cancel
 import com.ntsocial.meshlink.core.resources.channel_apply_accept_notice
 import com.ntsocial.meshlink.core.resources.new_channel_rcvd
+import com.ntsocial.meshlink.core.resources.radio_apply_target
 import com.ntsocial.meshlink.core.resources.replace
 import com.ntsocial.meshlink.core.resources.replace_channels_and_settings_description
 import com.ntsocial.meshlink.core.resources.replace_secondary_channels_description
@@ -77,8 +82,9 @@ import com.ntsocial.meshlink.core.ui.component.ChannelApplyStatus
 import com.ntsocial.meshlink.core.ui.component.ChannelApplyUiState
 import com.ntsocial.meshlink.core.ui.component.ChannelSelection
 import com.ntsocial.meshlink.core.ui.util.getChannelPreviewForAdd
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.viewmodel.koinViewModel
+import org.koin.compose.koinInject
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
@@ -134,8 +140,17 @@ private fun keepsRetainedSecondarySlotsStable(
 fun ScannedQrCodeDialog(
     incoming: ChannelSet,
     onDismiss: () -> Unit,
-    viewModel: ScannedQrCodeViewModel = koinViewModel(),
+    viewModel: ScannedQrCodeViewModel = scopedViewModel(),
 ) {
+    val radio = koinInject<RadioInterfaceService>()
+    val config = koinInject<RadioConfigRepository>()
+    val prefs = koinInject<RadioPrefs>()
+    val name by prefs.devName.collectAsStateWithLifecycle()
+    val address by prefs.devAddr.collectAsStateWithLifecycle()
+    val previewContext =
+        remember(incoming, viewModel) {
+            ChannelEditContext(radio.radioSessionState.value.epoch, config.channelReadbackGeneration.value)
+        }
     val channels by viewModel.channels.collectAsStateWithLifecycle()
     val maxChannels by viewModel.maxChannels.collectAsStateWithLifecycle()
     val applyState by viewModel.applyState.collectAsStateWithLifecycle()
@@ -170,7 +185,8 @@ fun ScannedQrCodeDialog(
         },
         maxChannels = maxChannels,
         applyState = applyState,
-        onConfirm = viewModel::setChannels,
+        targetLabel = "${name.orEmpty()} · ${address.orEmpty().takeLast(ENDPOINT_ADDRESS_SUFFIX_LENGTH).uppercase()}",
+        onConfirm = { desired -> viewModel.setChannels(desired, previewContext) },
     )
 }
 
@@ -184,6 +200,7 @@ fun ScannedQrCodeDialog(
     onDismiss: () -> Unit,
     maxChannels: Int = DEFAULT_MAX_CHANNELS,
     applyState: ChannelApplyUiState = ChannelApplyUiState.Idle,
+    targetLabel: String? = null,
     onConfirm: (ChannelSet) -> Unit,
 ) {
     var shouldReplace by rememberSaveable(incoming) { mutableStateOf(incoming.lora_config != null) }
@@ -354,6 +371,15 @@ fun ScannedQrCodeDialog(
                         modifier = Modifier.padding(bottom = 16.dp),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                }
+
+                targetLabel?.let { label ->
+                    item {
+                        Text(
+                            stringResource(Res.string.radio_apply_target, label),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
                 }
 
                 itemsIndexed(channelSet.settings) { index, channel ->
@@ -528,3 +554,5 @@ private fun ScannedQrCodeDialogPreview() {
         onConfirm = {},
     )
 }
+
+private const val ENDPOINT_ADDRESS_SUFFIX_LENGTH = 4

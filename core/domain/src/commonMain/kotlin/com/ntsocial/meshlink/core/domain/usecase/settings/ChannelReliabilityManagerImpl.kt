@@ -36,6 +36,7 @@ import com.ntsocial.meshlink.core.model.buildAuthoritativeChannelWrites
 import com.ntsocial.meshlink.core.model.buildMissingSecondaryWrites
 import com.ntsocial.meshlink.core.model.classifyChannelSnapshotDrift
 import com.ntsocial.meshlink.core.model.normalizeReliableChannelSettings
+import com.ntsocial.meshlink.core.repository.ChannelEditContext
 import com.ntsocial.meshlink.core.repository.ChannelMutationLock
 import com.ntsocial.meshlink.core.repository.ChannelOperationLock
 import com.ntsocial.meshlink.core.repository.ChannelProtectionSnapshot
@@ -111,6 +112,20 @@ class ChannelReliabilityManagerImpl(
             currentRadioContext()
                 ?: return@withLock unavailableContextResult(serviceRepository.connectionState.value)
         applyAndVerifyLocked(channelSet, context)
+    }
+
+    override suspend fun applyPreviewAndVerify(
+        channelSet: ChannelSet,
+        expected: ChannelEditContext,
+    ): ChannelReliabilityResult = mutationLock.withLock { _ ->
+        val context = currentRadioContext() ?: return@withLock ChannelReliabilityResult.SESSION_UNAVAILABLE
+        if (
+            context.radioSessionEpoch != expected.radioSessionEpoch ||
+            !isCurrentSourceSnapshot(context, expected.readbackGeneration)
+        ) {
+            return@withLock ChannelReliabilityResult.SESSION_UNAVAILABLE
+        }
+        applyAndVerifyLocked(channelSet, context, sourceReadbackGeneration = expected.readbackGeneration)
     }
 
     override suspend fun applyCurrentAndVerify(

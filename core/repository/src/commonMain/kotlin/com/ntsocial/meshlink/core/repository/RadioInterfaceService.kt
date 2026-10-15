@@ -133,12 +133,20 @@ interface RadioInterfaceService : RadioTransportCallback {
      */
     suspend fun awaitHydratedDeviceAddress(): String? = getDeviceAddress()
 
+    /** Immediately fences queued connect work, retired callbacks and writes before asynchronous teardown. */
+    fun revokeConnection() = Unit
+
     /**
      * Explicitly tears down the active transport, sending a polite `ToRadio(disconnect = true)` goodbye frame first
      * when a transport is live. Safe to call when nothing is connected — implementations must no-op in that case.
      * Suspends until the teardown completes.
      */
     suspend fun disconnect()
+
+    /** Releases listeners owned by a retired endpoint runtime. Primary compatibility runtimes use disconnect. */
+    suspend fun close() {
+        disconnect()
+    }
 
     /** Returns the current device address. */
     fun getDeviceAddress(): String?

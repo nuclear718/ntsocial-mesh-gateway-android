@@ -89,6 +89,7 @@ data class EndpointConversationSnapshot(
     val channels: List<FleetChannelSummary> = emptyList(),
     val lastSuccessfulSyncAtMillis: Long? = null,
     val hasCachedCatalog: Boolean = false,
+    val totalUnreadCount: Int = channels.sumOf(FleetChannelSummary::unreadCount),
 )
 
 data class FleetChannelGroup(
@@ -100,6 +101,7 @@ data class FleetChannelGroup(
     val lastSuccessfulSyncAtMillis: Long?,
     val hasCachedCatalog: Boolean,
     val dataAvailable: Boolean,
+    val totalUnreadCount: Int = channels.sumOf(FleetChannelSummary::unreadCount),
 ) {
     val unreadCount: Int
         get() = channels.sumOf(FleetChannelSummary::unreadCount)

@@ -31,14 +31,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ntsocial.meshlink.app.radio.RadioEndpointScopeRegistry
+import com.ntsocial.meshlink.core.navigation.EndpointTarget
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
 import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.resources.Res
@@ -52,34 +52,35 @@ import org.koin.core.annotation.KoinExperimentalAPI
 
 @OptIn(KoinDelicateAPI::class, KoinExperimentalAPI::class)
 @Composable
-fun EndpointScopeHost(endpointId: RadioEndpointId, expectedGeneration: Long, content: @Composable () -> Unit) {
+fun EndpointScopeHost(
+    endpointId: RadioEndpointId,
+    expectedGeneration: Long? = null,
+    expectedRuntimeId: String? = null,
+    content: @Composable () -> Unit,
+) {
     val fleetManager = koinInject<RadioFleetManager>()
     val scopeRegistry = koinInject<RadioEndpointScopeRegistry>()
     val snapshots by fleetManager.snapshots.collectAsStateWithLifecycle()
-    val selectedEndpointId by fleetManager.selectedEndpointId.collectAsStateWithLifecycle()
     val endpointScopes by scopeRegistry.scopes.collectAsStateWithLifecycle()
     val snapshot = snapshots[endpointId]
 
-    val generationMatches = snapshot?.generation == expectedGeneration
-    val movableContent = remember(content) { movableContentOf { content() } }
-
-    LaunchedEffect(endpointId, expectedGeneration, snapshot) {
-        if (snapshot != null && generationMatches && selectedEndpointId != endpointId) {
-            fleetManager.select(endpointId)
+    val generationMatches = expectedGeneration == null || snapshot?.generation == expectedGeneration
+    val endpointScope = endpointScopes[endpointId]
+    if (snapshot?.profile?.enabled == true && endpointScope?.isNotClosed() == true) {
+        remember(endpointScope, snapshot.runtimeId) {
+            endpointScope.declare(EndpointTarget(endpointId.value, snapshot.runtimeId))
         }
     }
 
     when {
-        snapshot == null -> EndpointUnavailableState()
+        snapshot == null ||
+            !snapshot.profile.enabled ||
+            (expectedRuntimeId != null && snapshot.runtimeId != expectedRuntimeId) -> EndpointUnavailableState()
 
         !generationMatches -> EndpointUnavailableState()
 
-        selectedEndpointId != endpointId -> EndpointLoadingState()
-
-        snapshot.profile.legacyPrimary -> movableContent()
-
-        endpointScopes[endpointId] != null ->
-            UnboundKoinScope(scope = checkNotNull(endpointScopes[endpointId])) { movableContent() }
+        endpointScope?.isNotClosed() == true ->
+            UnboundKoinScope(scope = endpointScope) { key(snapshot.runtimeId) { content() } }
 
         else -> EndpointLoadingState()
     }

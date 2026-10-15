@@ -47,9 +47,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -61,10 +60,12 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import com.ntsocial.meshlink.core.common.util.CommonUri
 import com.ntsocial.meshlink.core.navigation.ContactsRoute
+import com.ntsocial.meshlink.core.navigation.EndpointTarget
 import com.ntsocial.meshlink.core.navigation.MultiBackstack
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.TopLevelDestination
 import com.ntsocial.meshlink.core.navigation.rememberMultiBackstack
+import com.ntsocial.meshlink.core.navigation.withoutEndpoint
 import com.ntsocial.meshlink.core.radiofleet.EndpointSessionState
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSnapshot
@@ -73,27 +74,33 @@ import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.channel_hub_endpoint_unavailable
 import com.ntsocial.meshlink.core.resources.img_ntsocial_background_butterfly
 import com.ntsocial.meshlink.core.resources.radio_endpoint_switching
+import com.ntsocial.meshlink.core.ui.component.EndpointImportOption
+import com.ntsocial.meshlink.core.ui.component.FleetImportDialogs
 import com.ntsocial.meshlink.core.ui.component.MeshtasticAppShell
 import com.ntsocial.meshlink.core.ui.component.MeshtasticNavDisplay
 import com.ntsocial.meshlink.core.ui.component.MeshtasticNavigationSuite
+import com.ntsocial.meshlink.core.ui.navigation.BindEndpointSelection
+import com.ntsocial.meshlink.core.ui.navigation.endpointEntryProvider
+import com.ntsocial.meshlink.core.ui.navigation.endpointTabsPadding
+import com.ntsocial.meshlink.core.ui.util.rememberUiAction
 import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
 import com.ntsocial.meshlink.feature.connections.navigation.connectionsGraph
 import com.ntsocial.meshlink.feature.meshcore.navigation.meshCoreGraph
-import com.ntsocial.meshlink.feature.messaging.navigation.FleetChannelsEntryContent
+import com.ntsocial.meshlink.feature.messaging.fleet.rememberFleetNavigationState
+import com.ntsocial.meshlink.feature.messaging.navigation.FleetChannelsEntry
 import com.ntsocial.meshlink.feature.messaging.navigation.contactsGraph
 import com.ntsocial.meshlink.feature.node.navigation.nodesGraph
 import com.ntsocial.meshlink.feature.settings.LocalPlatformSettingsSection
 import com.ntsocial.meshlink.feature.settings.navigation.settingsGraph
 import com.ntsocial.meshlink.feature.settings.radio.channel.channelsGraph
 import com.ntsocial.meshlink.feature.wifiprovision.navigation.wifiProvisionGraph
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.scope.UnboundKoinScope
+import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.annotation.KoinDelicateAPI
 import org.koin.core.annotation.KoinExperimentalAPI
-import org.koin.core.scope.Scope
 
 /** Full iOS product shell assembled from the same shared feature graphs used by Android and Desktop. */
 @Composable
@@ -142,46 +149,48 @@ private fun IosNavigationShell(
     modifier: Modifier = Modifier,
 ) {
     val fleetManager = koinInject<RadioFleetManager>()
-    val scopeRegistry = koinInject<IosRadioEndpointScopeRegistry>()
     val snapshots by fleetManager.snapshots.collectAsState()
     val selectedEndpointId by fleetManager.selectedEndpointId.collectAsState()
-    val endpointScopes by scopeRegistry.scopes.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
+    val uiAction = rememberUiAction()
     val scopeMode = iosFeatureScopeMode(multiBackstack)
     val endpointList =
-        snapshots.values.sortedWith(
-            compareByDescending<RadioEndpointSnapshot> { it.profile.legacyPrimary }.thenBy { it.profile.displayName },
-        )
+        snapshots.values
+            .filter { it.profile.enabled }
+            .sortedWith(
+                compareByDescending<RadioEndpointSnapshot> { it.profile.legacyPrimary }
+                    .thenBy { it.profile.displayName },
+            )
     val selectedSnapshot = selectedEndpointId?.let(snapshots::get)
+    val target =
+        selectedSnapshot?.takeIf { it.profile.enabled }?.let { EndpointTarget(it.profile.id.value, it.runtimeId) }
+    BindEndpointSelection(multiBackstack, target)
     val backStack = multiBackstack.activeBackStack
-    MeshtasticAppShell(multiBackstack = multiBackstack, uiViewModel = uiViewModel) {
+    val showEndpointTabs = scopeMode == IosFeatureScopeMode.SELECTED_ENDPOINT && endpointList.isNotEmpty()
+    MeshtasticAppShell(
+        multiBackstack = multiBackstack,
+        uiViewModel = uiViewModel,
+        sharedDialogs = { IosImportDialogs(snapshots) },
+    ) {
         MeshtasticNavigationSuite(
             multiBackstack = multiBackstack,
             uiViewModel = uiViewModel,
+            radioState = rememberFleetNavigationState(),
             modifier = modifier,
             containerColor = MaterialTheme.colorScheme.background.copy(alpha = NAVIGATION_SURFACE_ALPHA),
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                if (scopeMode == IosFeatureScopeMode.SELECTED_ENDPOINT && endpointList.isNotEmpty()) {
+            Column(modifier = Modifier.fillMaxSize().endpointTabsPadding(showEndpointTabs)) {
+                if (showEndpointTabs) {
                     IosRadioEndpointTabs(
                         endpoints = endpointList,
                         selectedEndpointId = selectedEndpointId,
                         onSelect = { endpointId ->
                             if (endpointId != selectedEndpointId) {
-                                coroutineScope.launch {
-                                    fleetManager.select(endpointId)
-                                    multiBackstack.navigateTopLevel(multiBackstack.currentTabRoute)
-                                }
+                                uiAction { fleetManager.select(endpointId) }
                             }
                         },
                     )
                 }
-                IosScopedRadioNavigation(
-                    endpointAware = scopeMode == IosFeatureScopeMode.SELECTED_ENDPOINT,
-                    selectedSnapshot = selectedSnapshot,
-                    endpointScope = selectedSnapshot?.let { endpointScopes[it.profile.id] },
-                    modifier = Modifier.weight(1F),
-                ) {
+                Box(Modifier.weight(1F)) {
                     IosRadioNavigationDisplay(
                         multiBackstack = multiBackstack,
                         backStack = backStack,
@@ -199,12 +208,13 @@ private fun IosRadioNavigationDisplay(
     backStack: NavBackStack<NavKey>,
     uiViewModel: UIViewModel,
 ) {
+    val fleetManager = koinInject<RadioFleetManager>()
     val provider =
         entryProvider<NavKey> {
             contactsGraph(
                 backStack = backStack,
                 scrollToTopEvents = uiViewModel.scrollToTopEventFlow,
-                fleetRootContent = { FleetChannelsEntryContent(backStack) },
+                fleetRootContent = { FleetChannelsEntry(multiBackstack, fleetManager) },
                 endpointContent = { endpointId, expectedGeneration, content ->
                     IosEndpointScopeHost(
                         endpointId = RadioEndpointId(endpointId),
@@ -225,54 +235,49 @@ private fun IosRadioNavigationDisplay(
             channelsGraph(backStack)
             wifiProvisionGraph(backStack)
         }
-    MeshtasticNavDisplay(multiBackstack = multiBackstack, entryProvider = provider, modifier = Modifier.fillMaxSize())
-}
-
-@Composable
-@OptIn(KoinDelicateAPI::class, KoinExperimentalAPI::class)
-private fun IosScopedRadioNavigation(
-    endpointAware: Boolean,
-    selectedSnapshot: RadioEndpointSnapshot?,
-    endpointScope: Scope?,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val movableContent = remember(content) { movableContentOf { content() } }
-    when {
-        !endpointAware || selectedSnapshot == null || selectedSnapshot.profile.legacyPrimary ->
-            Box(modifier = modifier) { movableContent() }
-
-        endpointScope != null ->
-            Box(modifier = modifier) { UnboundKoinScope(scope = endpointScope) { movableContent() } }
-
-        else -> IosEndpointLoadingState(modifier)
-    }
+    MeshtasticNavDisplay(
+        multiBackstack = multiBackstack,
+        entryProvider =
+        endpointEntryProvider(
+            provider = provider,
+            onNavigateToConnections = { multiBackstack.navigateTopLevel(TopLevelDestination.Connections.route) },
+        ) { target, content ->
+            IosEndpointScopeHost(
+                RadioEndpointId(target.endpointId),
+                expectedRuntimeId = target.runtimeId,
+                content = content,
+            )
+        },
+        modifier = Modifier.fillMaxSize(),
+    )
 }
 
 @Composable
 @OptIn(KoinDelicateAPI::class, KoinExperimentalAPI::class)
 private fun IosEndpointScopeHost(
     endpointId: RadioEndpointId,
-    expectedGeneration: Long,
+    expectedGeneration: Long? = null,
+    expectedRuntimeId: String? = null,
     content: @Composable () -> Unit,
 ) {
     val fleetManager = koinInject<RadioFleetManager>()
     val scopeRegistry = koinInject<IosRadioEndpointScopeRegistry>()
     val snapshots by fleetManager.snapshots.collectAsState()
-    val selectedEndpointId by fleetManager.selectedEndpointId.collectAsState()
     val endpointScopes by scopeRegistry.scopes.collectAsState()
     val snapshot = snapshots[endpointId]
-    val generationMatches = snapshot?.generation == expectedGeneration
-    val movableContent = remember(content) { movableContentOf { content() } }
-
-    LaunchedEffect(endpointId, expectedGeneration, snapshot) {
-        if (snapshot != null && generationMatches && selectedEndpointId != endpointId) {
-            fleetManager.select(endpointId)
+    val generationMatches = expectedGeneration == null || snapshot?.generation == expectedGeneration
+    val endpointScope = endpointScopes[endpointId]
+    if (snapshot?.profile?.enabled == true && endpointScope?.isNotClosed() == true) {
+        remember(endpointScope, snapshot.runtimeId) {
+            endpointScope.declare(EndpointTarget(endpointId.value, snapshot.runtimeId))
         }
     }
 
     when {
-        snapshot == null || !generationMatches ->
+        snapshot == null ||
+            !snapshot.profile.enabled ||
+            !generationMatches ||
+            (expectedRuntimeId != null && expectedRuntimeId != snapshot.runtimeId) ->
             Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
                 Text(
                     stringResource(Res.string.channel_hub_endpoint_unavailable),
@@ -281,12 +286,8 @@ private fun IosEndpointScopeHost(
                 )
             }
 
-        selectedEndpointId != endpointId -> IosEndpointLoadingState(Modifier.fillMaxSize())
-
-        snapshot.profile.legacyPrimary -> movableContent()
-
-        endpointScopes[endpointId] != null ->
-            UnboundKoinScope(scope = checkNotNull(endpointScopes[endpointId])) { movableContent() }
+        endpointScope?.isNotClosed() == true ->
+            UnboundKoinScope(scope = endpointScope) { key(snapshot.runtimeId) { content() } }
 
         else -> IosEndpointLoadingState(Modifier.fillMaxSize())
     }
@@ -339,20 +340,16 @@ private enum class IosFeatureScopeMode {
 private fun iosFeatureScopeMode(multiBackstack: MultiBackstack): IosFeatureScopeMode {
     val currentTopLevel = multiBackstack.currentTabRoute
     return if (
-        currentTopLevel == TopLevelDestination.Connections.route ||
+        (currentTopLevel == TopLevelDestination.Connections.route && multiBackstack.activeBackStack.size == 1) ||
         currentTopLevel == TopLevelDestination.MeshCore.route
     ) {
         IosFeatureScopeMode.ROOT
     } else if (currentTopLevel != TopLevelDestination.Conversations.route) {
         IosFeatureScopeMode.SELECTED_ENDPOINT
     } else {
-        when (multiBackstack.activeBackStack.lastOrNull()) {
+        when (multiBackstack.activeBackStack.lastOrNull()?.withoutEndpoint()) {
             ContactsRoute.ContactsGraph,
             ContactsRoute.Contacts,
-            is ContactsRoute.FleetMessages,
-            is ContactsRoute.EndpointContacts,
-            is ContactsRoute.FleetShare,
-            is ContactsRoute.FleetQuickChat,
             -> IosFeatureScopeMode.FLEET
 
             else -> IosFeatureScopeMode.SELECTED_ENDPOINT
@@ -372,6 +369,7 @@ private fun iosEndpointTabStateColor(state: EndpointSessionState): Color = when 
     is EndpointSessionState.Failed,
     -> Color(IOS_ENDPOINT_ATTENTION_COLOR)
 
+    EndpointSessionState.Releasing,
     EndpointSessionState.Registered,
     EndpointSessionState.WaitingResource,
     -> MaterialTheme.colorScheme.outline
@@ -392,3 +390,23 @@ private const val IOS_ENDPOINT_READY_COLOR = 0xff16a34a
 private const val IOS_ENDPOINT_CONNECTING_COLOR = 0xff2563eb
 private const val IOS_ENDPOINT_ATTENTION_COLOR = 0xffd97706
 internal const val SURFACE_ALPHA = 0.94F
+
+@Composable
+private fun IosImportDialogs(snapshots: Map<RadioEndpointId, RadioEndpointSnapshot>) {
+    val uiViewModel: UIViewModel = koinViewModel()
+    FleetImportDialogs(
+        viewModel = uiViewModel,
+        options =
+        snapshots.values
+            .filter { it.profile.enabled }
+            .map {
+                EndpointImportOption(
+                    EndpointTarget(it.profile.id.value, it.runtimeId),
+                    "${it.profile.displayName} · ${it.profile.addressSuffix.uppercase()}",
+                    it.state is EndpointSessionState.Ready,
+                )
+            },
+    ) { owner, content ->
+        IosEndpointScopeHost(RadioEndpointId(owner.endpointId), expectedRuntimeId = owner.runtimeId, content = content)
+    }
+}

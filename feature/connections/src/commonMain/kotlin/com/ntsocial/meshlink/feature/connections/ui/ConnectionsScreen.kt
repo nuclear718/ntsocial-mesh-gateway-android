@@ -84,6 +84,7 @@ import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.NoDevice
 import com.ntsocial.meshlink.core.ui.viewmodel.ConnectionStatus
 import com.ntsocial.meshlink.core.ui.viewmodel.ConnectionsViewModel
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.connections.MOCK_DEVICE_PREFIX
 import com.ntsocial.meshlink.feature.connections.NO_DEVICE_SELECTED
 import com.ntsocial.meshlink.feature.connections.ScannerViewModel
@@ -113,23 +114,33 @@ private val NtsocialConnectionBlue = Color(0xFF3DA8FF)
 @Suppress("CyclomaticComplexMethod", "LongMethod", "MagicNumber", "ModifierMissing", "ComposableParamOrder")
 @Composable
 fun ConnectionsScreen(
-    connectionsViewModel: ConnectionsViewModel = koinViewModel(),
+    connectionsViewModel: ConnectionsViewModel = scopedViewModel(),
     scanModel: ScannerViewModel = koinViewModel(),
-    radioConfigViewModel: RadioConfigViewModel = koinViewModel(),
+    radioConfigViewModel: RadioConfigViewModel = scopedViewModel(),
     onClickNodeChip: (Int) -> Unit,
     onNavigateToNodeDetails: (Int) -> Unit,
     onConfigNavigate: (Route) -> Unit,
 ) {
     val radioConfigState by radioConfigViewModel.radioConfigState.collectAsStateWithLifecycle()
-    val connectionProgress by scanModel.connectionProgressText.collectAsStateWithLifecycle()
+    val scopedConnectionProgress by connectionsViewModel.connectionProgress.collectAsStateWithLifecycle()
     val bluetoothPairingGuidance by scanModel.bluetoothPairingGuidance.collectAsStateWithLifecycle()
-    val connectionStatus by connectionsViewModel.connectionStatus.collectAsStateWithLifecycle()
-    val connectionState by connectionsViewModel.connectionState.collectAsStateWithLifecycle()
-    val ourNode by connectionsViewModel.ourNodeForDisplay.collectAsStateWithLifecycle()
+    val scopedConnectionStatus by connectionsViewModel.connectionStatus.collectAsStateWithLifecycle()
+    val scopedConnectionState by connectionsViewModel.connectionState.collectAsStateWithLifecycle()
+    val scopedNode by connectionsViewModel.ourNodeForDisplay.collectAsStateWithLifecycle()
     val regionUnset by connectionsViewModel.regionUnset.collectAsStateWithLifecycle()
 
-    val selectedDevice by scanModel.selectedNotNullFlow.collectAsStateWithLifecycle()
-    val persistedDeviceName by scanModel.persistedDeviceName.collectAsStateWithLifecycle()
+    val scannerDevice by scanModel.selectedNotNullFlow.collectAsStateWithLifecycle()
+    val scannerDeviceName by scanModel.persistedDeviceName.collectAsStateWithLifecycle()
+    val fleetIdentity = fleetConnectionIdentity()
+    val onDisconnect: () -> Unit =
+        if (fleetIdentity != null) fleetIdentity.onDisconnect ?: {} else scanModel::disconnect
+    val selectedDevice = fleetIdentity?.address ?: scannerDevice
+    val persistedDeviceName = if (fleetIdentity != null) fleetIdentity.name else scannerDeviceName
+    val endpointUnavailable = fleetIdentity?.address == NO_DEVICE_SELECTED
+    val connectionState = if (endpointUnavailable) ConnectionState.Disconnected else scopedConnectionState
+    val connectionStatus = if (endpointUnavailable) ConnectionStatus.NOT_CONNECTED else scopedConnectionStatus
+    val ourNode = scopedNode.takeUnless { endpointUnavailable }
+    val connectionProgress = scopedConnectionProgress.takeUnless { endpointUnavailable }
 
     val bleDevices by scanModel.bleDevicesForUi.collectAsStateWithLifecycle()
     val isBleScanning by scanModel.isBleScanning.collectAsStateWithLifecycle()
@@ -256,7 +267,7 @@ fun ConnectionsScreen(
                                                 selectedDevice = selectedDevice,
                                                 bleDevices = bleDevices,
                                                 onNavigateToNodeDetails = onNavigateToNodeDetails,
-                                                onClickDisconnect = { scanModel.disconnect() },
+                                                onClickDisconnect = onDisconnect,
                                             )
 
                                         ConnectionUiState.CONNECTING ->
@@ -266,7 +277,7 @@ fun ConnectionsScreen(
                                                 bleDevices = bleDevices,
                                                 connectionStatus = connectionStatus,
                                                 connectionProgress = connectionProgress,
-                                                onClickDisconnect = { scanModel.disconnect() },
+                                                onClickDisconnect = onDisconnect,
                                             )
 
                                         else -> NoDeviceContent()

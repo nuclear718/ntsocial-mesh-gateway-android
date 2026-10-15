@@ -56,15 +56,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -216,6 +219,55 @@ class SharedRadioInterfaceServiceLivenessTest {
         service.connect()
         service.onConnect()
         return service
+    }
+
+    @Test
+    fun `revocation rejects writes immediately before asynchronous transport close`() = runTest(testDispatcher) {
+        val service = createConnectedService(HYDRATED_ADDRESS)
+        val epoch = service.radioSessionState.value.epoch
+        assertTrue(service.markCurrentSessionConfigured(epoch))
+        service.revokeConnection()
+        assertFalse(service.radioSessionState.value.isConfiguredReady)
+        assertFalse(service.sendToRadioForSession(byteArrayOf(1), epoch))
+        service.sendToRadio(byteArrayOf(2))
+        runCurrent()
+        assertTrue(createdTransports.single().sentData.isEmpty())
+        service.disconnect()
+        service.connect()
+        service.onConnect()
+        val replacement = service.radioSessionState.value.epoch
+        assertTrue(service.markCurrentSessionConfigured(replacement))
+        assertTrue(service.sendToRadioForSession(byteArrayOf(3), replacement))
+        service.close()
+    }
+
+    @Test
+    fun `disconnect fences a connect request still queued on the host dispatcher`() = runTest(testDispatcher) {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val service = createConnectedService(HYDRATED_ADDRESS)
+        service.disconnect()
+        runCurrent()
+        assertTrue(createdTransports.isEmpty())
+        service.close()
+    }
+
+    @Test
+    fun `failed native close retains the retired transport for a release retry`() = runTest(testDispatcher) {
+        var attempts = 0
+        val transport =
+            object : RadioTransport {
+                override fun handleSendToRadio(p: ByteArray) = Unit
+
+                override suspend fun close() {
+                    attempts++
+                    if (attempts == 1) error("close failed")
+                }
+            }
+        val service = createConnectedService(HYDRATED_ADDRESS) { transport }
+        assertFailsWith<IllegalStateException> { service.disconnect() }
+        service.disconnect()
+        assertEquals(2, attempts)
+        service.close()
     }
 
     @Test

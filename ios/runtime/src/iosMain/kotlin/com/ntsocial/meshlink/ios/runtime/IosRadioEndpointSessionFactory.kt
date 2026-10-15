@@ -24,7 +24,6 @@
  */
 package com.ntsocial.meshlink.ios.runtime
 
-import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
 import com.ntsocial.meshlink.core.common.util.handledLaunch
 import com.ntsocial.meshlink.core.database.EndpointDatabaseCatalog
@@ -43,11 +42,15 @@ import com.ntsocial.meshlink.core.repository.MeshRouter
 import com.ntsocial.meshlink.core.repository.NodeManager
 import com.ntsocial.meshlink.core.repository.RadioInterfaceService
 import com.ntsocial.meshlink.core.repository.ServiceRepository
+import com.ntsocial.meshlink.core.service.CompatibilityRadioDependencies
+import com.ntsocial.meshlink.core.service.CompatibilityRadioEndpointSession
+import com.ntsocial.meshlink.core.ui.viewmodel.EndpointViewModelFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,9 +77,39 @@ internal class IosRadioEndpointSessionFactory(
     private val primaryServiceRepository: ServiceRepository,
 ) : RadioEndpointSessionFactory {
     override suspend fun create(profile: RadioEndpointProfile): RadioEndpointSession = if (profile.legacyPrimary) {
-        IosLegacyPrimaryRadioEndpointSession(profile, primaryRadio, primaryServiceRepository)
+        createCompatibilitySession(profile)
     } else {
         createSecondarySession(profile)
+    }
+
+    private fun createCompatibilitySession(profile: RadioEndpointProfile): RadioEndpointSession {
+        val delegate =
+            CompatibilityRadioEndpointSession(
+                profile,
+                CompatibilityRadioDependencies(
+                    radio = primaryRadio,
+                    service = primaryServiceRepository,
+                    prefs = koin.get(),
+                    database = koin.get(),
+                    nodes = koin.get(),
+                    ingress = koin.get(),
+                    packets = koin.get(),
+                    gatewayGate = koin.get(),
+                    operationLock = koin.get(),
+                    dispatchers = dispatchers,
+                ),
+            )
+        val uiScope =
+            koin.createScope("primary-ui:${profile.id.value}:${Uuid.random()}", compatibilityEndpointUiQualifier)
+        scopeRegistry.register(profile.id, uiScope)
+        return object : RadioEndpointSession by delegate {
+            override suspend fun close() {
+                delegate.close()
+                if (uiScope.isNotClosed()) uiScope.get<EndpointViewModelFactory>().close()
+                scopeRegistry.unregister(profile.id, uiScope)
+                uiScope.close()
+            }
+        }
     }
 
     @Suppress("TooGenericExceptionCaught")
@@ -121,64 +154,6 @@ internal class IosRadioEndpointSessionFactory(
     }
 }
 
-private class IosLegacyPrimaryRadioEndpointSession(
-    private val profile: RadioEndpointProfile,
-    private val radio: RadioInterfaceService,
-    private val serviceRepository: ServiceRepository,
-) : RadioEndpointSession {
-    override val endpointId: RadioEndpointId = profile.id
-    private val mutableState = MutableStateFlow<EndpointSessionState>(EndpointSessionState.Registered)
-    override val state: StateFlow<EndpointSessionState> = mutableState.asStateFlow()
-    private val mutableGeneration = MutableStateFlow(radio.radioSessionState.value.epoch)
-    override val generation: StateFlow<Long> = mutableGeneration.asStateFlow()
-    private var collectorJob: Job? = null
-
-    init {
-        ensureCollector()
-    }
-
-    override suspend fun start() {
-        ensureCollector()
-        mutableState.value = EndpointSessionState.Connecting
-        radio.connect()
-        val ready = withTimeoutOrNull(SESSION_READY_TIMEOUT) { radio.radioSessionState.first { it.isConfiguredReady } }
-        if (ready == null) mutableState.value = EndpointSessionState.Degraded("setup_timeout")
-    }
-
-    override suspend fun stop() {
-        radio.disconnect()
-        mutableState.value = EndpointSessionState.Registered
-    }
-
-    override suspend fun close() {
-        collectorJob?.cancel()
-        collectorJob = null
-        mutableState.value = EndpointSessionState.Registered
-    }
-
-    private fun ensureCollector() {
-        if (collectorJob != null) return
-        collectorJob =
-            CoroutineScope(SupervisorJob()).launch {
-                radio.radioSessionState.collectLatest { session ->
-                    mutableGeneration.value = session.epoch
-                    mutableState.value =
-                        when {
-                            session.isConfiguredReady -> EndpointSessionState.Ready(session.epoch)
-
-                            session.transportConnectionState == ConnectionState.Connected ->
-                                EndpointSessionState.Synchronizing
-
-                            serviceRepository.connectionState.value == ConnectionState.Connecting ->
-                                EndpointSessionState.Connecting
-
-                            else -> EndpointSessionState.Registered
-                        }
-                }
-            }
-    }
-}
-
 private class IosSecondaryRadioEndpointSession(
     private val profile: RadioEndpointProfile,
     private val database: EndpointDatabaseHandle,
@@ -214,22 +189,37 @@ private class IosSecondaryRadioEndpointSession(
         if (ready == null) mutableState.value = EndpointSessionState.Degraded("setup_timeout")
     }
 
+    override fun revoke() {
+        if (closed || !endpointScope.isNotClosed()) return
+        endpointScope.get<com.ntsocial.meshlink.core.repository.GatewayIngressSessionGate>().invalidate()
+        radio.revokeConnection()
+    }
+
     override suspend fun stop() = lifecycleMutex.withLock {
         if (closed) return@withLock
+        revoke()
         radio.disconnect()
         mutableState.value = EndpointSessionState.Registered
     }
 
     override suspend fun close() = lifecycleMutex.withLock {
         if (closed) return@withLock
-        closed = true
-        runCatching { radio.disconnect() }
-            .onFailure { Logger.w(it) { "Failed to disconnect iOS secondary endpoint" } }
-        scopeRegistry.unregister(endpointId, endpointScope)
-        serviceScope.cancel()
-        endpointScope.close()
+        if (endpointScope.isNotClosed()) {
+            revoke()
+            endpointScope.get<EndpointViewModelFactory>().close()
+            endpointScope.get<com.ntsocial.meshlink.core.repository.ChannelOperationLock>().withLock {
+                radio.disconnect()
+            }
+            messageProcessor.quiesceIngress()
+            endpointScope.get<com.ntsocial.meshlink.core.repository.PacketHandler>().stopPacketQueueAndAwait()
+            radio.close()
+            serviceScope.coroutineContext[Job]?.cancelAndJoin()
+            scopeRegistry.unregister(endpointId, endpointScope)
+            endpointScope.close()
+        }
         scopedDataStoreFactory.release(endpointId)
         database.close()
+        closed = true
         mutableState.value = EndpointSessionState.Registered
     }
 

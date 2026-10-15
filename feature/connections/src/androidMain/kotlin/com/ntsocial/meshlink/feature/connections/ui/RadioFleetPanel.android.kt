@@ -39,13 +39,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ntsocial.meshlink.core.navigation.EndpointTarget
 import com.ntsocial.meshlink.core.radiofleet.EndpointSessionState
+import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSnapshot
 import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.resources.Res
@@ -59,24 +60,58 @@ import com.ntsocial.meshlink.core.resources.loading
 import com.ntsocial.meshlink.core.resources.radio_fleet_capacity
 import com.ntsocial.meshlink.core.resources.radio_fleet_title
 import com.ntsocial.meshlink.core.resources.radio_legacy_primary
+import com.ntsocial.meshlink.core.resources.radio_remembered_devices
 import com.ntsocial.meshlink.core.resources.remove
 import com.ntsocial.meshlink.core.resources.select
-import kotlinx.coroutines.launch
+import com.ntsocial.meshlink.core.ui.util.rememberUiAction
+import com.ntsocial.meshlink.feature.connections.NO_DEVICE_SELECTED
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.currentKoinScope
 import org.koin.compose.koinInject
+
+@Composable
+internal actual fun fleetConnectionIdentity(): ConnectionDeviceIdentity? {
+    val owner = currentKoinScope().getOrNull<EndpointTarget>()
+    val fleetManager = koinInject<RadioFleetManager>()
+    val uiAction = rememberUiAction()
+    val snapshots by fleetManager.snapshots.collectAsStateWithLifecycle()
+    val snapshot = owner?.let { snapshots[RadioEndpointId(it.endpointId)] }
+    val identity =
+        ownedConnectionIdentity(
+            owner = owner,
+            candidateOwner = snapshot?.let { EndpointTarget(it.profile.id.value, it.runtimeId) },
+            enabled = snapshot?.profile?.enabled == true,
+            address = snapshot?.profile?.transportAddress,
+            name = snapshot?.profile?.displayName,
+        )
+    if (owner == null || identity.address == NO_DEVICE_SELECTED) return identity
+    return identity.copy(
+        onDisconnect = {
+            uiAction {
+                val endpointId = RadioEndpointId(owner.endpointId)
+                val current = fleetManager.snapshots.value[endpointId]
+                if (current != null && current.runtimeId == owner.runtimeId && current.profile.enabled) {
+                    fleetManager.disconnectAndRelease(endpointId)
+                }
+            }
+        },
+    )
+}
 
 @Composable
 actual fun RadioFleetPanel(modifier: Modifier) {
     val fleetManager = koinInject<RadioFleetManager>()
     val snapshots by fleetManager.snapshots.collectAsStateWithLifecycle()
+    val rememberedProfiles by fleetManager.rememberedProfiles.collectAsStateWithLifecycle()
     val selectedEndpointId by fleetManager.selectedEndpointId.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
+    val uiAction = rememberUiAction()
     val endpoints =
         snapshots.values.sortedWith(
             compareByDescending<RadioEndpointSnapshot> { it.profile.legacyPrimary }.thenBy { it.profile.displayName },
         )
 
-    if (endpoints.isEmpty()) return
+    val remembered = rememberedProfiles.filter { it.id !in snapshots }.map { RadioEndpointSnapshot(it) }
+    if (endpoints.isEmpty() && remembered.isEmpty()) return
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -91,24 +126,29 @@ actual fun RadioFleetPanel(modifier: Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(items = endpoints, key = { it.profile.id.value }) { snapshot ->
-                val selected = snapshot.profile.id == selectedEndpointId
-                RadioEndpointCard(
-                    snapshot = snapshot,
-                    selected = selected,
-                    onSelect = { scope.launch { fleetManager.select(snapshot.profile.id) } },
-                    onConnectionToggle = {
-                        scope.launch {
-                            if (snapshot.state.isActive) {
-                                fleetManager.disconnect(snapshot.profile.id)
-                            } else {
-                                fleetManager.connect(snapshot.profile.id)
+        listOf(endpoints, remembered).forEachIndexed { index, group ->
+            if (index == 1 && group.isNotEmpty()) {
+                Text(stringResource(Res.string.radio_remembered_devices), style = MaterialTheme.typography.titleSmall)
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(items = group, key = { it.profile.id.value }) { snapshot ->
+                    val selected = snapshot.profile.id == selectedEndpointId
+                    RadioEndpointCard(
+                        snapshot = snapshot,
+                        selected = selected,
+                        onSelect = { uiAction { fleetManager.select(snapshot.profile.id) } },
+                        onConnectionToggle = {
+                            uiAction {
+                                if (snapshot.runtimeId.isNotBlank()) {
+                                    fleetManager.disconnectAndRelease(snapshot.profile.id)
+                                } else {
+                                    fleetManager.connect(snapshot.profile.id)
+                                }
                             }
-                        }
-                    },
-                    onRemove = { scope.launch { fleetManager.remove(snapshot.profile.id) } },
-                )
+                        },
+                        onRemove = { uiAction { fleetManager.remove(snapshot.profile.id) } },
+                    )
+                }
             }
         }
     }
@@ -181,11 +221,11 @@ private fun EndpointCardActions(
     onRemove: () -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        if (!selected) {
+        if (!selected && snapshot.profile.enabled) {
             TextButton(onClick = onSelect) { Text(stringResource(Res.string.select)) }
         }
-        TextButton(onClick = onConnectionToggle) {
-            Text(stringResource(if (snapshot.state.isActive) Res.string.disconnect else Res.string.connect))
+        TextButton(onClick = onConnectionToggle, enabled = snapshot.state != EndpointSessionState.Releasing) {
+            Text(stringResource(if (snapshot.runtimeId.isNotBlank()) Res.string.disconnect else Res.string.connect))
         }
         if (!snapshot.profile.legacyPrimary) {
             TextButton(onClick = onRemove) { Text(stringResource(Res.string.remove)) }
@@ -207,12 +247,7 @@ private fun endpointStateLabel(state: EndpointSessionState): String = when (stat
     is EndpointSessionState.Degraded,
     -> stringResource(Res.string.error)
 
+    EndpointSessionState.Releasing -> stringResource(Res.string.loading)
+
     EndpointSessionState.Registered -> stringResource(Res.string.disconnected)
 }
-
-private val EndpointSessionState.isActive: Boolean
-    get() =
-        this is EndpointSessionState.Ready ||
-            this is EndpointSessionState.Connecting ||
-            this is EndpointSessionState.Synchronizing ||
-            this is EndpointSessionState.WaitingResource

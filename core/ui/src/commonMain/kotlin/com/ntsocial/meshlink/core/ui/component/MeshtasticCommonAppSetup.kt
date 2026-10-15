@@ -41,8 +41,8 @@ import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
  */
 @Composable
 @Suppress("ViewModelForwarding")
-fun MeshtasticCommonAppSetup(uiViewModel: UIViewModel) {
-    SharedDialogs(uiViewModel = uiViewModel)
+fun MeshtasticCommonAppSetup(uiViewModel: UIViewModel, sharedDialogs: (@Composable () -> Unit)? = null) {
+    if (sharedDialogs == null) SharedDialogs(uiViewModel = uiViewModel) else sharedDialogs()
     FirmwareVersionCheck(viewModel = uiViewModel)
     AlertHost(alertManager = uiViewModel.alertManager)
     TracerouteAlertHandler(uiViewModel = uiViewModel)

@@ -190,7 +190,7 @@ class MeshService : Service() {
         Logger.i { "Creating mesh service" }
 
         try {
-            orchestrator.start()
+            orchestrator.start(connectRadio = false)
             isServiceInitialized = true
             serviceScope.launch {
                 radioFleetManager.start(
@@ -249,6 +249,8 @@ class MeshService : Service() {
                 serviceScope.launch {
                     delay(DEVICE_SELECTION_STARTUP_GRACE_MS)
                     if (
+                        radioFleetManager.snapshots.value.isEmpty() &&
+                        radioFleetManager.rememberedProfiles.value.none { it.enabled } &&
                         meshServiceStartupDecision(radioInterfaceService.getDeviceAddress(), graceElapsed = true) ==
                         MeshServiceStartupDecision.STOP
                     ) {

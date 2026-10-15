@@ -42,13 +42,14 @@ fun MeshtasticAppShell(
     multiBackstack: MultiBackstack,
     uiViewModel: UIViewModel,
     hostModifier: Modifier = Modifier,
+    sharedDialogs: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     LaunchedEffect(uiViewModel) {
         uiViewModel.navigationDeepLink.collect { navKeys -> multiBackstack.handleDeepLink(navKeys) }
     }
 
-    MeshtasticCommonAppSetup(uiViewModel = uiViewModel)
+    MeshtasticCommonAppSetup(uiViewModel = uiViewModel, sharedDialogs = sharedDialogs)
 
     MeshtasticSnackbarProvider(snackbarManager = uiViewModel.snackbarManager, hostModifier = hostModifier) { content() }
 }

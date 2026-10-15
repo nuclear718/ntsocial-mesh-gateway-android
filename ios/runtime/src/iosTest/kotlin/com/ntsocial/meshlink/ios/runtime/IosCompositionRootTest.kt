@@ -40,6 +40,8 @@ import platform.Foundation.NSUUID
 import kotlin.test.Test
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 
 class IosCompositionRootTest {
     @Test
@@ -80,6 +82,28 @@ class IosCompositionRootTest {
             val endpointScope = assertNotNull(root.koin.get<IosRadioEndpointScopeRegistry>().scopes.value[endpointId])
             assertIs<MeshConnectionManagerImpl>(endpointScope.get<MeshConnectionManager>())
             assertIs<IosSecondaryGatewayRepository>(endpointScope.get<NtsocialGatewayRepository>())
+            val factory = endpointScope.get<com.ntsocial.meshlink.core.ui.viewmodel.EndpointViewModelFactory>()
+            val settings =
+                factory.create(
+                    com.ntsocial.meshlink.feature.settings.SettingsViewModel::class,
+                    androidx.lifecycle.SavedStateHandle(),
+                    org.koin.core.parameter.parametersOf(),
+                ) as com.ntsocial.meshlink.feature.settings.SettingsViewModel
+            assertSame(
+                endpointScope.get<com.ntsocial.meshlink.core.repository.NodeRepository>().myNodeInfo,
+                settings.myNodeInfo,
+            )
+            assertNotSame(
+                root.koin.get<com.ntsocial.meshlink.core.repository.NodeRepository>().myNodeInfo,
+                settings.myNodeInfo,
+            )
+            assertIs<com.ntsocial.meshlink.core.ui.qr.ScannedQrCodeViewModel>(
+                factory.create(
+                    com.ntsocial.meshlink.core.ui.qr.ScannedQrCodeViewModel::class,
+                    androidx.lifecycle.SavedStateHandle(),
+                    org.koin.core.parameter.parametersOf(),
+                ),
+            )
         } finally {
             session.close()
             root.close()

@@ -26,9 +26,12 @@ package com.ntsocial.meshlink.core.ui.viewmodel
 
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import org.koin.compose.currentKoinScope
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.ParametersDefinition
+import org.koin.core.parameter.parametersOf
 
 /**
  * Resolves a ViewModel with a key that includes the current Koin scope.
@@ -43,5 +46,14 @@ inline fun <reified T : ViewModel> scopedViewModel(
 ): T {
     val scope = currentKoinScope()
     val typeKey = T::class.qualifiedName ?: T::class.simpleName ?: "viewmodel"
-    return koinViewModel(key = "${scope.id}:${key ?: typeKey}", scope = scope, parameters = parameters)
+    val ownerKey = "${scope.id}:${key ?: typeKey}"
+    // Desktop and the explicit legacy-primary adapter retain their single-radio root graph.
+    if (scope.isRoot) return koinViewModel(key = ownerKey, scope = scope, parameters = parameters)
+    val factory = scope.get<EndpointViewModelFactory>()
+    check(factory.scopeId == scope.id) { "Endpoint ViewModel factory belongs to another runtime" }
+    return viewModel<T>(key = ownerKey) {
+        val instance = factory.create(T::class, createSavedStateHandle(), parameters?.invoke() ?: parametersOf())
+        check(instance is T) { "Endpoint factory returned an unexpected ViewModel" }
+        instance
+    }
 }

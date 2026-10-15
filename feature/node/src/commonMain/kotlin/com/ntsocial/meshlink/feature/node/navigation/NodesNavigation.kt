@@ -57,6 +57,7 @@ import com.ntsocial.meshlink.core.resources.power
 import com.ntsocial.meshlink.core.resources.signal
 import com.ntsocial.meshlink.core.resources.traceroute
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
+import com.ntsocial.meshlink.core.ui.navigation.rememberEndpointNavigator
 import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.node.compass.CompassViewModel
 import com.ntsocial.meshlink.feature.node.detail.NodeDetailScreen
@@ -126,6 +127,8 @@ fun EntryProviderScope<NavKey>.nodeDetailGraph(
     }
 
     entry<NodesRoute.NodeDetail>(metadata = { ListDetailSceneStrategy.detailPane() }) { args ->
+        val navigate = rememberEndpointNavigator(backStack)
+
         val nodeDetailViewModel: NodeDetailViewModel = scopedViewModel()
         val compassViewModel: CompassViewModel = scopedViewModel()
         val destNum = args.destNum ?: 0 // Handle nullable destNum if needed
@@ -133,8 +136,8 @@ fun EntryProviderScope<NavKey>.nodeDetailGraph(
             nodeId = destNum,
             viewModel = nodeDetailViewModel,
             compassViewModel = compassViewModel,
-            navigateToMessages = { key -> backStack.add(ContactsRoute.Messages(key)) },
-            onNavigate = { route -> backStack.add(route) },
+            navigateToMessages = { key -> navigate(ContactsRoute.Messages(key)) },
+            onNavigate = { route -> navigate(route) },
             onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
         )
     }

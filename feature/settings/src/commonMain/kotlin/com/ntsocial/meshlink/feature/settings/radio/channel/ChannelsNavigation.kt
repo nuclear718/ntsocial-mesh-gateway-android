@@ -29,25 +29,30 @@ import androidx.navigation3.runtime.EntryProviderScope
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.ntsocial.meshlink.core.navigation.ChannelsRoute
+import com.ntsocial.meshlink.core.ui.navigation.rememberEndpointNavigator
 import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel
 
 /** Navigation graph for for the top level ChannelScreen - [ChannelsRoute.Channels]. */
 fun EntryProviderScope<NavKey>.channelsGraph(backStack: NavBackStack<NavKey>) {
     entry<ChannelsRoute.ChannelsGraph> {
+        val navigate = rememberEndpointNavigator(backStack)
+
         ChannelScreen(
             viewModel = scopedViewModel(),
             radioConfigViewModel = scopedViewModel<RadioConfigViewModel>(),
-            onNavigate = { route -> backStack.add(route) },
+            onNavigate = { route -> navigate(route) },
             onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
         )
     }
 
     entry<ChannelsRoute.Channels> {
+        val navigate = rememberEndpointNavigator(backStack)
+
         ChannelScreen(
             viewModel = scopedViewModel(),
             radioConfigViewModel = scopedViewModel<RadioConfigViewModel>(),
-            onNavigate = { route -> backStack.add(route) },
+            onNavigate = { route -> navigate(route) },
             onNavigateUp = dropUnlessResumed { backStack.removeLastOrNull() },
         )
     }

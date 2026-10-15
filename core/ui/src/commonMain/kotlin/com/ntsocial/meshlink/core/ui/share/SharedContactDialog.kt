@@ -40,8 +40,8 @@ import com.ntsocial.meshlink.core.resources.import_label
 import com.ntsocial.meshlink.core.resources.import_shared_contact
 import com.ntsocial.meshlink.core.resources.public_key_changed
 import com.ntsocial.meshlink.core.ui.component.MeshtasticDialog
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.viewmodel.koinViewModel
 import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 
@@ -50,7 +50,7 @@ import org.meshtastic.proto.User
 fun SharedContactDialog(
     sharedContact: SharedContact,
     onDismiss: () -> Unit,
-    viewModel: SharedContactViewModel = koinViewModel(),
+    viewModel: SharedContactViewModel = scopedViewModel(),
 ) {
     val unfilteredNodes by viewModel.unfilteredNodes.collectAsStateWithLifecycle()
 

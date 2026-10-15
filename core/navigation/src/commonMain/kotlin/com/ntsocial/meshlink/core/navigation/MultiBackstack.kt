@@ -44,13 +44,44 @@ class MultiBackstack(val startTab: NavKey) {
     val activeBackStack: NavBackStack<NavKey>
         get() = backStacks[currentTabRoute] ?: error("Stack for $currentTabRoute not found")
 
+    var endpointTarget: EndpointTarget? by mutableStateOf(null)
+        private set
+
+    private var endpointBindingInitialized = false
+
+    /** One selection policy for every caller, including Hub and Connections, and every inactive stack. */
+    fun bindEndpoint(target: EndpointTarget?) {
+        if (endpointBindingInitialized && target == endpointTarget) return
+        endpointBindingInitialized = true
+        val previous = endpointTarget
+        endpointTarget = target
+        backStacks.forEach { (root, stack) ->
+            val path = stack.map { it.withoutEndpoint() }
+            val last = path.lastOrNull()
+            val retained =
+                when {
+                    previous == null || target == null || root != currentTabRoute -> emptyList()
+                    last is ChannelsRoute -> listOf(ChannelsRoute.ChannelsGraph)
+                    last is SettingsRoute && path.none(::isRemoteNodeDestination) -> path.drop(1)
+                    else -> emptyList()
+                }
+            stack.replaceAll((listOf(root) + retained).map(::bindDestination))
+        }
+    }
+
+    fun bindDestination(destination: NavKey): NavKey = endpointTarget
+        // Navigation 3 caches entries by the backstack keys, not by a changing entry provider. Connections keeps
+        // its global management destination, but its selected-radio content must carry the actual runtime key.
+        ?.takeIf { destination.isRadioDestination() || destination.withoutEndpoint() is ConnectionsRoute }
+        ?.let { EndpointRoute.Destination(it, destination.withoutEndpoint()) } ?: destination
+
     /** Switches to a new top-level tab route. */
     fun navigateTopLevel(route: NavKey) {
         val rootKey = TopLevelDestination.fromNavKey(route)?.route ?: route
 
         if (currentTabRoute == rootKey) {
             // Repressing the same tab resets its stack to just the root
-            activeBackStack.replaceAll(listOf(rootKey))
+            activeBackStack.replaceAll(listOf(bindDestination(rootKey)))
         } else {
             // Switching to a different tab
             currentTabRoute = rootKey
@@ -82,12 +113,24 @@ class MultiBackstack(val startTab: NavKey) {
         val topLevel = TopLevelDestination.fromNavKey(rootKey)?.route
         if (topLevel != null) {
             val stack = backStacks[topLevel] ?: return
-            stack.replaceAll(navKeys)
+            stack.replaceAll(navKeys.map(::bindDestination))
             currentTabRoute = topLevel
         } else {
-            backStacks[currentTabRoute]?.addAll(navKeys)
+            backStacks[currentTabRoute]?.addAll(navKeys.map(::bindDestination))
         }
     }
+}
+
+private fun isRemoteNodeDestination(destination: NavKey): Boolean = when (destination) {
+    is NodesRoute.NodeDetail,
+    is NodeDetailRoute,
+    -> true
+
+    is SettingsRoute.Settings -> destination.destNum != null
+
+    is SettingsRoute.SettingsGraph -> destination.destNum != null
+
+    else -> false
 }
 
 /** Remembers a [MultiBackstack] for managing independent tab navigation histories with Navigation 3. */
@@ -103,4 +146,15 @@ fun rememberMultiBackstack(initialTab: NavKey = TopLevelDestination.Connections.
     multiBackstack.backStacks = stacks
 
     return multiBackstack
+}
+
+/** Fleet and connection management roots are global; their actions supply an explicit endpoint target. */
+fun NavKey.isRadioDestination(): Boolean = when (withoutEndpoint()) {
+    ContactsRoute.ContactsGraph,
+    ContactsRoute.Contacts,
+    ConnectionsRoute.ConnectionsGraph,
+    ConnectionsRoute.Connections,
+    -> false
+
+    else -> withoutEndpoint() !is MeshCoreRoute && withoutEndpoint() !is WifiProvisionRoute
 }

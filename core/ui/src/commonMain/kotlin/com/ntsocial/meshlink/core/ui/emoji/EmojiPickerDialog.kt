@@ -85,8 +85,8 @@ import com.ntsocial.meshlink.core.ui.component.BottomSheetDialog
 import com.ntsocial.meshlink.core.ui.icon.Close
 import com.ntsocial.meshlink.core.ui.icon.MeshtasticIcons
 import com.ntsocial.meshlink.core.ui.icon.Search
+import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.viewmodel.koinViewModel
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -123,7 +123,7 @@ fun EmojiPickerDialog(
     selectedEmojis: Set<String> = emptySet(),
     onConfirm: (String) -> Unit,
 ) {
-    val viewModel: EmojiPickerViewModel = koinViewModel()
+    val viewModel: EmojiPickerViewModel = scopedViewModel()
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedCategoryIndex by rememberSaveable { mutableStateOf(0) }
 
@@ -155,7 +155,7 @@ fun EmojiPickerDialog(
  */
 @Composable
 fun rememberQuickReactions(count: Int = DEFAULT_QUICK_REACTION_COUNT): List<String> {
-    val viewModel: EmojiPickerViewModel = koinViewModel()
+    val viewModel: EmojiPickerViewModel = scopedViewModel()
     val recents by
         remember(viewModel.customEmojiFrequency) { derivedStateOf { parseRecents(viewModel.customEmojiFrequency) } }
     return remember(recents) {

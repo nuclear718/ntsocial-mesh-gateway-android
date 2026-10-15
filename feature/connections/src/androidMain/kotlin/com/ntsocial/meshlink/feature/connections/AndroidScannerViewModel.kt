@@ -85,14 +85,7 @@ class AndroidScannerViewModel(
                         candidate = DiscoveredRadio(transportAddress = entry.fullAddress, displayName = entry.name),
                         connect = false,
                     )
-                if (profile.legacyPrimary) {
-                    // The catalog, rather than an asynchronously populated UI snapshot, identifies the immutable
-                    // Android AIDL/Gateway projection before any connection can start.
-                    radioPrefs.setDevName(entry.name)
-                    changeDeviceAddress(entry.fullAddress)
-                } else {
-                    radioFleetManager.connect(profile.id)
-                }
+                radioFleetManager.connect(profile.id)
             }
                 .onFailure { error ->
                     Logger.w(error) { "Unable to add Meshtastic endpoint" }
@@ -105,12 +98,8 @@ class AndroidScannerViewModel(
     }
 
     override fun disconnect() {
-        val primary = radioFleetManager.snapshots.value.values.firstOrNull { it.profile.legacyPrimary }
-        if (primary == null) {
-            super.disconnect()
-        } else {
-            viewModelScope.launch { radioFleetManager.disconnect(primary.profile.id) }
-        }
+        val endpointId = radioFleetManager.selectedEndpointId.value ?: return
+        viewModelScope.launch { radioFleetManager.disconnectAndRelease(endpointId) }
     }
 
     override fun requestBonding(entry: DeviceListEntry.Ble) {

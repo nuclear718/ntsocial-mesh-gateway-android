@@ -24,22 +24,30 @@
  */
 package com.ntsocial.meshlink.core.radiofleet
 
+import com.ntsocial.meshlink.core.common.util.safeCatching
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.seconds
+import kotlin.uuid.Uuid
 
 interface RadioFleetManager {
     val snapshots: StateFlow<Map<RadioEndpointId, RadioEndpointSnapshot>>
+
+    val rememberedProfiles: StateFlow<List<RadioEndpointProfile>>
 
     val selectedEndpointId: StateFlow<RadioEndpointId?>
 
@@ -51,9 +59,13 @@ interface RadioFleetManager {
 
     suspend fun select(endpointId: RadioEndpointId)
 
-    suspend fun connect(endpointId: RadioEndpointId)
+    suspend fun connect(endpointId: RadioEndpointId, preparation: RadioConnectionPreparation? = null)
 
+    /** Internal pairing/retry: retains the connection lease and desired connection. */
     suspend fun disconnect(endpointId: RadioEndpointId)
+
+    /** Explicit user intent: persists disconnect, tears down only this runtime, then releases its slot. */
+    suspend fun disconnectAndRelease(endpointId: RadioEndpointId)
 
     suspend fun setLegacyPrimary(endpointId: RadioEndpointId)
 
@@ -62,211 +74,251 @@ interface RadioFleetManager {
     fun requireCurrentGeneration(endpointId: RadioEndpointId, expectedGeneration: Long)
 }
 
-/** Fleet orchestration boundary: endpoint failures are projected as state instead of escaping the service scope. */
+/** Fleet slots represent runtime leases, not remembered devices or the compatibility-primary role. */
 @Suppress("TooGenericExceptionCaught", "TooManyFunctions")
 class DefaultRadioFleetManager(
     private val endpointStore: RadioEndpointStore,
     private val sessionFactory: RadioEndpointSessionFactory,
     private val scope: CoroutineScope,
 ) : RadioFleetManager {
-    private val lifecycleMutex = Mutex()
-    private val bootstrapMutex = Mutex()
-    private val sessions = mutableMapOf<RadioEndpointId, RadioEndpointSession>()
-    private val sessionJobs = mutableMapOf<RadioEndpointId, Job>()
-    private var profilesJob: Job? = null
+    private class Lease(val runtimeId: String = Uuid.random().toString()) {
+        val operationMutex = Mutex()
+        var session: RadioEndpointSession? = null
+        var observer: Job? = null
+        var connecting: Job? = null
+        var releaseFailure: Throwable? = null
+    }
 
+    private val lifecycleMutex = Mutex()
+    private val leases = mutableMapOf<RadioEndpointId, Lease>()
     private val _snapshots = MutableStateFlow<Map<RadioEndpointId, RadioEndpointSnapshot>>(emptyMap())
     override val snapshots: StateFlow<Map<RadioEndpointId, RadioEndpointSnapshot>> = _snapshots.asStateFlow()
     override val selectedEndpointId: StateFlow<RadioEndpointId?> = endpointStore.selectedEndpointId
+    override val rememberedProfiles: StateFlow<List<RadioEndpointProfile>> = endpointStore.profiles
 
     override suspend fun start(legacyAddress: String?, legacyName: String?) {
         endpointStore.migrateLegacySelection(legacyAddress, legacyName)
-        lifecycleMutex.withLock {
-            if (profilesJob == null) {
-                profilesJob =
-                    scope.launch { endpointStore.profiles.collectLatest { profiles -> reconcileProfiles(profiles) } }
-            }
-        }
-        reconcileProfiles(endpointStore.profiles.value)
+        // Start independently: an unreachable radio's READY timeout must not block the other three.
         endpointStore.profiles.value
             .filter { it.enabled && it.autoConnect }
-            .sortedWith(compareByDescending<RadioEndpointProfile> { it.legacyPrimary }.thenByDescending { it.priority })
-            .forEach { profile -> connectInternal(profile.id) }
+            .forEach { profile -> scope.launch { connectOwned(profile.id, restoreOnly = true) } }
     }
 
-    override suspend fun stop() = lifecycleMutex.withLock {
-        profilesJob?.cancelAndJoin()
-        profilesJob = null
-        sessionJobs.values.forEach { it.cancel() }
-        sessionJobs.clear()
-        sessions.values.forEach { it.close() }
-        sessions.clear()
-        _snapshots.value = emptyMap()
+    override suspend fun stop() {
+        val current = lifecycleMutex.withLock { leases.toMap() }
+        current.forEach { (endpointId, lease) -> closeLease(endpointId, lease) }
     }
 
     override suspend fun register(candidate: DiscoveredRadio, connect: Boolean): RadioEndpointProfile {
-        val profile = endpointStore.register(candidate)
-        var creationFailure: Exception? = null
-        lifecycleMutex.withLock {
-            try {
-                ensureSessionLocked(profile)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                creationFailure = error
-            }
-            _snapshots.update { current ->
-                current +
-                    (
-                        profile.id to
-                            (
-                                current[profile.id]?.copy(
-                                    profile = profile,
-                                    state =
-                                    creationFailure?.let { EndpointSessionState.Failed(reason = it.message) }
-                                        ?: current[profile.id]?.state
-                                        ?: EndpointSessionState.Registered,
-                                )
-                                    ?: RadioEndpointSnapshot(
-                                        profile = profile,
-                                        state =
-                                        creationFailure?.let { EndpointSessionState.Failed(reason = it.message) }
-                                            ?: EndpointSessionState.Registered,
-                                    )
-                                )
-                        )
-            }
-        }
+        val remembered = endpointStore.register(candidate)
+        val profile = lifecycleMutex.withLock { acquireLocked(remembered.id).first }
         endpointStore.select(profile.id)
-        if (connect && profile.enabled && creationFailure == null) connectInternal(profile.id)
+        if (connect) connect(profile.id)
         return profile
     }
 
     override suspend fun select(endpointId: RadioEndpointId) {
-        require(endpointId in endpointStore.profiles.value.map { it.id }) { "Unknown endpoint $endpointId" }
+        require(snapshots.value[endpointId]?.profile?.enabled == true) { "Endpoint has no active connection lease" }
         endpointStore.select(endpointId)
     }
 
-    override suspend fun connect(endpointId: RadioEndpointId) {
-        require(endpointId in endpointStore.profiles.value.map { it.id }) { "Unknown endpoint $endpointId" }
-        connectInternal(endpointId)
+    override suspend fun connect(endpointId: RadioEndpointId, preparation: RadioConnectionPreparation?) {
+        connectOwned(endpointId, preparation)
+    }
+
+    private suspend fun connectOwned(
+        endpointId: RadioEndpointId,
+        preparation: RadioConnectionPreparation? = null,
+        restoreOnly: Boolean = false,
+    ) {
+        val (profile, lease) =
+            lifecycleMutex.withLock {
+                if (
+                    restoreOnly &&
+                    endpointStore.profiles.value.none { it.id == endpointId && it.enabled && it.autoConnect }
+                ) {
+                    return
+                }
+                if (preparation != null) {
+                    check(leases[endpointId]?.runtimeId == preparation.runtimeId) { "Pairing connection was released" }
+                }
+                acquireLocked(endpointId)
+            }
+        val job =
+            lease.operationMutex.withLock {
+                val snapshot = snapshots.value[endpointId]
+                if (snapshot?.runtimeId != lease.runtimeId || !snapshot.profile.enabled) return@withLock null
+                lease.connecting?.takeIf { it.isActive }
+                    ?: scope
+                        .launch(start = CoroutineStart.LAZY) { startLease(profile, lease, preparation) }
+                        .also { lease.connecting = it }
+            }
+        job?.start()
+        job?.join()
+    }
+
+    private suspend fun startLease(
+        profile: RadioEndpointProfile,
+        lease: Lease,
+        preparation: RadioConnectionPreparation?,
+    ) {
+        try {
+            val session =
+                lease.session
+                    ?: sessionFactory.create(profile).also {
+                        lease.session = it
+                        observeSession(profile, lease, it)
+                    }
+            try {
+                if (preparation != null) {
+                    session.stop()
+                    preparation.prepare()
+                }
+                session.start()
+            } finally {
+                withContext(NonCancellable) { preparation?.close() }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            updateLease(profile.id, lease) { it.copy(state = EndpointSessionState.Failed(reason = error.message)) }
+        }
     }
 
     override suspend fun disconnect(endpointId: RadioEndpointId) {
-        val session = lifecycleMutex.withLock { sessions[endpointId] }
-        session?.stop()
+        val lease = lifecycleMutex.withLock { leases[endpointId] } ?: return
+        lease.operationMutex.withLock {
+            lease.connecting?.cancelAndJoin()
+            lease.connecting = null
+            lease.session?.stop()
+        }
+    }
+
+    override suspend fun disconnectAndRelease(endpointId: RadioEndpointId) = withContext(NonCancellable) {
+        // Persisting disabled intent can dispose the initiating Connections entry. Finish the admitted release even
+        // when that entry's coroutine is cancelled before the store publishes its committed profile update.
+        val lease =
+            lifecycleMutex.withLock {
+                val profile = endpointStore.profiles.value.firstOrNull { it.id == endpointId } ?: return@withContext
+                // Persist before asynchronous teardown: process death or restoration cannot resurrect this intent.
+                val disconnected = profile.copy(enabled = false, autoConnect = false)
+                endpointStore.update(disconnected)
+                _snapshots.update { current ->
+                    current[endpointId]?.let { snapshot ->
+                        current +
+                            (
+                                endpointId to
+                                    snapshot.copy(profile = disconnected, state = EndpointSessionState.Releasing)
+                                )
+                    } ?: current
+                }
+                leases[endpointId]
+            } ?: return@withContext
+        closeLease(endpointId, lease)
     }
 
     override suspend fun setLegacyPrimary(endpointId: RadioEndpointId) {
-        val currentPrimary = endpointStore.profiles.value.singleOrNull { it.legacyPrimary }
-        require(currentPrimary?.id == endpointId) {
-            "Legacy-primary reassignment is not supported by the phase-one Android Gateway projection"
+        require(endpointStore.profiles.value.singleOrNull { it.legacyPrimary }?.id == endpointId) {
+            "Compatibility-primary reassignment requires an explicit Gateway migration"
         }
-        endpointStore.setLegacyPrimary(endpointId)
     }
 
-    override suspend fun remove(endpointId: RadioEndpointId) = lifecycleMutex.withLock {
-        val profile = endpointStore.profiles.value.firstOrNull { it.id == endpointId }
-        require(profile?.legacyPrimary != true) {
-            "The legacy-primary endpoint cannot be removed while the Android Gateway projects it"
+    override suspend fun remove(endpointId: RadioEndpointId) = withContext(NonCancellable) {
+        require(endpointStore.profiles.value.none { it.id == endpointId && it.legacyPrimary }) {
+            "Disconnect the compatibility endpoint to release its slot; its binding is retained"
         }
-        sessionJobs.remove(endpointId)?.cancelAndJoin()
-        sessions.remove(endpointId)?.close()
+        disconnectAndRelease(endpointId)
+        check(endpointId !in snapshots.value) { "Endpoint disconnect is not complete" }
         endpointStore.remove(endpointId)
-        _snapshots.update { it - endpointId }
     }
 
     override fun requireCurrentGeneration(endpointId: RadioEndpointId, expectedGeneration: Long) {
-        val actual = snapshots.value[endpointId]?.generation ?: 0L
-        if (actual != expectedGeneration) {
+        val snapshot = snapshots.value[endpointId]
+        val actual = snapshot?.generation ?: 0L
+        if (snapshot?.profile?.enabled != true || actual != expectedGeneration) {
             throw StaleRadioEndpointGenerationException(endpointId, expectedGeneration, actual)
         }
     }
 
-    private suspend fun reconcileProfiles(profiles: List<RadioEndpointProfile>) = lifecycleMutex.withLock {
-        val creationFailures = mutableMapOf<RadioEndpointId, Exception>()
-        val profileIds = profiles.mapTo(mutableSetOf()) { it.id }
-        (sessions.keys - profileIds).forEach { endpointId ->
-            sessionJobs.remove(endpointId)?.cancelAndJoin()
-            sessions.remove(endpointId)?.close()
+    private suspend fun acquireLocked(endpointId: RadioEndpointId): Pair<RadioEndpointProfile, Lease> {
+        val profile = requireNotNull(endpointStore.profiles.value.firstOrNull { it.id == endpointId })
+        leases[endpointId]?.let { lease ->
+            check(snapshots.value[endpointId]?.profile?.enabled == true) { "Endpoint disconnect is not complete" }
+            return profile to lease
         }
-        profiles.forEach { profile ->
-            val previousProfile = _snapshots.value[profile.id]?.profile
-            if (previousProfile != null && previousProfile.legacyPrimary != profile.legacyPrimary) {
-                sessionJobs.remove(profile.id)?.cancelAndJoin()
-                sessions.remove(profile.id)?.close()
-            }
-            try {
-                ensureSessionLocked(profile)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                creationFailures[profile.id] = error
-            }
-        }
-        _snapshots.update { current ->
-            profiles.associate { profile ->
-                val previous = current[profile.id]
-                profile.id to
-                    (
-                        previous?.copy(
-                            profile = profile,
-                            state =
-                            creationFailures[profile.id]?.let { EndpointSessionState.Failed(reason = it.message) }
-                                ?: previous.state,
-                        )
-                            ?: RadioEndpointSnapshot(
-                                profile = profile,
-                                state =
-                                creationFailures[profile.id]?.let {
-                                    EndpointSessionState.Failed(reason = it.message)
-                                } ?: EndpointSessionState.Registered,
-                            )
-                        )
-            }
-        }
+        if (leases.size >= MAX_RADIO_ENDPOINTS) throw RadioEndpointLimitExceededException()
+        val active = profile.copy(enabled = true, autoConnect = true)
+        endpointStore.update(active)
+        val lease = Lease()
+        leases[endpointId] = lease
+        _snapshots.update { it + (endpointId to RadioEndpointSnapshot(active, runtimeId = lease.runtimeId)) }
+        return active to lease
     }
 
-    private suspend fun ensureSessionLocked(profile: RadioEndpointProfile): RadioEndpointSession {
-        sessions[profile.id]?.let {
-            return it
-        }
-        val session = sessionFactory.create(profile)
-        sessions[profile.id] = session
-        sessionJobs[profile.id] =
+    private fun observeSession(profile: RadioEndpointProfile, lease: Lease, session: RadioEndpointSession) {
+        lease.observer =
             scope.launch {
                 combine(session.state, session.generation) { state, generation -> state to generation }
-                    .collectLatest { (state, generation) ->
-                        _snapshots.update { current ->
-                            val currentSnapshot = current[profile.id] ?: RadioEndpointSnapshot(profile)
-                            current + (profile.id to currentSnapshot.copy(state = state, generation = generation))
-                        }
+                    .collect { (state, generation) ->
+                        updateLease(profile.id, lease) { it.copy(state = state, generation = generation) }
                     }
             }
-        return session
     }
 
-    private suspend fun connectInternal(endpointId: RadioEndpointId) = bootstrapMutex.withLock {
-        val profile = endpointStore.profiles.value.firstOrNull { it.id == endpointId } ?: return@withLock
-        var generation = 0L
-        try {
-            val session = lifecycleMutex.withLock { ensureSessionLocked(profile) }
-            generation = session.generation.value
-            session.start()
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            _snapshots.update { current ->
-                val snapshot = current[endpointId] ?: RadioEndpointSnapshot(profile)
-                current +
-                    (
-                        endpointId to
-                            snapshot.copy(
-                                state = EndpointSessionState.Failed(reason = error.message),
-                                generation = generation,
-                            )
-                        )
+    private fun updateLease(
+        endpointId: RadioEndpointId,
+        lease: Lease,
+        transform: (RadioEndpointSnapshot) -> RadioEndpointSnapshot,
+    ) {
+        _snapshots.update { current ->
+            val snapshot = current[endpointId]
+            if (snapshot?.runtimeId == lease.runtimeId && snapshot.profile.enabled) {
+                current + (endpointId to transform(snapshot))
+            } else {
+                current
+            }
+        }
+    }
+
+    private suspend fun closeLease(endpointId: RadioEndpointId, lease: Lease) {
+        lease.operationMutex.withLock {
+            val completed =
+                safeCatching {
+                    withTimeoutOrNull(RELEASE_TIMEOUT) {
+                        lease.session?.revoke()
+                        lease.connecting?.cancelAndJoin()
+                        lease.connecting = null
+                        lease.observer?.cancelAndJoin()
+                        lease.session?.close()
+                        true
+                    } == true
+                }
+                    .getOrElse { error ->
+                        lease.releaseFailure = error
+                        false
+                    }
+            lifecycleMutex.withLock {
+                if (leases[endpointId] !== lease) return@withLock
+                if (completed) {
+                    leases.remove(endpointId)
+                    _snapshots.update { it - endpointId }
+                } else {
+                    // Keep the slot reserved until transport teardown has actually completed; a retry is safe.
+                    _snapshots.update { current ->
+                        current[endpointId]?.let { snapshot ->
+                            current +
+                                (
+                                    endpointId to
+                                        snapshot.copy(
+                                            state = EndpointSessionState.Failed(reason = "disconnect_incomplete"),
+                                        )
+                                    )
+                        } ?: current
+                    }
+                }
             }
         }
     }
 }
+
+private val RELEASE_TIMEOUT = 15.seconds

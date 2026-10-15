@@ -57,13 +57,15 @@ class RadioPrefsImpl(
     override suspend fun readPersistedDevAddr(): String? = dataStore.data.first()[KEY_DEV_ADDR_PREF]
 
     override fun setDevAddr(address: String?) {
-        scope.launch {
-            dataStore.edit { prefs ->
-                if (address == null) {
-                    prefs.remove(KEY_DEV_ADDR_PREF)
-                } else {
-                    prefs[KEY_DEV_ADDR_PREF] = address
-                }
+        scope.launch { setDevAddrAndAwait(address) }
+    }
+
+    override suspend fun setDevAddrAndAwait(address: String?) {
+        dataStore.edit { prefs ->
+            if (address == null) {
+                prefs.remove(KEY_DEV_ADDR_PREF)
+            } else {
+                prefs[KEY_DEV_ADDR_PREF] = address
             }
         }
     }

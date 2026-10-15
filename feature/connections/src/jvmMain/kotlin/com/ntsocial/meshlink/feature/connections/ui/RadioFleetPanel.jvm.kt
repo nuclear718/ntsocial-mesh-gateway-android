@@ -28,3 +28,5 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 @Composable actual fun RadioFleetPanel(modifier: Modifier) = Unit
+
+@Composable internal actual fun fleetConnectionIdentity(): ConnectionDeviceIdentity? = null

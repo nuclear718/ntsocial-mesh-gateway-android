@@ -35,7 +35,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
@@ -43,9 +42,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.movableContentOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,44 +52,48 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import com.ntsocial.meshlink.app.radio.AndroidEndpointConversationSourceCoordinator
-import com.ntsocial.meshlink.app.radio.RadioEndpointScopeRegistry
 import com.ntsocial.meshlink.core.navigation.ContactsRoute
+import com.ntsocial.meshlink.core.navigation.EndpointTarget
 import com.ntsocial.meshlink.core.navigation.MultiBackstack
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.TopLevelDestination
 import com.ntsocial.meshlink.core.navigation.rememberMultiBackstack
+import com.ntsocial.meshlink.core.navigation.withoutEndpoint
 import com.ntsocial.meshlink.core.radiofleet.EndpointSessionState
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointId
 import com.ntsocial.meshlink.core.radiofleet.RadioEndpointSnapshot
 import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
-import com.ntsocial.meshlink.core.resources.Res
-import com.ntsocial.meshlink.core.resources.radio_endpoint_switching
+import com.ntsocial.meshlink.core.ui.component.EndpointImportOption
+import com.ntsocial.meshlink.core.ui.component.FleetImportDialogs
 import com.ntsocial.meshlink.core.ui.component.MeshtasticAppShell
 import com.ntsocial.meshlink.core.ui.component.MeshtasticNavDisplay
 import com.ntsocial.meshlink.core.ui.component.MeshtasticNavigationSuite
+import com.ntsocial.meshlink.core.ui.navigation.BindEndpointSelection
+import com.ntsocial.meshlink.core.ui.navigation.endpointEntryProvider
+import com.ntsocial.meshlink.core.ui.navigation.endpointTabsPadding
+import com.ntsocial.meshlink.core.ui.util.rememberUiAction
 import com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel
 import com.ntsocial.meshlink.feature.connections.navigation.connectionsGraph
 import com.ntsocial.meshlink.feature.firmware.navigation.firmwareGraph
 import com.ntsocial.meshlink.feature.meshcore.navigation.meshCoreGraph
-import com.ntsocial.meshlink.feature.messaging.navigation.FleetChannelsEntryContent
+import com.ntsocial.meshlink.feature.messaging.fleet.rememberFleetNavigationState
+import com.ntsocial.meshlink.feature.messaging.navigation.FleetChannelsEntry
 import com.ntsocial.meshlink.feature.messaging.navigation.contactsGraph
 import com.ntsocial.meshlink.feature.node.navigation.nodesGraph
 import com.ntsocial.meshlink.feature.settings.navigation.settingsGraph
 import com.ntsocial.meshlink.feature.settings.radio.channel.channelsGraph
 import com.ntsocial.meshlink.feature.wifiprovision.navigation.wifiProvisionGraph
-import kotlinx.coroutines.launch
-import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import org.koin.compose.scope.UnboundKoinScope
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.annotation.KoinDelicateAPI
 import org.koin.core.annotation.KoinExperimentalAPI
-import org.koin.core.scope.Scope
 
 @OptIn(KoinDelicateAPI::class, KoinExperimentalAPI::class)
 @Composable
 fun MainScreen(modifier: Modifier = Modifier) {
     val viewModel: UIViewModel = koinViewModel()
+    val dialogFleet = koinInject<RadioFleetManager>()
+    val dialogSnapshots by dialogFleet.snapshots.collectAsStateWithLifecycle()
     // Land on Connections for first-run / no-device-selected; otherwise on Nodes. Read synchronously
     // from the StateFlow (seeded from persisted prefs) so the initial tab is set in one shot.
     val initialTab =
@@ -104,10 +104,36 @@ fun MainScreen(modifier: Modifier = Modifier) {
         }
     val multiBackstack = rememberMultiBackstack(initialTab)
 
-    MeshtasticAppShell(multiBackstack = multiBackstack, uiViewModel = viewModel, hostModifier = modifier) {
+    MeshtasticAppShell(
+        multiBackstack = multiBackstack,
+        uiViewModel = viewModel,
+        hostModifier = modifier,
+        sharedDialogs = {
+            FleetImportDialogs(
+                viewModel = viewModel,
+                options =
+                dialogSnapshots.values
+                    .filter { it.profile.enabled }
+                    .map {
+                        EndpointImportOption(
+                            EndpointTarget(it.profile.id.value, it.runtimeId),
+                            "${it.profile.displayName} · ${it.profile.addressSuffix.uppercase()}",
+                            it.state is EndpointSessionState.Ready,
+                        )
+                    },
+            ) { owner, content ->
+                EndpointScopeHost(
+                    RadioEndpointId(owner.endpointId),
+                    expectedRuntimeId = owner.runtimeId,
+                    content = content,
+                )
+            }
+        },
+    ) {
         MeshtasticNavigationSuite(
             multiBackstack = multiBackstack,
             uiViewModel = viewModel,
+            radioState = rememberFleetNavigationState(),
             modifier = Modifier.fillMaxSize(),
         ) {
             EndpointAwareNavigation(multiBackstack = multiBackstack)
@@ -120,20 +146,23 @@ fun MainScreen(modifier: Modifier = Modifier) {
 private fun EndpointAwareNavigation(multiBackstack: MultiBackstack) {
     val viewModel: UIViewModel = koinViewModel()
     val fleetManager = koinInject<RadioFleetManager>()
-    val scopeRegistry = koinInject<RadioEndpointScopeRegistry>()
     val conversationSourceCoordinator = koinInject<AndroidEndpointConversationSourceCoordinator>()
     val snapshots by fleetManager.snapshots.collectAsStateWithLifecycle()
     val selectedEndpointId by fleetManager.selectedEndpointId.collectAsStateWithLifecycle()
-    val endpointScopes by scopeRegistry.scopes.collectAsStateWithLifecycle()
-    val coroutineScope = rememberCoroutineScope()
+    val uiAction = rememberUiAction()
     LaunchedEffect(conversationSourceCoordinator) { conversationSourceCoordinator.start() }
     val scopeMode = featureScopeMode(multiBackstack)
-    val endpointAware = scopeMode == FeatureScopeMode.SELECTED_ENDPOINT
     val endpointList =
-        snapshots.values.sortedWith(
-            compareByDescending<RadioEndpointSnapshot> { it.profile.legacyPrimary }.thenBy { it.profile.displayName },
-        )
+        snapshots.values
+            .filter { it.profile.enabled }
+            .sortedWith(
+                compareByDescending<RadioEndpointSnapshot> { it.profile.legacyPrimary }
+                    .thenBy { it.profile.displayName },
+            )
     val selectedSnapshot = selectedEndpointId?.let(snapshots::get)
+    val target =
+        selectedSnapshot?.takeIf { it.profile.enabled }?.let { EndpointTarget(it.profile.id.value, it.runtimeId) }
+    BindEndpointSelection(multiBackstack, target)
     val navigationContent: @Composable () -> Unit = {
         RadioNavigationDisplay(
             multiBackstack = multiBackstack,
@@ -142,59 +171,20 @@ private fun EndpointAwareNavigation(multiBackstack: MultiBackstack) {
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (scopeMode == FeatureScopeMode.SELECTED_ENDPOINT && endpointList.isNotEmpty()) {
+    val showEndpointTabs = scopeMode == FeatureScopeMode.SELECTED_ENDPOINT && endpointList.isNotEmpty()
+    Column(modifier = Modifier.fillMaxSize().endpointTabsPadding(showEndpointTabs)) {
+        if (showEndpointTabs) {
             RadioEndpointTabs(
                 endpoints = endpointList,
                 selectedEndpointId = selectedEndpointId,
                 onSelect = { endpointId ->
                     if (endpointId != selectedEndpointId) {
-                        coroutineScope.launch {
-                            fleetManager.select(endpointId)
-                            // A nested route belongs to the previous radio. Reset before entering another scope.
-                            multiBackstack.navigateTopLevel(multiBackstack.currentTabRoute)
-                        }
+                        uiAction { fleetManager.select(endpointId) }
                     }
                 },
             )
         }
-        ScopedRadioNavigation(
-            endpointAware = endpointAware,
-            selectedSnapshot = selectedSnapshot,
-            endpointScope = selectedSnapshot?.let { endpointScopes[it.profile.id] },
-            navigationContent = navigationContent,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@OptIn(KoinDelicateAPI::class, KoinExperimentalAPI::class)
-@Composable
-private fun ScopedRadioNavigation(
-    endpointAware: Boolean,
-    selectedSnapshot: RadioEndpointSnapshot?,
-    endpointScope: Scope?,
-    navigationContent: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val movableNavigationContent = remember(navigationContent) { movableContentOf { navigationContent() } }
-    when {
-        !endpointAware || selectedSnapshot == null || selectedSnapshot.profile.legacyPrimary ->
-            Box(modifier = modifier) { movableNavigationContent() }
-
-        endpointScope != null ->
-            Box(modifier = modifier) { UnboundKoinScope(scope = endpointScope) { movableNavigationContent() } }
-
-        else ->
-            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Text(
-                        text = stringResource(Res.string.radio_endpoint_switching),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
+        Box(Modifier.weight(1f)) { navigationContent() }
     }
 }
 
@@ -204,12 +194,13 @@ private fun RadioNavigationDisplay(
     backStack: NavBackStack<NavKey>,
     viewModel: UIViewModel,
 ) {
+    val fleetManager = koinInject<RadioFleetManager>()
     val provider =
         entryProvider<NavKey> {
             contactsGraph(
                 backStack = backStack,
                 scrollToTopEvents = viewModel.scrollToTopEventFlow,
-                fleetRootContent = { FleetChannelsEntryContent(backStack) },
+                fleetRootContent = { FleetChannelsEntry(multiBackstack, fleetManager) },
                 endpointContent = { endpointId, expectedGeneration, content ->
                     EndpointScopeHost(
                         endpointId = RadioEndpointId(endpointId),
@@ -232,7 +223,21 @@ private fun RadioNavigationDisplay(
             firmwareGraph(backStack)
             wifiProvisionGraph(backStack)
         }
-    MeshtasticNavDisplay(multiBackstack = multiBackstack, entryProvider = provider, modifier = Modifier.fillMaxSize())
+    MeshtasticNavDisplay(
+        multiBackstack = multiBackstack,
+        entryProvider =
+        endpointEntryProvider(
+            provider = provider,
+            onNavigateToConnections = { multiBackstack.navigateTopLevel(TopLevelDestination.Connections.route) },
+        ) { target, content ->
+            EndpointScopeHost(
+                RadioEndpointId(target.endpointId),
+                expectedRuntimeId = target.runtimeId,
+                content = content,
+            )
+        },
+        modifier = Modifier.fillMaxSize(),
+    )
 }
 
 @Composable
@@ -272,20 +277,16 @@ private enum class FeatureScopeMode {
 private fun featureScopeMode(multiBackstack: MultiBackstack): FeatureScopeMode {
     val currentTopLevel = multiBackstack.currentTabRoute
     return if (
-        currentTopLevel == TopLevelDestination.Connections.route ||
+        (currentTopLevel == TopLevelDestination.Connections.route && multiBackstack.activeBackStack.size == 1) ||
         currentTopLevel == TopLevelDestination.MeshCore.route
     ) {
         FeatureScopeMode.ROOT
     } else if (currentTopLevel != TopLevelDestination.Conversations.route) {
         FeatureScopeMode.SELECTED_ENDPOINT
     } else {
-        when (multiBackstack.activeBackStack.lastOrNull()) {
+        when (multiBackstack.activeBackStack.lastOrNull()?.withoutEndpoint()) {
             ContactsRoute.ContactsGraph,
             ContactsRoute.Contacts,
-            is ContactsRoute.FleetMessages,
-            is ContactsRoute.EndpointContacts,
-            is ContactsRoute.FleetShare,
-            is ContactsRoute.FleetQuickChat,
             -> FeatureScopeMode.FLEET
 
             else -> FeatureScopeMode.SELECTED_ENDPOINT
@@ -305,6 +306,7 @@ private fun endpointTabStateColor(state: EndpointSessionState): Color = when (st
     is EndpointSessionState.Failed,
     -> Color(ENDPOINT_ATTENTION_COLOR)
 
+    EndpointSessionState.Releasing,
     EndpointSessionState.Registered,
     EndpointSessionState.WaitingResource,
     -> MaterialTheme.colorScheme.outline

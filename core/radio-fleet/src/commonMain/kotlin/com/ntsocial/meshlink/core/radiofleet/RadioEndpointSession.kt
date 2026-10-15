@@ -33,6 +33,9 @@ interface RadioEndpointSession {
 
     val generation: StateFlow<Long>
 
+    /** Revokes operation authority synchronously; close still owns resource teardown. */
+    fun revoke() = Unit
+
     suspend fun start()
 
     suspend fun stop()

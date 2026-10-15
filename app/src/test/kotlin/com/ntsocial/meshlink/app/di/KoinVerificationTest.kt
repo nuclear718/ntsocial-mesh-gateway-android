@@ -39,6 +39,7 @@ import com.ntsocial.meshlink.feature.node.metrics.MetricsViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CoroutineDispatcher
+import org.koin.core.scope.Scope
 import org.koin.dsl.module
 import org.koin.plugin.module.dsl.koinApplication
 import org.koin.test.verify.definition
@@ -109,6 +110,8 @@ class KoinVerificationTest {
                     BleLogLevel::class,
                     BleLogFormat::class,
                     RadioEndpointScopeContext::class,
+                    // EndpointViewModelFactory receives its owning DSL scope, never a resolved graph dependency.
+                    Scope::class,
                 ),
                 injections = injectedParameters(definition<MetricsViewModel>(Int::class)),
             )

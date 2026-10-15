@@ -118,4 +118,64 @@ class SecondaryRadioEndpointScopeRuntimeTest {
             session.close()
         }
     }
+
+    @Test
+    fun `production endpoint factories construct radio screens from the secondary graph`() = runTest {
+        val application = ApplicationProvider.getApplicationContext<Application>()
+        AndroidKoinBootstrap.ensureStarted(application)
+        val koin = GlobalContext.get()
+        val id = RadioEndpointId("secondary-screen-ownership")
+        val session =
+            koin
+                .get<RadioEndpointSessionFactory>()
+                .create(RadioEndpointProfile(id, RadioProtocol.MESHTASTIC, "xAA:BB:CC:DD:EE:03", "Screen owner"))
+        val store = androidx.lifecycle.ViewModelStore()
+        try {
+            val scope = assertNotNull(koin.get<RadioEndpointScopeRegistry>().get(id))
+            val factory = scope.get<com.ntsocial.meshlink.core.ui.viewmodel.EndpointViewModelFactory>()
+            kotlin.test.assertEquals(scope.id, factory.scopeId)
+            val models =
+                listOf(
+                    com.ntsocial.meshlink.feature.settings.SettingsViewModel::class to "nodeRepository",
+                    com.ntsocial.meshlink.feature.settings.radio.RadioConfigViewModel::class to "nodeRepository",
+                    com.ntsocial.meshlink.feature.settings.channel.ChannelViewModel::class to "radioConfigRepository",
+                    com.ntsocial.meshlink.core.ui.qr.ScannedQrCodeViewModel::class to "radioConfigRepository",
+                    com.ntsocial.meshlink.feature.messaging.MessageViewModel::class to "packetRepository",
+                    com.ntsocial.meshlink.feature.messaging.ui.contact.ContactsViewModel::class to "packetRepository",
+                    com.ntsocial.meshlink.feature.node.list.NodeListViewModel::class to "nodeRepository",
+                    com.ntsocial.meshlink.feature.node.detail.NodeDetailViewModel::class to "serviceRepository",
+                    com.ntsocial.meshlink.feature.node.metrics.MetricsViewModel::class to "serviceRepository",
+                    com.ntsocial.meshlink.feature.settings.debugging.DebugViewModel::class to "meshLogRepository",
+                    com.ntsocial.meshlink.feature.firmware.FirmwareUpdateViewModel::class to "radioController",
+                )
+            models.forEach { (type, fieldName) ->
+                val model =
+                    factory.create(
+                        type,
+                        androidx.lifecycle.SavedStateHandle(),
+                        org.koin.core.parameter.parametersOf(123),
+                    )
+                store.put(type.toString(), model)
+                val field = type.java.getDeclaredField(fieldName).apply { isAccessible = true }
+                val expected = scope.get<Any>(field.type.kotlin)
+                kotlin.test.assertSame(expected, field.get(model), "$type must use its endpoint dependency")
+                kotlin.test.assertNotSame(
+                    koin.get<Any>(field.type.kotlin),
+                    field.get(model),
+                    "$type must not use the primary",
+                )
+            }
+            val empty = com.ntsocial.meshlink.core.ui.viewmodel.EndpointViewModelFactory(scope)
+            kotlin.test.assertFailsWith<IllegalStateException> {
+                empty.create(
+                    com.ntsocial.meshlink.feature.settings.SettingsViewModel::class,
+                    androidx.lifecycle.SavedStateHandle(),
+                    org.koin.core.parameter.parametersOf(),
+                )
+            }
+        } finally {
+            store.clear()
+            session.close()
+        }
+    }
 }

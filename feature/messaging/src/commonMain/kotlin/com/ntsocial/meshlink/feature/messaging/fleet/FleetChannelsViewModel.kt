@@ -81,6 +81,12 @@ class FleetChannelsViewModel(
         selectedPage.value = FleetChannelPage.Endpoint(endpointId)
     }
 
+    fun followEndpoint(endpointId: RadioEndpointId?) {
+        if (selectedPage.value !is FleetChannelPage.All) {
+            selectedPage.value = endpointId?.let(FleetChannelPage::Endpoint) ?: FleetChannelPage.All
+        }
+    }
+
     fun updateAppearance(endpointId: RadioEndpointId, appearance: EndpointAppearance) {
         viewModelScope.launch { appearanceStore.update(endpointId, appearance) }
     }

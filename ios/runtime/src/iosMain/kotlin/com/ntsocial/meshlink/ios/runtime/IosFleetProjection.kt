@@ -98,6 +98,9 @@ internal class IosEndpointConversationSource(
         radioConfigRepository.channelSetFlow
             .map { channelSet -> ChannelCatalog(channelSet, nowMillis) }
             .flatMapLatest { catalog -> catalog.observeSnapshot(packetRepository) }
+            .combine(packetRepository.getUnreadCountTotal()) { snapshot, total ->
+                snapshot.copy(totalUnreadCount = total.coerceAtLeast(0))
+            }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
@@ -217,19 +220,29 @@ internal class IosEndpointConversationSourceCoordinator(
     private fun reconcileSources(
         inputs: Pair<Map<RadioEndpointId, RadioEndpointSnapshot>, Map<RadioEndpointId, Scope>>,
     ) {
-        val (snapshots, scopes) = inputs
+        val (allSnapshots, scopes) = inputs
+        val snapshots = allSnapshots.filterValues { it.profile.enabled }
         (managedSources.keys - snapshots.keys).forEach(::removeSource)
         snapshots.values.forEach { snapshot ->
             val endpointScope = scopes[snapshot.profile.id]
             val runtimeToken =
                 if (snapshot.profile.legacyPrimary) {
-                    "root:${snapshot.profile.id.value}"
+                    "root:${snapshot.runtimeId}"
                 } else {
                     endpointScope?.id ?: return@forEach
                 }
             if (managedSources[snapshot.profile.id]?.runtimeToken == runtimeToken) return@forEach
 
-            val sourceScope = CoroutineScope(SupervisorJob() + sourceDispatcher)
+            val parentJob =
+                if (snapshot.profile.legacyPrimary) {
+                    null
+                } else {
+                    endpointScope
+                        ?.get<CoroutineScope>(org.koin.core.qualifier.named("ServiceScope"))
+                        ?.coroutineContext
+                        ?.get(Job)
+                }
+            val sourceScope = CoroutineScope(SupervisorJob(parentJob) + sourceDispatcher)
             try {
                 val source =
                     IosEndpointConversationSource(

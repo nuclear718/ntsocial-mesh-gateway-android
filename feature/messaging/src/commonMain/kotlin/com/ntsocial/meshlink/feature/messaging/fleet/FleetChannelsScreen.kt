@@ -103,8 +103,10 @@ import com.ntsocial.meshlink.core.resources.channel_hub_cached_read_only
 import com.ntsocial.meshlink.core.resources.channel_hub_channels_empty
 import com.ntsocial.meshlink.core.resources.channel_hub_edit_appearance
 import com.ntsocial.meshlink.core.resources.channel_hub_loading
+import com.ntsocial.meshlink.core.resources.channel_hub_manage_channels
 import com.ntsocial.meshlink.core.resources.channel_hub_no_radios
 import com.ntsocial.meshlink.core.resources.channel_hub_no_radios_hint
+import com.ntsocial.meshlink.core.resources.channel_hub_node_settings
 import com.ntsocial.meshlink.core.resources.channel_hub_open_conversations
 import com.ntsocial.meshlink.core.resources.channel_hub_purpose
 import com.ntsocial.meshlink.core.resources.channel_hub_security_clear
@@ -141,6 +143,8 @@ fun FleetChannelsScreen(
     onSelectEndpoint: (RadioEndpointId) -> Unit,
     onOpenChannel: (FleetChannelGroup, FleetChannelSummary) -> Unit,
     onOpenConversations: (FleetChannelGroup) -> Unit,
+    onManageChannels: (FleetChannelGroup) -> Unit,
+    onOpenSettings: (FleetChannelGroup) -> Unit,
     onUpdateAppearance: (RadioEndpointId, EndpointAppearance) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -191,6 +195,8 @@ fun FleetChannelsScreen(
                 isLoading = state.isLoading,
                 onOpenChannel = onOpenChannel,
                 onOpenConversations = onOpenConversations,
+                onManageChannels = onManageChannels,
+                onOpenSettings = onOpenSettings,
                 onEditAppearance = { editingGroup = it },
                 modifier = Modifier.padding(innerPadding),
             )
@@ -279,6 +285,8 @@ private fun FleetChannelList(
     isLoading: Boolean,
     onOpenChannel: (FleetChannelGroup, FleetChannelSummary) -> Unit,
     onOpenConversations: (FleetChannelGroup) -> Unit,
+    onManageChannels: (FleetChannelGroup) -> Unit,
+    onOpenSettings: (FleetChannelGroup) -> Unit,
     onEditAppearance: (FleetChannelGroup) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -298,6 +306,8 @@ private fun FleetChannelList(
                 group = group,
                 onOpenChannel = { onOpenChannel(group, it) },
                 onOpenConversations = { onOpenConversations(group) },
+                onManageChannels = { onManageChannels(group) },
+                onOpenSettings = { onOpenSettings(group) },
                 onEditAppearance = { onEditAppearance(group) },
             )
         }
@@ -347,6 +357,8 @@ private fun FleetEndpointCard(
     group: FleetChannelGroup,
     onOpenChannel: (FleetChannelSummary) -> Unit,
     onOpenConversations: () -> Unit,
+    onManageChannels: () -> Unit,
+    onOpenSettings: () -> Unit,
     onEditAppearance: () -> Unit,
 ) {
     val palette = endpointPalette(group.appearance.accentToken)
@@ -389,6 +401,14 @@ private fun FleetEndpointCard(
                 !group.dataAvailable -> EndpointDataState(Res.string.channel_hub_loading)
 
                 else -> EndpointDataState(Res.string.channel_hub_channels_empty)
+            }
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                TextButton(onClick = onManageChannels, enabled = group.dataAvailable) {
+                    Text(stringResource(Res.string.channel_hub_manage_channels))
+                }
+                TextButton(onClick = onOpenSettings, enabled = group.dataAvailable) {
+                    Text(stringResource(Res.string.channel_hub_node_settings))
+                }
             }
             OpenConversationsButton(palette = palette, onClick = onOpenConversations)
         }
@@ -846,6 +866,7 @@ private fun endpointStateLabel(state: EndpointSessionState): String = stringReso
 
         EndpointSessionState.Synchronizing -> Res.string.channel_hub_state_synchronizing
 
+        EndpointSessionState.Releasing,
         EndpointSessionState.Registered,
         EndpointSessionState.WaitingResource,
         -> Res.string.channel_hub_state_offline
@@ -870,6 +891,7 @@ private fun endpointStateColor(state: EndpointSessionState): Color {
         is EndpointSessionState.Failed,
         -> if (darkTheme) Color(0xfffbbf24) else Color(0xffd97706)
 
+        EndpointSessionState.Releasing,
         EndpointSessionState.Registered,
         EndpointSessionState.WaitingResource,
         -> MaterialTheme.colorScheme.outline

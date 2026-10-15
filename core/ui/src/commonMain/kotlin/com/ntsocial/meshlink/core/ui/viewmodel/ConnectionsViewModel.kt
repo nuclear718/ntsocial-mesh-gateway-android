@@ -76,6 +76,8 @@ class ConnectionsViewModel(
 
     val connectionState = serviceRepository.connectionState
 
+    val connectionProgress = serviceRepository.connectionProgress
+
     val myNodeInfo: StateFlow<MyNodeInfo?> = nodeRepository.myNodeInfo
 
     val ourNodeInfo: StateFlow<Node?> = nodeRepository.ourNodeInfo

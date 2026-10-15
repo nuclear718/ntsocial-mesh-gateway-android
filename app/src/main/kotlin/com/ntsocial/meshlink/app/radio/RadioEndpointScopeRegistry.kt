@@ -33,6 +33,7 @@ import com.ntsocial.meshlink.core.repository.RadioPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import org.koin.core.annotation.Single
 import org.koin.core.scope.Scope
 
@@ -52,13 +53,13 @@ class RadioEndpointScopeRegistry {
     val scopes: StateFlow<Map<RadioEndpointId, Scope>> = mutableScopes
 
     fun register(endpointId: RadioEndpointId, scope: Scope) {
-        mutableScopes.value += endpointId to scope
+        mutableScopes.update { it + (endpointId to scope) }
     }
 
     fun unregister(endpointId: RadioEndpointId, expectedScope: Scope? = null) {
         val current = mutableScopes.value[endpointId]
         if (current != null && (expectedScope == null || current === expectedScope)) {
-            mutableScopes.value -= endpointId
+            mutableScopes.update { entries -> if (entries[endpointId] === current) entries - endpointId else entries }
         }
     }
 

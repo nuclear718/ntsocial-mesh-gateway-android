@@ -25,6 +25,7 @@
 package com.ntsocial.meshlink.core.ui.qr
 
 import androidx.lifecycle.ViewModel
+import com.ntsocial.meshlink.core.repository.ChannelEditContext
 import com.ntsocial.meshlink.core.repository.ChannelReliabilityManager
 import com.ntsocial.meshlink.core.repository.NodeRepository
 import com.ntsocial.meshlink.core.repository.RadioConfigRepository
@@ -72,14 +73,19 @@ class ScannedQrCodeViewModel(
             )
 
     /** Applies the complete set and reports success only after a fresh matching radio readback. */
-    fun setChannels(channelSet: ChannelSet): Job? {
+    fun setChannels(channelSet: ChannelSet, expected: ChannelEditContext? = null): Job? {
         if (_applyState.value == ChannelApplyUiState.Applying) return null
         // Claim the request synchronously so the dialog can dismiss only after this ViewModel owns the work.
         _applyState.value = ChannelApplyUiState.Applying
         return safeLaunch(tag = "setChannels") {
             try {
                 withContext(NonCancellable) {
-                    val result = channelReliabilityManager.applyAndVerify(channelSet)
+                    val result =
+                        if (expected == null) {
+                            channelReliabilityManager.applyAndVerify(channelSet)
+                        } else {
+                            channelReliabilityManager.applyPreviewAndVerify(channelSet, expected)
+                        }
                     val state = result.toChannelApplyUiState()
                     _applyState.value = if (dialogDismissed) ChannelApplyUiState.Idle else state
                     when {

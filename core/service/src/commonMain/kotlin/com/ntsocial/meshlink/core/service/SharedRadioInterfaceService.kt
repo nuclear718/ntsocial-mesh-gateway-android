@@ -51,6 +51,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -91,6 +92,12 @@ class SharedRadioInterfaceService(
     private val transportFactory: RadioTransportFactory,
     private val analytics: PlatformAnalytics,
 ) : RadioInterfaceService {
+    private val runtimeScope =
+        CoroutineScope(
+            processLifecycle.coroutineScope.coroutineContext +
+                SupervisorJob(processLifecycle.coroutineScope.coroutineContext[Job]),
+        )
+    private val connectionIntentVersion = atomic(0L)
 
     override val supportedDeviceTypes: List<DeviceType>
         get() = transportFactory.supportedDeviceTypes
@@ -253,7 +260,7 @@ class SharedRadioInterfaceService(
 
     private fun initStateListeners() {
         if (listenersInitialized.value) return
-        processLifecycle.coroutineScope.launch {
+        runtimeScope.launch {
             initLock.withLock {
                 if (listenersInitialized.value) return@withLock
                 listenersInitialized.value = true
@@ -269,7 +276,7 @@ class SharedRadioInterfaceService(
                         }
                     }
                     .catch { Logger.e(it) { "bluetoothRepository.state flow crashed" } }
-                    .launchIn(processLifecycle.coroutineScope)
+                    .launchIn(runtimeScope)
 
                 networkRepository.networkAvailable
                     .onEach { state ->
@@ -282,14 +289,16 @@ class SharedRadioInterfaceService(
                         }
                     }
                     .catch { Logger.e(it) { "networkRepository.networkAvailable flow crashed" } }
-                    .launchIn(processLifecycle.coroutineScope)
+                    .launchIn(runtimeScope)
             }
         }
     }
 
     override fun connect() {
-        processLifecycle.coroutineScope.launch {
+        val intent = connectionIntentVersion.incrementAndGet()
+        runtimeScope.launch {
             transportMutex.withLock {
+                if (connectionIntentVersion.value != intent) return@withLock
                 connectionRequested = true
                 if (radioTransport == null) {
                     beginRadioSession(
@@ -322,7 +331,10 @@ class SharedRadioInterfaceService(
         return persisted
     }
 
-    override suspend fun disconnect() {
+    override fun revokeConnection() {
+        isStopping = true
+        connectionIntentVersion.incrementAndGet()
+        connectionRequested = false
         synchronized(transportCallbackLock) {
             activeTransportGeneration.incrementAndGet()
             beginRadioSession(
@@ -331,10 +343,19 @@ class SharedRadioInterfaceService(
                 transportConnectionState = ConnectionState.Disconnected,
             )
         }
+    }
+
+    override suspend fun disconnect() {
+        revokeConnection()
         transportMutex.withLock {
             connectionRequested = false
-            ignoreExceptionSuspend { stopTransportLocked() }
+            stopTransportLocked()
         }
+    }
+
+    override suspend fun close() {
+        disconnect()
+        runtimeScope.coroutineContext[Job]?.cancelAndJoin()
     }
 
     override fun isMockTransport(): Boolean = transportFactory.isMockTransport()
@@ -377,8 +398,10 @@ class SharedRadioInterfaceService(
         radioPrefs.setDevAddr(sanitized)
         _currentDeviceAddressFlow.value = sanitized
 
-        processLifecycle.coroutineScope.launch {
+        val intent = connectionIntentVersion.incrementAndGet()
+        runtimeScope.launch {
             transportMutex.withLock {
+                if (connectionIntentVersion.value != intent) return@withLock
                 connectionRequested = sanitized != null
                 ignoreExceptionSuspend { stopTransportLocked() }
                 if (sanitized != null) {
@@ -466,12 +489,14 @@ class SharedRadioInterfaceService(
             }
         }
         isStarted = false
+        // Keep the retired handle until close succeeds so a failed release can retry the same transport.
+        isStopping = true
+        currentTransport?.close()
         radioTransport = null
         runningTransportId = null
         isStopping = false
-        currentTransport?.close()
 
-        _serviceScope.cancel("stopping transport")
+        _serviceScope.coroutineContext[Job]?.cancelAndJoin()
         _serviceScope = CoroutineScope(dispatchers.io + SupervisorJob())
 
         if (notifyPermanent && currentTransport != null) {
@@ -514,7 +539,7 @@ class SharedRadioInterfaceService(
                     "(threshold: ${LIVENESS_TIMEOUT_MILLIS}ms). Restarting BLE transport."
             }
             if (isRestarting.compareAndSet(expect = false, update = true)) {
-                processLifecycle.coroutineScope.launch {
+                runtimeScope.launch {
                     try {
                         transportMutex.withLock {
                             // The state may have changed while this restart waited for a user disconnect, a BLE state
@@ -674,7 +699,7 @@ class SharedRadioInterfaceService(
 
     private fun handleCurrentTransportDisconnect(isPermanent: Boolean, errorMessage: String?) {
         if (errorMessage != null) {
-            processLifecycle.coroutineScope.launch(dispatchers.default) { _connectionError.emit(errorMessage) }
+            runtimeScope.launch(dispatchers.default) { _connectionError.emit(errorMessage) }
         }
         val newTargetState = if (isPermanent) ConnectionState.Disconnected else ConnectionState.DeviceSleep
         if (_radioSessionState.value.transportConnectionState != newTargetState) {

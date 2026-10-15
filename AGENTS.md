@@ -6,6 +6,10 @@
 > Findings, source references, and validation: [development audit](docs/development-status-audit-2026-09-05.md).
 > Gateway repair update: 2026-09-16 on `3c5cb824d` plus working-tree changes;
 > [device repair evidence](docs/meshlink-parent-gateway-repair-2026-09-16.md).
+> Four-radio ownership repair: 2026-10-15 on `9e2f0cb15d` plus working-tree changes;
+> [implementation and validation](docs/multi-radio-ownership-repair-2026-10-15.md).
+> Android device follow-up: October 15 final Debug replacement on S24 Ultra, S22 Ultra and OPPO;
+> [single-radio acceptance and data preservation](docs/android-fleet-device-validation-2026-10-15.md).
 > Prior dated status paragraphs are preserved as [historical evidence](docs/archive/agent-status-history-through-2026-09-04.md),
 > not current instructions or proof for a later artifact.
 
@@ -53,7 +57,20 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
   Koin scope, transport/packet graph, generation, and message drain. App preferences remain shared.
   The legacy-primary graph still owns v1/v2, Android notifications/widgets, and phone-location services.
   All/endpoint conversations and endpoint-scoped Nodes/Settings/Channels use exact scope/generation
-  ownership; switching endpoints returns that feature to its root, without retained per-endpoint child stacks.
+  ownership; switching endpoints reloads the same local Settings page type or Channels root, and clears remote/message and inactive child stacks. Unsaved settings are discarded with a notice; no per-endpoint child stacks are retained.
+- **Four-radio ownership (2026-10-15 source):** Android/iOS use explicit endpoint/runtime navigation owners and
+  endpoint ViewModel factories. Remembered profiles do not consume the four active connection leases. Explicit
+  disconnect persists disabled intent, revokes operation authority and releases the lease only after teardown,
+  including the compatibility-primary radio; history and Gateway binding remain retained without promotion.
+  v1 catalog migration requires explicit reconnect from remembered devices. Hub cards open their own Channels/QR
+  and Settings. This implementation does not establish four-radio hardware/RF proof; see the dated repair report.
+- **October 15 Android device acceptance:** Final Debug installs preserve all three app identities/data. S24's
+  existing 1407 radio releases 1/4 to 0/4 through both disconnect actions, stays released across restart and
+  reconnects with the same profile/history. Channels, Settings and QR camera open/close passed; 11 old packet
+  rows and radio configuration remained unchanged. One secondary-channel test received firmware queue acceptance
+  then MAX_RETRANSMIT, with no remote-delivery proof. Only one radio was available; second/four-radio switching
+  and optical QR apply remain unverified. Connections must encode endpoint/runtime in the actual backstack key
+  because Navigation 3 caches decorated entries by key; changing the provider alone leaves a retired scope cached.
 - **Android Gateway:** v1 is immutable; v2 supplies configured channel catalog, stable-only native-text
   insertion history, protected route/capability commands, and Room/WorkManager/ledger admission. v3 adds
   protected fleet status/endpoints/channels/history, endpoint-bound tokens and ledger keys, and dispatch
@@ -86,8 +103,8 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
 - **iOS recent fixes:** Restored BLE sessions use verified peripheral ownership, bounded recovery,
   cancellation cleanup, and a lease for unclaimed sessions. Native durable rows carry explicit Gateway
   provenance and drain ahead of gated Gateway work; a stable source identity alone never makes a native
-  row Gateway-owned. Kotlin scanner request tokens reject mismatched IDs, but the Swift recognition
-  callback still needs the ownership review listed below.
+  row Gateway-owned. Kotlin scanner request tokens reject mismatched IDs. The October 15 source adds Swift scanner-instance
+  ownership checks plus captured Kotlin screen/session callbacks; optical apply/readback still needs device QA.
 - **iOS Terms/EULA gate (2026-10-02 source):** The SwiftUI host requires an initially unchecked
   acknowledgement plus explicit agreement before creating Compose, radio or Apple Gateway owners.
   App-private consent records capture the official `2026-10-02` version, language and timestamp;
@@ -111,10 +128,10 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
    the epoch once per database subscription, while whole-history clear rotates persisted metadata.
    An existing subscriber can publish sequence zero with its old epoch until resubscription. Do not
    claim live reset/cursor correctness; synchronous fresh reads are a separate path.
-3. **iOS QR callback ownership (review candidate, not device-reproduced):** Swift `didAdd` does not check
-   `activeScanner === dataScanner`, whereas the unavailable callback does. Completion uses the current
-   scanner/request ID. Review/test a late retired-scanner callback before claiming all stale native
-   callbacks are rejected. This is not evidence of an observed wrong-channel apply.
+3. **iOS QR callback ownership (October 15 source repair):** Swift `didAdd` now checks
+   `activeScanner === dataScanner`. Kotlin captures the starting screen callback and validates its alive/session
+   owner; confirmation revalidates the captured readback revision. The previous issue was a source review finding,
+   not an observed wrong-channel apply. Late native callback and connected-radio optical QA remain device gates.
 4. **Windows first pairing:** Retained July 23 diagnosis records failed pairing/no PIN dialog. The
    PowerShell/WinRT helper still uses basic `PairAsync`; JVM fakes and macOS compilation do not establish
    a successful Windows pairing ceremony. Reproduce on Windows before claiming the client is fully

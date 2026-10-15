@@ -61,6 +61,7 @@ import com.ntsocial.meshlink.core.navigation.ContactsRoute
 import com.ntsocial.meshlink.core.navigation.MultiBackstack
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.navigation.TopLevelDestination
+import com.ntsocial.meshlink.core.navigation.withoutEndpoint
 import com.ntsocial.meshlink.core.resources.Res
 import com.ntsocial.meshlink.core.resources.connected
 import com.ntsocial.meshlink.core.resources.connecting
@@ -84,6 +85,7 @@ fun MeshtasticNavigationSuite(
     uiViewModel: UIViewModel,
     modifier: Modifier = Modifier,
     containerColor: Color = NavigationSuiteScaffoldDefaults.containerColor,
+    radioState: NavigationRadioState? = null,
     content: @Composable () -> Unit,
 ) {
     val connectionState by uiViewModel.connectionState.collectAsStateWithLifecycle()
@@ -112,9 +114,9 @@ fun MeshtasticNavigationSuite(
                         NavigationIconContent(
                             destination = destination,
                             isSelected = isSelected,
-                            connectionState = connectionState,
-                            unreadMessageCount = unreadMessageCount,
-                            selectedDevice = selectedDevice,
+                            connectionState = radioState?.connectionState ?: connectionState,
+                            unreadMessageCount = radioState?.unreadCount ?: unreadMessageCount,
+                            selectedDevice = if (radioState != null) radioState.deviceAddress else selectedDevice,
                         )
                     },
                     label =
@@ -148,7 +150,7 @@ private fun handleNavigation(
 ) {
     val isRepress = destination == topLevelDestination
     if (isRepress) {
-        val currentKey = multiBackstack.activeBackStack.lastOrNull()
+        val currentKey = multiBackstack.activeBackStack.lastOrNull()?.withoutEndpoint()
         when (destination) {
             TopLevelDestination.Nodes -> {
                 val onNodesList = currentKey is NodesRoute.NodesGraph || currentKey is NodesRoute.Nodes

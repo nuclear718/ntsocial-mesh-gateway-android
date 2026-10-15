@@ -70,6 +70,8 @@ data class DiscoveredRadio(
 )
 
 sealed interface EndpointSessionState {
+    data object Releasing : EndpointSessionState
+
     data object Registered : EndpointSessionState
 
     data object Connecting : EndpointSessionState
@@ -89,12 +91,22 @@ data class RadioEndpointSnapshot(
     val profile: RadioEndpointProfile,
     val state: EndpointSessionState = EndpointSessionState.Registered,
     val generation: Long = 0L,
+    val runtimeId: String = "",
     val primaryChannelName: String? = null,
     val lastReceivedAtMillis: Long? = null,
 )
 
+/** Native pairing is owned by an admitted runtime and cancelled/joined before its slot is released. */
+interface RadioConnectionPreparation {
+    val runtimeId: String
+
+    suspend fun prepare()
+
+    suspend fun close()
+}
+
 class RadioEndpointLimitExceededException(maxEndpoints: Int = MAX_RADIO_ENDPOINTS) :
-    IllegalStateException("At most $maxEndpoints radio endpoints can be registered")
+    IllegalStateException("At most $maxEndpoints radio endpoints can hold active connections")
 
 class StaleRadioEndpointGenerationException(
     endpointId: RadioEndpointId,

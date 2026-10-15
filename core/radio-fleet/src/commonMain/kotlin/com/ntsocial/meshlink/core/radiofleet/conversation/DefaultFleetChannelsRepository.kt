@@ -84,6 +84,7 @@ class DefaultFleetChannelsRepository(
                     lastSuccessfulSyncAtMillis = sourceSnapshot.lastSuccessfulSyncAtMillis,
                     hasCachedCatalog = sourceSnapshot.hasCachedCatalog,
                     dataAvailable = inputs.sources.containsKey(endpoint.profile.id),
+                    totalUnreadCount = sourceSnapshot.totalUnreadCount,
                 )
             }
         }

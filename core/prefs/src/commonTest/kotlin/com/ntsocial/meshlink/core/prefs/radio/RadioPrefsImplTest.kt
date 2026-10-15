@@ -28,6 +28,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import com.ntsocial.meshlink.core.di.CoroutineDispatchers
+import com.ntsocial.meshlink.core.prefs.InMemoryPreferencesDataStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +41,18 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 class RadioPrefsImplTest {
+
+    @Test
+    fun `awaited selection is committed before authoritative hydration reads it`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val prefs =
+            RadioPrefsImpl(InMemoryPreferencesDataStore(), CoroutineDispatchers(dispatcher, dispatcher, dispatcher))
+        prefs.setDevAddrAndAwait(SELECTED_ADDRESS)
+        // Do not run the eager StateFlow collector: runtime hydration must use the committed DataStore value.
+        assertEquals(SELECTED_ADDRESS, prefs.readPersistedDevAddr())
+        prefs.setDevAddrAndAwait(null)
+        assertEquals(null, prefs.readPersistedDevAddr())
+    }
 
     @Test
     fun `authoritative read waits for DataStore instead of returning StateFlow initial null`() = runTest {

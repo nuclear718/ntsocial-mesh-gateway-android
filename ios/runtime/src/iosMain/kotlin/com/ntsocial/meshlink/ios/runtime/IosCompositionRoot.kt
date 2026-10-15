@@ -82,7 +82,7 @@ internal class IosCompositionRoot {
         if (started) return
         started = true
         koin.get<IosDurableMessageQueue>().start()
-        koin.get<MeshServiceOrchestrator>().start()
+        koin.get<MeshServiceOrchestrator>().start(connectRadio = false)
         koin.get<IosEndpointConversationSourceCoordinator>().start()
         lifecycleScope.launch {
             val radioPrefs = koin.get<RadioPrefs>()

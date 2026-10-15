@@ -32,6 +32,7 @@ import com.ntsocial.meshlink.core.navigation.ChannelsRoute
 import com.ntsocial.meshlink.core.navigation.ContactsRoute
 import com.ntsocial.meshlink.core.navigation.NodesRoute
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
+import com.ntsocial.meshlink.core.ui.navigation.rememberEndpointNavigator
 import kotlinx.coroutines.flow.Flow
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.SharedContact
@@ -50,17 +51,18 @@ fun AdaptiveContactsScreen(
     endpointId: String? = null,
     expectedGeneration: Long = 0L,
 ) {
+    val navigate = rememberEndpointNavigator(backStack)
     ContactsScreen(
-        onNavigateToShare = { backStack.add(ChannelsRoute.ChannelsGraph) },
+        onNavigateToShare = { navigate(ChannelsRoute.ChannelsGraph) },
         sharedContactRequested = sharedContactRequested,
         requestChannelSet = requestChannelSet,
         onHandleDeepLink = onHandleDeepLink,
         onClearSharedContactRequested = onClearSharedContactRequested,
         onClearRequestChannelUrl = onClearRequestChannelUrl,
         viewModel = contactsViewModel,
-        onClickNodeChip = { backStack.add(NodesRoute.NodeDetail(it)) },
+        onClickNodeChip = { navigate(NodesRoute.NodeDetail(it)) },
         onNavigateToMessages = { contactKey ->
-            backStack.add(
+            navigate(
                 endpointId?.let {
                     ContactsRoute.FleetMessages(
                         endpointId = it,
@@ -70,7 +72,7 @@ fun AdaptiveContactsScreen(
                 } ?: ContactsRoute.Messages(contactKey),
             )
         },
-        onNavigateToNodeDetails = { backStack.add(NodesRoute.NodeDetail(it)) },
+        onNavigateToNodeDetails = { navigate(NodesRoute.NodeDetail(it)) },
         scrollToTopEvents = scrollToTopEvents,
         activeContactKey = null,
     )
