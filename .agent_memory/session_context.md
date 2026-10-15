@@ -11,6 +11,29 @@ Native/Android/Windows 完整 gate 已通過：2,025 tasks，103 executed、1,92
 
 # Agent Session Context - NTsocial MeshLink Android, Windows & iOS
 
+## 2026-10-15 - Four-radio architecture investigation and proposal only
+- User reported Android first-radio slot cannot be released, endpoint Channels/QR inaccessible, and Settings staying
+  on the first radio. Explicit scope: deep Android/iOS code investigation and a concrete root Markdown proposal;
+  no product code changes. Baseline HEAD `e7482d9e893ef59eeafce9c8fa90c1fa7f7afd0c`, clean at start.
+- Created `MULTI_RADIO_ARCHITECTURE_PROPOSAL_2026-10-15.md` with source references, phased P0-P7 work packages,
+  migration/rollback, endpoint ownership, quota/intent/compatibility binding separation, and device acceptance matrix.
+- Confirmed persisted-profile quota + primary remove prohibition; disconnect only stops transport and does not
+  persist manual-release intent. Root orchestrator independently starts the primary radio; Android host stop logic
+  also depends on root address, so primary detach requires host bootstrap/liveness changes, not just quota changes.
+- Confirmed Android/iOS endpoint modules have scoped repositories but no radio ViewModel factories. A temporary
+  Java probe outside the repo using actual Koin JVM 4.2.1 / Kotlin stdlib 2.3.21 / JDK 21.0.11 returned B for direct
+  endpoint repository lookup but A/root for a root-defined screen factory requested from B. Probe source and runner
+  are embedded in the proposal. This verifies DI resolution topology, not production VM/Compose/native/device behavior.
+- Hub endpoint filter is separate from fleet selection and has no direct Channels/QR management action; an indirect
+  Contacts action exists and depends on a potentially root-resolved connection state. Most settings/nodes/channels
+  routes lack endpoint identity; QR dialog and iOS callbacks require complete target ownership review.
+- Plan preserves isolated DB/config/queue graphs, Android immutable v1/additive v2/v3, primary-only Apple Gateway,
+  accepted-ledger replay without second admission, stable IDs/history and Windows single-radio behavior. It does not
+  auto-promote a secondary when primary releases; remembered primary metadata must not consume an active slot.
+- Three independent read-only reviews completed. No Gradle/Xcode/product build, app installation, radio operation,
+  external publication, commit or push. Documentation path/anchor checks and diff checks performed; actual installed
+  artifact revision and four-radio Android/iOS behavior remain unverified. Product is not claimed fixed.
+
 ## 2026-10-02 - iOS first-launch Terms/EULA consent gate
 - User requested iOS MeshLink show and require multilingual EULA/Terms immediately on first launch,
   using the official LiberaNt policy and the Apple UGC review message. Worktree base: `b0e3a9fe94`.
