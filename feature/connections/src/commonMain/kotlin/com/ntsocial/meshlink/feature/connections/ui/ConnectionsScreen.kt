@@ -76,7 +76,6 @@ import com.ntsocial.meshlink.core.resources.img_ntsocial_background_butterfly
 import com.ntsocial.meshlink.core.resources.no_device_selected
 import com.ntsocial.meshlink.core.resources.set_your_region
 import com.ntsocial.meshlink.core.resources.unknown_device
-import com.ntsocial.meshlink.core.ui.component.AdaptiveTwoPane
 import com.ntsocial.meshlink.core.ui.component.ListItem
 import com.ntsocial.meshlink.core.ui.component.MainAppBar
 import com.ntsocial.meshlink.core.ui.icon.Language
@@ -221,107 +220,95 @@ fun ConnectionsScreen(
             )
         },
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Spacer(modifier = Modifier.height(4.dp))
+        ConnectionsScreenLayout(
+            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
+            fleetContent = { RadioFleetPanel() },
+            statusContent = {
+                val uiState =
+                    when {
+                        connectionState is ConnectionState.Connected && ourNode != null ->
+                            ConnectionUiState.CONNECTED_WITH_NODE
 
-                RadioFleetPanel()
+                        connectionState is ConnectionState.Connected ||
+                            connectionState == ConnectionState.Connecting ||
+                            selectedDevice != NO_DEVICE_SELECTED -> ConnectionUiState.CONNECTING
 
-                AdaptiveTwoPane(
-                    modifier = Modifier.weight(1f),
-                    first = {
-                        val uiState =
-                            when {
-                                connectionState is ConnectionState.Connected && ourNode != null ->
-                                    ConnectionUiState.CONNECTED_WITH_NODE
+                        else -> ConnectionUiState.NO_DEVICE
+                    }
 
-                                connectionState is ConnectionState.Connected ||
-                                    connectionState == ConnectionState.Connecting ||
-                                    selectedDevice != NO_DEVICE_SELECTED -> ConnectionUiState.CONNECTING
-
-                                else -> ConnectionUiState.NO_DEVICE
-                            }
-
-                        // ── Connected Device slot ──
-                        // A single Card shell hosts all three states. `animateContentSize` smooths any
-                        // height changes, while `heightIn(min = CardMinHeight)` reserves a stable floor so
-                        // the card never collapses between states.
-                        Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
-                            AnimatedContent(
-                                targetState = uiState,
-                                label = "connection_state",
-                                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { state ->
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = CardMinHeight),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    when (state) {
-                                        ConnectionUiState.CONNECTED_WITH_NODE ->
-                                            ConnectedDeviceContent(
-                                                ourNode = ourNode,
-                                                selectedDevice = selectedDevice,
-                                                bleDevices = bleDevices,
-                                                onNavigateToNodeDetails = onNavigateToNodeDetails,
-                                                onClickDisconnect = onDisconnect,
-                                            )
-
-                                        ConnectionUiState.CONNECTING ->
-                                            ConnectingDeviceContent(
-                                                selectedDevice = selectedDevice,
-                                                persistedDeviceName = persistedDeviceName,
-                                                bleDevices = bleDevices,
-                                                connectionStatus = connectionStatus,
-                                                connectionProgress = connectionProgress,
-                                                onClickDisconnect = onDisconnect,
-                                            )
-
-                                        else -> NoDeviceContent()
-                                    }
-                                }
-                            }
-                        }
-
-                        // Region warning sits outside the animated card so it does not affect the
-                        // CONNECTED ↔ CONNECTING ↔ NO_DEVICE size transition.
-                        if (
-                            uiState == ConnectionUiState.CONNECTED_WITH_NODE &&
-                            regionUnset &&
-                            selectedDevice != MOCK_DEVICE_PREFIX
+                // ── Connected Device slot ──
+                // A single Card shell hosts all three states. `animateContentSize` smooths any
+                // height changes, while `heightIn(min = CardMinHeight)` reserves a stable floor so
+                // the card never collapses between states.
+                Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
+                    AnimatedContent(
+                        targetState = uiState,
+                        label = "connection_state",
+                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { state ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = CardMinHeight),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                ListItem(
-                                    leadingIcon = MeshtasticIcons.Language,
-                                    text = stringResource(Res.string.set_your_region),
-                                    onClick = {
-                                        isWaiting = true
-                                        radioConfigViewModel.setResponseStateLoading(ConfigRoute.LORA)
-                                    },
-                                )
+                            when (state) {
+                                ConnectionUiState.CONNECTED_WITH_NODE ->
+                                    ConnectedDeviceContent(
+                                        ourNode = ourNode,
+                                        selectedDevice = selectedDevice,
+                                        bleDevices = bleDevices,
+                                        onNavigateToNodeDetails = onNavigateToNodeDetails,
+                                        onClickDisconnect = onDisconnect,
+                                    )
+
+                                ConnectionUiState.CONNECTING ->
+                                    ConnectingDeviceContent(
+                                        selectedDevice = selectedDevice,
+                                        persistedDeviceName = persistedDeviceName,
+                                        bleDevices = bleDevices,
+                                        connectionStatus = connectionStatus,
+                                        connectionProgress = connectionProgress,
+                                        onClickDisconnect = onDisconnect,
+                                    )
+
+                                else -> NoDeviceContent()
                             }
                         }
-                    },
-                    second = {
-                        // Bluetooth is the only connection method exposed in the first-release UI.
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            BluetoothDeviceList(
-                                connectionState = connectionState,
-                                selectedDevice = selectedDevice,
-                                bleDevices = bleDevices,
-                                isBleScanning = isBleScanning,
-                                onSelectDevice = { scanModel.onSelected(it) },
-                                onToggleBleScan = { scanModel.toggleBleScan() },
-                            )
-                        }
-                    },
+                    }
+                }
+
+                // Region warning sits outside the animated card so it does not affect the
+                // CONNECTED ↔ CONNECTING ↔ NO_DEVICE size transition.
+                if (
+                    uiState == ConnectionUiState.CONNECTED_WITH_NODE &&
+                    regionUnset &&
+                    selectedDevice != MOCK_DEVICE_PREFIX
+                ) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        ListItem(
+                            leadingIcon = MeshtasticIcons.Language,
+                            text = stringResource(Res.string.set_your_region),
+                            onClick = {
+                                isWaiting = true
+                                radioConfigViewModel.setResponseStateLoading(ConfigRoute.LORA)
+                            },
+                        )
+                    }
+                }
+            },
+            deviceListContent = { leadingItems ->
+                BluetoothDeviceList(
+                    connectionState = connectionState,
+                    selectedDevice = selectedDevice,
+                    bleDevices = bleDevices,
+                    isBleScanning = isBleScanning,
+                    onSelectDevice = { scanModel.onSelected(it) },
+                    onToggleBleScan = { scanModel.toggleBleScan() },
+                    leadingItems = leadingItems,
                 )
-            }
-        }
+            },
+        )
     }
 }
 

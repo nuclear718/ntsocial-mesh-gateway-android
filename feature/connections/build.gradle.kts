@@ -55,6 +55,11 @@ kotlin {
             implementation(libs.jetbrains.navigation3.ui)
         }
 
+        jvmTest.dependencies {
+            implementation(libs.compose.multiplatform.ui.test)
+            implementation(compose.desktop.currentOs)
+        }
+
         androidMain.dependencies {
             implementation(projects.core.radioFleet)
             implementation(libs.usb.serial.android)

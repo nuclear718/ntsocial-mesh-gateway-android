@@ -70,8 +70,10 @@ fun BluetoothDeviceList(
     onSelectDevice: (DeviceListEntry.Ble) -> Unit,
     onToggleBleScan: () -> Unit,
     modifier: Modifier = Modifier,
+    leadingItems: LazyListScope.() -> Unit = {},
 ) {
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        leadingItems()
         bluetoothSection(
             bleDevices = bleDevices,
             connectionState = connectionState,

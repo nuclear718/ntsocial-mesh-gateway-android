@@ -29,6 +29,7 @@ import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation3.runtime.EntryProviderScope
@@ -46,6 +47,7 @@ import com.ntsocial.meshlink.core.radiofleet.RadioFleetManager
 import com.ntsocial.meshlink.core.radiofleet.conversation.FleetChannelGroup
 import com.ntsocial.meshlink.core.ui.component.ScrollToTopEvent
 import com.ntsocial.meshlink.core.ui.navigation.rememberEndpointNavigator
+import com.ntsocial.meshlink.core.ui.util.rememberEndpointImportState
 import com.ntsocial.meshlink.core.ui.util.rememberUiAction
 import com.ntsocial.meshlink.core.ui.viewmodel.scopedViewModel
 import com.ntsocial.meshlink.feature.messaging.QuickChatScreen
@@ -57,7 +59,6 @@ import com.ntsocial.meshlink.feature.messaging.ui.contact.ContactsViewModel
 import com.ntsocial.meshlink.feature.messaging.ui.sharing.ShareScreen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import org.koin.compose.currentKoinScope
 import org.koin.compose.viewmodel.koinViewModel
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
@@ -159,23 +160,24 @@ fun ContactsEntryContent(
     endpointId: String? = null,
     expectedGeneration: Long = 0L,
 ) {
-    val uiViewModel: com.ntsocial.meshlink.core.ui.viewmodel.UIViewModel = koinViewModel()
-    val sharedContactRequested by uiViewModel.sharedContactRequested.collectAsStateWithLifecycle()
-    val requestChannelSet by uiViewModel.requestChannelSet.collectAsStateWithLifecycle()
+    val imports = rememberEndpointImportState()
     val contactsViewModel = scopedViewModel<ContactsViewModel>()
 
-    AdaptiveContactsScreen(
-        backStack = backStack,
-        contactsViewModel = contactsViewModel,
-        scrollToTopEvents = scrollToTopEvents,
-        sharedContactRequested = sharedContactRequested.takeIf { currentKoinScope().isRoot },
-        requestChannelSet = requestChannelSet.takeIf { currentKoinScope().isRoot },
-        onHandleDeepLink = uiViewModel::handleDeepLink,
-        onClearSharedContactRequested = uiViewModel::clearSharedContactRequested,
-        onClearRequestChannelUrl = uiViewModel::clearRequestChannelUrl,
-        endpointId = endpointId,
-        expectedGeneration = expectedGeneration,
-    )
+    // Reset scanner/URL/NFC UI when its exact owner is retired, not when another endpoint is selected elsewhere.
+    key(imports) {
+        AdaptiveContactsScreen(
+            backStack = backStack,
+            contactsViewModel = contactsViewModel,
+            scrollToTopEvents = scrollToTopEvents,
+            sharedContactRequested = imports.sharedContact,
+            requestChannelSet = imports.channelSet,
+            onHandleDeepLink = imports::handleUri,
+            onClearSharedContactRequested = imports::clearSharedContact,
+            onClearRequestChannelUrl = imports::clearChannelSet,
+            endpointId = endpointId,
+            expectedGeneration = expectedGeneration,
+        )
+    }
 }
 
 @Composable

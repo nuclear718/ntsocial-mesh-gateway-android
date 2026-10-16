@@ -47,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -96,6 +97,8 @@ private val QR_ANALYSIS_RESOLUTION_SELECTOR =
 fun rememberBarcodeScanner(onResult: (String?) -> Unit): BarcodeScanner {
     var showDialog by remember { mutableStateOf(false) }
     var pendingScan by remember { mutableStateOf(false) }
+    val currentOnResult by rememberUpdatedState(onResult)
+    var request by remember { mutableStateOf<BarcodeScanRequest?>(null) }
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
 
     LaunchedEffect(cameraPermissionState.status.isGranted) {
@@ -105,18 +108,28 @@ fun rememberBarcodeScanner(onResult: (String?) -> Unit): BarcodeScanner {
         }
     }
 
-    if (showDialog) {
-        BarcodeScannerDialog(
-            onResult = {
-                showDialog = false
-                onResult(it)
-            },
-        )
+    DisposableEffect(Unit) { onDispose { request?.cancel() } }
+
+    val activeRequest = request
+    if (showDialog && activeRequest != null) {
+        key(activeRequest) {
+            BarcodeScannerDialog(
+                onResult = {
+                    if (request === activeRequest) {
+                        showDialog = false
+                        request = null
+                    }
+                    activeRequest.deliver(it)
+                },
+            )
+        }
     }
 
     return remember {
         object : BarcodeScanner {
             override fun startScan() {
+                request?.cancel()
+                request = BarcodeScanRequest(currentOnResult)
                 if (cameraPermissionState.status.isGranted) {
                     showDialog = true
                 } else {
