@@ -43,6 +43,7 @@ import com.ntsocial.meshlink.core.repository.UiPrefs
 import com.ntsocial.meshlink.feature.connections.model.AndroidUsbDeviceData
 import com.ntsocial.meshlink.feature.connections.model.DeviceListEntry
 import com.ntsocial.meshlink.feature.connections.model.GetDiscoveredDevicesUseCase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -110,6 +111,10 @@ class AndroidScannerViewModel(
                 bluetoothRepository.bond(entry.device)
                 Logger.i { "Bonding complete for ${entry.device.address.anonymize}, selecting device..." }
                 connectSelected(entry)
+            } catch (cancelled: CancellationException) {
+                // Disposing the screen/endpoint cancels this waiter, not necessarily the OS bond or fleet connection.
+                // Preserve structured cancellation instead of publishing a spurious bonding failure.
+                throw cancelled
             } catch (ex: SecurityException) {
                 Logger.w(ex) { "Bonding failed for ${entry.device.address.anonymize} Permissions not granted" }
                 serviceRepository.setErrorMessage(

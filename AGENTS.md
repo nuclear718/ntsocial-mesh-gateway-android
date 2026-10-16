@@ -12,6 +12,8 @@
 > [single-radio acceptance and data preservation](docs/android-fleet-device-validation-2026-10-15.md).
 > iOS device follow-up: October 15 signed Debug replacement on A01E and 201E;
 > [preservation and bounded physical-radio acceptance](docs/ios-fleet-device-validation-2026-10-15.md).
+> Android pairing follow-up: October 16 lifecycle cancellation no longer reports a bonding failure;
+> [regressions, full gate and S24 replacement/reconnect](docs/android-bonding-cancellation-fix-2026-10-16.md).
 > Prior dated status paragraphs are preserved as [historical evidence](docs/archive/agent-status-history-through-2026-09-04.md),
 > not current instructions or proof for a later artifact.
 
@@ -115,6 +117,11 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
   provenance and drain ahead of gated Gateway work; a stable source identity alone never makes a native
   row Gateway-owned. Kotlin scanner request tokens reject mismatched IDs. The October 15 source adds Swift scanner-instance
   ownership checks plus captured Kotlin screen/session callbacks; optical apply/readback still needs device QA.
+- **Android pairing cancellation (2026-10-16):** `AndroidScannerViewModel.requestBonding` must rethrow
+  `CancellationException` before reporting ordinary bonding errors. Retiring a screen/endpoint cancels its waiter,
+  which is not proof of OS pairing failure. Regression tests reproduce the former `Bonding failed: Job was cancelled`
+  warning; the full gate and S24 data-preserving replacement/single-radio reconnect pass. New-device first pairing
+  was not replayed on hardware. iOS and shared BLE transport already preserve cancellation; no iOS change was needed.
 - **iOS Terms/EULA gate (2026-10-02 source):** The SwiftUI host requires an initially unchecked
   acknowledgement plus explicit agreement before creating Compose, radio or Apple Gateway owners.
   App-private consent records capture the official `2026-10-02` version, language and timestamp;
