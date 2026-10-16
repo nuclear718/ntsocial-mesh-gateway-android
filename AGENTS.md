@@ -6,10 +6,12 @@
 > Findings, source references, and validation: [development audit](docs/development-status-audit-2026-09-05.md).
 > Gateway repair update: 2026-09-16 on `3c5cb824d` plus working-tree changes;
 > [device repair evidence](docs/meshlink-parent-gateway-repair-2026-09-16.md).
-> Four-radio ownership repair: 2026-10-15 on `9e2f0cb15d` plus working-tree changes;
+> Four-radio ownership repair: 2026-10-15, committed in `cb2c7cf960`;
 > [implementation and validation](docs/multi-radio-ownership-repair-2026-10-15.md).
 > Android device follow-up: October 15 final Debug replacement on S24 Ultra, S22 Ultra and OPPO;
 > [single-radio acceptance and data preservation](docs/android-fleet-device-validation-2026-10-15.md).
+> iOS device follow-up: October 15 signed Debug replacement on A01E and 201E;
+> [preservation and bounded physical-radio acceptance](docs/ios-fleet-device-validation-2026-10-15.md).
 > Prior dated status paragraphs are preserved as [historical evidence](docs/archive/agent-status-history-through-2026-09-04.md),
 > not current instructions or proof for a later artifact.
 
@@ -51,7 +53,7 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
 | --- | --- | --- |
 | Android | Shared shell, three-language first launch, per-endpoint UI and independent sessions for up to four BLE radios, Channel Hub, protected Gateway v1/v2 and additive v3 fleet surface | Secondary v3 native and overlay dispatch now use an isolated production repository and durable queue. September 16 device evidence covers secondary-to-iPhone RF and parent import. Four-radio source capacity is not four-radio hardware proof. |
 | Windows | Branded Compose Desktop host, blue butterfly/theme/splash, native packaging metadata, shared messaging/nodes/settings, BLE/TCP/Serial transport backends | Single-radio UI/runtime; fleet and MQTT bindings are no-op. Connections exposes Bluetooth only. No Windows parent IPC/service/authenticator integration. Discovery has historical hardware evidence; successful first-pair/PIN recovery is not established. |
-| iOS | Three-language host Terms/EULA consent before runtime startup, shared Compose shell/settings and language onboarding, up-to-four isolated BLE endpoint runtime/UI, primary-only Apple Gateway, durable native outbox, Channels-only VisionKit scanner | October 2 consent source awaits Xcode/device validation; other UGC moderation requirements remain open. September 16 signed Debug evidence covers both directions of native and overlay RF plus parent history, after fixing the duplicated ingress gate. Concurrent multi-radio iPhone operation and arbitrary background lifetime remain unproven. |
+| iOS | Three-language host Terms/EULA consent before runtime startup, shared Compose shell/settings and language onboarding, up-to-four isolated BLE endpoint runtime/UI, primary-only Apple Gateway, durable native outbox, Channels-only VisionKit scanner | October 15 signed Xcode/device checks cover existing consent retention and first-use unchecked acknowledgement; other UGC moderation requirements remain open. September 16 signed Debug evidence covers both directions of native and overlay RF plus parent history, after fixing the duplicated ingress gate. Concurrent multi-radio iPhone operation and arbitrary background lifetime remain unproven. |
 
 - **Android fleet:** Every secondary endpoint owns an independent Room database, radio/config DataStores,
   Koin scope, transport/packet graph, generation, and message drain. App preferences remain shared.
@@ -71,6 +73,14 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
   then MAX_RETRANSMIT, with no remote-delivery proof. Only one radio was available; second/four-radio switching
   and optical QR apply remain unverified. Connections must encode endpoint/runtime in the actual backstack key
   because Navigation 3 caches decorated entries by key; changing the provider alone leaves a retired scope cached.
+- **October 15 iOS device acceptance:** Signed Debug `cb2c7cf960` replaces the app on A01E/201E without
+  clearing data. A01E retains all 31 old packet rows/configuration/consent and connects the available 1407
+  as a real secondary endpoint while remembered primary 5d6e is unavailable. 201E pairs the same radio
+  as its first/compatibility-primary endpoint. Both expose the correct eight channels, Taiwan/MEDIUM_FAST
+  settings and native QR camera open/close. Primary and secondary disconnects release 1/4 to 0/4, and
+  disabled intent survives restart. This is sequential single-radio evidence; concurrent A/B
+  switching and isolation, optical QR decode/apply/readback and new Gateway RF acceptance remain unproven.
+  See the dated iOS report for release/restart results, preserved identities and final device handoff.
 - **Android Gateway:** v1 is immutable; v2 supplies configured channel catalog, stable-only native-text
   insertion history, protected route/capability commands, and Room/WorkManager/ledger admission. v3 adds
   protected fleet status/endpoints/channels/history, endpoint-bound tokens and ledger keys, and dispatch
@@ -112,7 +122,7 @@ Use Compose Multiplatform, Navigation 3, and the repository's existing architect
   Japanese link to their corresponding official policy anchors. Android/Desktop and the existing
   post-consent Compose language flow are unchanged. This is not proof of complete UGC filtering,
   in-app reporting, effective history removal on block, developer notification, 24-hour operations
-  or device recording. See [consent implementation and remaining gates](docs/ios-terms-consent-2026-10-02.md).
+  or device recording. October 15 iPhone checks verify retained consent on A01E and initially unchecked acknowledgement/disabled agreement on 201E; this is bounded UI evidence only. See [consent implementation and remaining gates](docs/ios-terms-consent-2026-10-02.md).
 - **MeshCore:** Protocol/model/repository and UI foundations exist; production radio transport remains
   pending. Do not claim MeshCore connection, RF delivery, or multi-node operation from these screens/tests.
 
